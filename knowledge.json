@@ -4,18 +4,38 @@
   "address2": "Cơ sở 2: số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
   "fanpage": "https://www.facebook.com/profile.php?id=61579934543320",
   "oa_name": "Công an phường Phù Liễn, TP Hải Phòng",
-  "knowledge": [
+   "knowledge": [
     {
-      "question": "cấp tài khoản định danh điện tử mức 2",
-      "answer": "Công dân mang CCCD gắn chip đến Công an phường Phù Liễn để được hướng dẫn đăng ký tài khoản định danh điện tử mức độ 2."
+      "question": "làm căn cước",
+      "answer": "Người dân mang CCCD cũ hoặc giấy tờ tùy thân đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn cấp, đổi hoặc cấp lại căn cước."
+    },
+    {
+      "question": "định danh điện tử",
+      "answer": "Người dân mang căn cước công dân đến Công an phường Phù Liễn Cơ sở 2 tại địa chỉ số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng để đăng ký tài khoản định danh điện tử mức 2."
     },
     {
       "question": "đăng ký thường trú",
-      "answer": "Người dân có thể nộp hồ sơ trực tuyến trên Cổng Dịch vụ công hoặc trực tiếp tại Công an phường Phù Liễn."
+      "answer": "Hồ sơ gồm giấy tờ chứng minh chỗ ở hợp pháp và giấy tờ nhân thân theo quy định của Luật Cư trú."
+    },
+    {
+      "question": "đăng ký tạm trú",
+      "answer": "Người dân có thể đăng ký tạm trú trực tiếp tại Công an phường hoặc thực hiện trên Cổng Dịch vụ công."
+    },
+    {
+      "question": "cấp lại căn cước",
+      "answer": "Người dân mang giấy tờ tùy thân đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn để được hướng dẫn cấp lại căn cước."
     },
     {
       "question": "xác nhận cư trú",
-      "answer": "Người dân có thể đề nghị cấp Giấy xác nhận thông tin cư trú theo quy định hiện hành."
+      "answer": "Người dân có thể đề nghị xác nhận thông tin cư trú trực tiếp tại Công an phường Phù Liễn Cơ sở 2 tại địa chỉ  số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng hoặc trên Cổng Dịch vụ công."
+    },
+    {
+      "question": "tố giác tội phạm",
+      "answer": "Khi phát hiện hành vi vi phạm pháp luật, người dân có thể trực tiếp đến Công an phường hoặc gọi số điện thoại trực ban để tố giác."
+    },
+    {
+      "question": "mất căn cước",
+      "answer": "Khi bị mất căn cước, người dân cần đến Công an phường để được hướng dẫn cấp lại theo quy định."
     }
   ]
 }
