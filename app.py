@@ -133,8 +133,7 @@ def api_chat():
 # GỬI TIN NHẮN OA
 # ==========================================
 def send_message(user_id, message):
-
-    url = "https://openapi.zalo.me/v3.0/oa/message"
+    url = "https://openapi.zalo.me/v2.0/oa/message"
 
     headers = {
         "access_token": ZALO_ACCESS_TOKEN,
@@ -143,7 +142,7 @@ def send_message(user_id, message):
 
     payload = {
         "recipient": {
-            "user_id": user_id
+            "user_id": str(user_id)
         },
         "message": {
             "text": message
@@ -153,20 +152,15 @@ def send_message(user_id, message):
     print("SEND TO:", user_id)
     print("MESSAGE:", message)
 
-    try:
-        r = requests.post(
-            url,
-            headers=headers,
-            json=payload,
-            timeout=30
-        )
+    r = requests.post(
+        url,
+        headers=headers,
+        json=payload,
+        timeout=30
+    )
 
-        print("STATUS:", r.status_code)
-        print("RESPONSE:", r.text)
-
-    except Exception as e:
-        print("SEND ERROR:", e)
-
+    print("STATUS:", r.status_code)
+    print("RESPONSE:", r.text)
 
 # ==========================================
 # WEBHOOK
