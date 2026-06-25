@@ -1,3 +1,4 @@
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import requests
@@ -21,10 +22,13 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ==========================================
-# ĐỌC DỮ LIỆU
+# LOAD KNOWLEDGE
 # ==========================================
-with open("knowledge.json", "r", encoding="utf-8") as f:
-    DATA = json.load(f)
+try:
+    with open("knowledge.json", "r", encoding="utf-8") as f:
+        DATA = json.load(f)
+except:
+    DATA = {}
 
 KNOWLEDGE = DATA.get("knowledge", [])
 PHONE = DATA.get("phone", "")
@@ -34,24 +38,34 @@ FANPAGE = DATA.get("fanpage", "")
 OA_NAME = DATA.get("oa_name", "Công an phường Phù Liễn")
 
 # ==========================================
-# TÌM KIẾM TRI THỨC
+# SEARCH KNOWLEDGE
 # ==========================================
 def search_knowledge(question):
-    question = question.lower()
 
-    if "điện thoại" in question:
+    q = question.lower().strip()
+
+    if "điện thoại" in q or "số điện thoại" in q:
         return f"Số điện thoại của {OA_NAME}: {PHONE}"
 
-    if "địa chỉ" in question:
+    if "địa chỉ" in q:
         return f"{ADDRESS1}\n{ADDRESS2}"
 
-    if "fanpage" in question or "facebook" in question:
+    if "fanpage" in q or "facebook" in q:
         return f"Fanpage:\n{FANPAGE}"
 
     for item in KNOWLEDGE:
-        q = item.get("question", "").lower()
 
-        if q and q in question:
+        ask = item.get("question", "").lower().strip()
+
+        if not ask:
+            continue
+
+        if ask in q or q in ask:
+            return item.get("answer")
+
+        words = ask.split()
+
+        if any(word in q for word in words):
             return item.get("answer")
 
     return None
@@ -62,23 +76,61 @@ def search_knowledge(question):
 # ==========================================
 def ask_gemini(question):
 
-    data = search_knowledge(question)
+    q = question.lower().strip()
 
-    if data is None:
-        return (
-            "Xin lỗi, tôi hiện chỉ hỗ trợ giải đáp thủ tục hành chính, "
-            "Đề án 06, cư trú, căn cước, định danh điện tử và các nội dung "
-            "tuyên truyền của Công an phường Phù Liễn."
-        )
+    if any(x in q for x in [
+        "bạn làm được gì",
+        "hỗ trợ gì",
+        "cú pháp",
+        "hướng dẫn",
+        "sử dụng bot"
+    ]):
+        return f"""
+Xin chào! Tôi là trợ lý ảo của {OA_NAME}.
+
+Tôi có thể hỗ trợ:
+
+• Số điện thoại, địa chỉ Công an phường.
+• Hướng dẫn cấp căn cước.
+• Hướng dẫn cư trú, tạm trú, thường trú.
+• Giải đáp Đề án 06.
+• Hướng dẫn định danh điện tử VNeID.
+• Hướng dẫn dịch vụ công trực tuyến.
+• Tuyên truyền pháp luật.
+• Giải đáp các nội dung liên quan đến Công an phường.
+
+Ví dụ:
+- Số điện thoại Công an phường?
+- Địa chỉ Công an phường?
+- Làm căn cước cần gì?
+- Đăng ký tạm trú như thế nào?
+- Đề án 06 là gì?
+"""
+
+    local_data = search_knowledge(question)
 
     prompt = f"""
-Bạn là trợ lý ảo của Công an phường Phù Liễn.
+Bạn là trợ lý ảo của {OA_NAME}.
 
-Thông tin:
+Thông tin nội bộ:
+{local_data if local_data else "Không có dữ liệu nội bộ."}
 
-{data}
+Nhiệm vụ:
+- Hỗ trợ người dân về thủ tục hành chính.
+- Cư trú.
+- Căn cước.
+- Đề án 06.
+- Định danh điện tử.
+- Dịch vụ công.
+- Thông tin của Công an phường.
 
-Hãy trả lời ngắn gọn, lịch sự.
+Nếu có dữ liệu nội bộ thì ưu tiên sử dụng.
+
+Nếu câu hỏi ngoài phạm vi trên thì trả lời:
+
+"Tôi là trợ lý ảo của {OA_NAME}. Hiện tôi hỗ trợ các nội dung liên quan đến thủ tục hành chính, cư trú, căn cước, Đề án 06 và hoạt động của Công an phường."
+
+Trả lời ngắn gọn, lịch sự, dễ hiểu.
 
 Câu hỏi:
 {question}
@@ -86,32 +138,35 @@ Câu hỏi:
 
     try:
         response = model.generate_content(prompt)
-        return response.text
+        return response.text.strip()
+
     except Exception as e:
         print("GEMINI ERROR:", e)
-        return data
+
+        if local_data:
+            return local_data
+
+        return (
+            "Xin lỗi, hiện tôi chưa có thông tin về nội dung này. "
+            f"Quý công dân vui lòng liên hệ {OA_NAME} để được hỗ trợ."
+        )
 
 
 # ==========================================
-# TRANG CHỦ
+# HOME
 # ==========================================
 @app.route("/")
 def home():
-    return "Bot Công an phường Phù Liễn đang hoạt động!"
+    return f"{OA_NAME} đang hoạt động!"
 
 
-# ==========================================
-# HEALTH
-# ==========================================
 @app.route("/health")
 def health():
-    return jsonify({
-        "status": "ok"
-    })
+    return jsonify({"status": "ok"})
 
 
 # ==========================================
-# API CHAT MINI APP
+# MINI APP API
 # ==========================================
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
@@ -119,8 +174,6 @@ def api_chat():
     data = request.get_json()
 
     question = data.get("question", "")
-
-    print("MINI APP:", question)
 
     answer = ask_gemini(question)
 
@@ -130,9 +183,10 @@ def api_chat():
 
 
 # ==========================================
-# GỬI TIN NHẮN OA
+# SEND MESSAGE
 # ==========================================
 def send_message(user_id, message):
+
     url = "https://openapi.zalo.me/v2.0/oa/message"
 
     headers = {
@@ -145,22 +199,24 @@ def send_message(user_id, message):
             "user_id": str(user_id)
         },
         "message": {
-            "text": message
+            "text": str(message)[:1900]
         }
     }
 
-    print("SEND TO:", user_id)
-    print("MESSAGE:", message)
+    try:
+        r = requests.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=30
+        )
 
-    r = requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=30
-    )
+        print("STATUS:", r.status_code)
+        print("RESPONSE:", r.text)
 
-    print("STATUS:", r.status_code)
-    print("RESPONSE:", r.text)
+    except Exception as e:
+        print("SEND ERROR:", e)
+
 
 # ==========================================
 # WEBHOOK
@@ -181,6 +237,7 @@ def webhook():
     ))
 
     try:
+
         if data and data.get("event_name") == "user_send_text":
 
             user_id = data["sender"]["id"]
@@ -207,77 +264,19 @@ def webhook():
 
 
 # ==========================================
-# CHÍNH SÁCH BẢO MẬT
+# PRIVACY
 # ==========================================
 @app.route("/privacy")
 def privacy():
-    return """
-<html>
-<head>
-<meta charset="utf-8">
-<title>Chính sách bảo mật</title>
-</head>
-<body style="font-family:Arial;padding:30px">
-<h2>CHÍNH SÁCH BẢO MẬT</h2>
-
-<p>
-Cổng dịch vụ điện tử Công an phường Phù Liễn cam kết bảo vệ
-thông tin cá nhân của người sử dụng.
-</p>
-
-<p>Thông tin được sử dụng nhằm:</p>
-
-<ul>
-<li>Giải quyết thủ tục hành chính.</li>
-<li>Tư vấn, giải đáp cho người dân.</li>
-<li>Tiếp nhận phản ánh, kiến nghị.</li>
-<li>Đặt lịch làm việc.</li>
-</ul>
-
-<p>
-Chúng tôi không chia sẻ thông tin cá nhân cho bên thứ ba,
-trừ trường hợp theo quy định của pháp luật.
-</p>
-</body>
-</html>
-"""
+    return "Chính sách bảo mật của Công an phường Phù Liễn."
 
 
 # ==========================================
-# ĐIỀU KHOẢN SỬ DỤNG
+# TERMS
 # ==========================================
 @app.route("/terms")
 def terms():
-    return """
-<html>
-<head>
-<meta charset="utf-8">
-<title>Điều khoản sử dụng</title>
-</head>
-<body style="font-family:Arial;padding:30px">
-<h2>ĐIỀU KHOẢN SỬ DỤNG</h2>
-
-<p>
-Mini App Công dịch vụ điện tử Công an phường Phù Liễn
-được xây dựng nhằm hỗ trợ người dân tiếp cận thông tin
-và thực hiện các dịch vụ công.
-</p>
-
-<p>Người sử dụng cam kết:</p>
-
-<ul>
-<li>Cung cấp thông tin trung thực.</li>
-<li>Không sử dụng Mini App vào mục đích vi phạm pháp luật.</li>
-<li>Không phát tán thông tin sai sự thật.</li>
-</ul>
-
-<p>
-Công an phường Phù Liễn có quyền cập nhật nội dung
-khi cần thiết.
-</p>
-</body>
-</html>
-"""
+    return "Điều khoản sử dụng của Công an phường Phù Liễn."
 
 
 # ==========================================
