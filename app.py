@@ -90,8 +90,7 @@ Câu hỏi:
 # GỬI TIN NHẮN VỀ ZALO OA
 # ==========================================
 def send_message(user_id, message):
-
-    url = "https://openapi.zalo.me/v3.0/oa/message"
+    url = "https://openapi.zalo.me/v3.0/oa/message/cs"
 
     headers = {
         "access_token": ZALO_ACCESS_TOKEN,
@@ -107,6 +106,9 @@ def send_message(user_id, message):
         }
     }
 
+    print("URL:", url)
+    print("PAYLOAD:", payload)
+
     r = requests.post(
         url,
         headers=headers,
@@ -114,9 +116,8 @@ def send_message(user_id, message):
         timeout=30
     )
 
-    print("ZALO RESPONSE:")
-    print(r.text)
-
+    print("STATUS:", r.status_code)
+    print("ZALO RESPONSE:", r.text)
 
 # ==========================================
 # TRANG CHỦ
