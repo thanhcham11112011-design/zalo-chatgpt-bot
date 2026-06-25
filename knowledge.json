@@ -1,41 +1,336 @@
 {
-  "phone": "02253876018",
-  "address1": "Cơ sở 1: số 130 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
-  "address2": "Cơ sở 2: số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
-  "fanpage": "https://www.facebook.com/profile.php?id=61579934543320",
-  "oa_name": "Công an phường Phù Liễn, TP Hải Phòng",
-   "knowledge": [
-    {
-      "question": "làm căn cước, cccd, căn cước",
-      "answer": "Người dân mang CCCD cũ hoặc giấy tờ tùy thân đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn cấp, đổi hoặc cấp lại căn cước."
+  "oa_name": "Công an phường Phù Liễn - TP Hải Phòng",
+  "greeting": "Tôi là trợ lý ảo của Công an phường Phù Liễn, hỗ trợ thủ tục hành chính và giải đáp thông tin cho người dân.",
+  "address1": "Số 130 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
+  "address2": "Số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
+  "services": {
+    "c_p_l_i_th_c_n_c_c": {
+      "name": "Cấp lại thẻ căn cước",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "định danh điện tử, VneID",
-      "answer": "Người dân mang căn cước công dân đến Công an phường Phù Liễn Cơ sở 2 tại địa chỉ số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng để đăng ký tài khoản định danh điện tử mức 2."
+    "c_p_i_th_cccd": {
+      "name": "Cấp đổi thẻ CCCD",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "đăng ký thường trú",
-      "answer": "Hồ sơ gồm giấy tờ chứng minh chỗ ở hợp pháp và giấy tờ nhân thân theo quy định của Luật Cư trú. Công dân có thể nộp hồ sơ trực tuyến tại https://dichvucong.bocongan.gov.vn/bocongan/bothutuc?linh_vuc=QL_CU_TRU"
+    "c_p_th_c_n_c_c_cho_ng_i_t_14_tu_i_tr_l_n": {
+      "name": "Cấp thẻ Căn cước cho người từ đủ 14 tuổi trở lên",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "đăng ký tạm trú",
-      "answer": "Người dân có thể đăng ký tạm trú trực tiếp tại Công an phường hoặc thực hiện trên Cổng Dịch vụ công tại đường link: https://dichvucong.bocongan.gov.vn/bocongan/bothutuc?linh_vuc=QL_CU_TRU."
+    "c_p_th_c_n_c_c_cho_ng_i_d_i_14_tu_i": {
+      "name": "Cấp thẻ căn cước cho người dưới 14 tuổi",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "cấp lại căn cước",
-      "answer": "Người dân mang giấy tờ tùy thân đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn để được hướng dẫn cấp lại căn cước."
+    "gia_h_n_t_m_tr_": {
+      "name": "Gia hạn tạm trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "xác nhận cư trú",
-      "answer": "Người dân có thể đề nghị xác nhận thông tin cư trú trực tiếp tại Công an phường Phù Liễn Cơ sở 2 tại địa chỉ  số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng hoặc trên Cổng Dịch vụ công tại đường Link https://dichvucong.bocongan.gov.vn/bocongan/bothutuc?linh_vuc=QL_CU_TRU."
+    "th_ng_b_o_l_u_tr_": {
+      "name": "Thông báo lưu trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "tố giác tội phạm",
-      "answer": "Khi phát hiện hành vi vi phạm pháp luật, người dân có thể trực tiếp đến Công an phường hoặc gọi số điện thoại trực ban để tố giác."
+    "x_a_ng_k_th_ng_tr_": {
+      "name": "Xóa Đăng ký  thường trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     },
-    {
-      "question": "mất căn cước",
-      "answer": "Khi bị mất căn cước, người dân cần đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn theo quy định."
+    "khai_b_o_t_m_v_ng": {
+      "name": "KHAI BÁO TẠM VẮNG",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_t_m_tr_": {
+      "name": "ĐĂNG KÝ TẠM TRÚ",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_th_ng_tr_": {
+      "name": "ĐĂNG KÝ THƯỜNG TRÚ",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "khai_b_o_th_ng_tin_v_c_tr_i_v_i_ng_i_ch_a_i_u_ki_n_ng_k_th_ng_tr_ng_k_t_m_tr_": {
+      "name": "Khai báo thông tin về cư trú đối với người chưa đủ điều kiện đăng ký thường trú, đăng ký tạm trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "t_ch_h_": {
+      "name": "Tách hộ",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "x_c_nh_n_th_ng_tin_v_c_tr_": {
+      "name": "Xác nhận thông tin về cư trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "x_a_ng_k_t_m_tr_": {
+      "name": "Xóa đăng ký tạm trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_i_u_ch_nh_th_ng_tin_v_c_tr_trong_c_s_d_li_u_v_c_tr_": {
+      "name": "Điều chỉnh thông tin về cư trú trong Cơ sở dữ liệu về cư trú",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "thu_h_i_gi_y_ch_ng_nh_n_ng_k_bi_n_s_xe_th_c_hi_n_b_ng_d_ch_v_c_ng_tr_c_tuy_n_m_t_ph_n_ho_c_tr_c_ti_p_t_i_c_quan_ng_k_xe_th_c_hi_n_t_i_c_p_trung_ng_c_p_t_nh_c_p_x_": {
+      "name": "Thu hồi giấy chứng nhận đăng ký, biển số xe thực hiện bằng dịch vụ công trực tuyến một phần hoặc trực tiếp tại cơ quan đăng ký xe thực hiện tại cấp trung ương, cấp tỉnh, cấp xã",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_xe_l_n_u_tr_c_tuy_n_to_n_tr_nh_i_v_i_xe_nh_p_kh_u": {
+      "name": "Đăng ký xe lần đầu trực tuyến toàn trình đối với xe nhập khẩu",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_khai_ng_k_xe_m_u_kx10_79_ban_h_nh_k_m_theo_th_ng_t_s_13_2025_tt_bca_ng_y_28_02_2025_c_a_b_tr_ng_b_c_ng_an_": {
+      "name": "Giấy khai đăng ký xe (mẫu ĐKX10/79 ban hành kèm theo Thông tư số 13/2025/TT-BCA ngày 28/02/2025 của Bộ trưởng Bộ Công an).",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_t_c_a_ch_xe_s_d_ng_ng_d_ng_nh_danh_i_n_t_m_c_2_ng_nh_p_tr_n_c_ng_d_ch_v_c_ng_ho_c_ng_d_ng_nh_danh_qu_c_gia_": {
+      "name": "Giấy tờ của chủ xe: sử dụng Ứng dụng định danh điện tử mức độ 2 để đăng nhập trên Cổng dịch vụ công hoặc Ứng dụng định danh quốc gia.",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_t_c_a_xe_s_d_ng_d_li_u_i_n_t_c_a_h_a_n_i_n_t_l_ph_tr_c_b_h_i_quan_i_n_t_gi_y_ch_ng_nh_n_ch_t_l_ng_an_to_n_k_thu_t_v_b_o_v_m_i_tr_ng_xe_nh_p_kh_u_ho_c_th_ng_b_o_mi_n_ki_m_tra_ch_t_l_ng_an_to_n_k_thu_t_v_b_o_v_m_i_tr_ng_xe_nh_p_kh_u_c_d_n_b_n_ch_s_m_y_s_khung_c_ng_d_u_gi_p_lai_c_a_n_v_nh_p_kh_u_xe_": {
+      "name": "Giấy tờ của xe (sử dụng dữ liệu điện tử của Hóa đơn điện tử; Lệ phí trước bạ; Hải quan điện tử). Giấy chứng nhận chất lượng an toàn kỹ thuật và bảo vệ môi trường xe nhập khẩu hoặc thông báo miễn kiểm tra chất lượng an toàn kỹ thuật và bảo vệ môi trường xe nhập khẩu (có dán bản chà số máy, số khung có đóng dấu giáp lai của đơn vị nhập khẩu xe).",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_xe_l_n_u_tr_c_tuy_n_to_n_tr_nh_i_v_i_xe_s_n_xu_t_l_p_r_p_trong_n_c": {
+      "name": "Đăng ký xe lần đầu trực tuyến toàn trình đối với xe sản xuất lắp ráp trong nước",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_t_c_a_xe_s_d_ng_d_li_u_i_n_t_c_a_phi_u_ki_m_tra_ch_t_l_ng_xu_t_x_ng_h_a_n_i_n_t_l_ph_tr_c_b_phi_u_ki_m_tra_ch_t_l_ng_xu_t_x_ng_c_d_n_b_n_ch_s_m_y_s_khung_c_ng_d_u_gi_p_lai_c_a_c_s_s_n_xu_t_": {
+      "name": "Giấy tờ của xe (sử dụng dữ liệu điện tử của Phiếu kiểm tra chất lượng xuất xưởng; Hóa đơn điện tử; Lệ phí trước bạ). Phiếu kiểm tra chất lượng xuất xưởng (có dán bản chà số máy, số khung có đóng dấu giáp lai của cơ sở sản xuất).",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_c_p_bi_n_s_xe_l_n_u_th_c_hi_n_t_i_c_ng_an_c_p_x_c_ph_n_c_p_ng_k_xe": {
+      "name": "Đăng ký, cấp biển số xe lần đầu thực hiện tại Công an cấp xã được phân cấp đăng ký xe",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_khai_ng_k_xe_m_u_kx10_ban_h_nh_k_m_theo_th_ng_t_s_79_2024_tt_bca_ng_y_15_11_2024_c_a_b_tr_ng_b_c_ng_an_": {
+      "name": "Giấy khai đăng ký xe (mẫu ĐKX10 ban hành kèm theo Thông tư số 79/2024/TT-BCA ngày 15/11/2024 của Bộ trưởng Bộ Công an).",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_t_c_a_ch_xe_theo_quy_nh_": {
+      "name": "Giấy tờ của chủ xe theo quy định;",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_t_c_a_xe_ch_ng_nh_n_ngu_n_g_c_xe_ch_ng_nh_n_quy_n_s_h_u_h_p_ph_p_ch_ng_t_ho_n_th_nh_ngh_a_v_t_i_ch_nh_": {
+      "name": "Giấy tờ của xe: Chứng nhận nguồn gốc xe; Chứng nhận quyền sở hữu hợp pháp; Chứng từ hoàn thành nghĩa vụ tài chính.",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_sang_t_n_di_chuy_n_xe_th_c_hi_n_t_i_c_ng_an_c_p_x_c_ph_n_c_p_ng_k_xe": {
+      "name": "Đăng ký sang tên, di chuyển xe thực hiện tại Công an cấp xã được phân cấp đăng ký xe",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "th_t_c_thu_h_i": {
+      "name": "Thủ tục thu hồi",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "th_t_c_ng_k_": {
+      "name": "Thủ tục đăng ký",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "h_s_thu_h_i": {
+      "name": "Hồ sơ thu hồi",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "h_s_ng_k_": {
+      "name": "Hồ sơ đăng ký",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "c_p_i_ch_ng_nh_n_ng_k_xe_bi_n_s_xe_th_c_hi_n_t_i_c_ng_an_c_p_x_c_ph_n_c_p_ng_k_xe": {
+      "name": "Cấp đổi chứng nhận đăng ký xe, biển số xe thực hiện tại Công an cấp xã được phân cấp đăng ký xe",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "c_p_l_i_ch_ng_nh_n_ng_k_xe_bi_n_s_xe_th_c_hi_n_t_i_c_ng_an_x_c_ph_n_c_p_ng_k_xe": {
+      "name": "Cấp lại chứng nhận đăng ký xe, biển số xe thực hiện tại Công an xã được phân cấp đăng ký xe",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "th_c_hi_n_b_ng_d_ch_v_c_ng_tr_c_tuy_n_to_n_tr_nh": {
+      "name": "Thực hiện bằng dịch vụ công trực tuyến toàn trình",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "th_c_hi_n_b_ng_d_ch_v_c_ng_tr_c_tuy_n_m_t_ph_n": {
+      "name": "Thực hiện bằng dịch vụ công trực tuyến một phần",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "gi_y_t_c_a_ch_xe_s_d_ng_t_i_kho_n_nh_danh_m_c_2_": {
+      "name": "Giấy tờ của chủ xe (sử dụng tài khoản định danh mức độ 2);",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "_ng_k_xe_t_m_th_i_th_c_hi_n_t_i_c_ng_an_c_p_x_c_ph_n_c_p_ng_k_xe": {
+      "name": "Đăng ký xe tạm thời thực hiện tại Công an cấp xã được phân cấp đăng ký xe",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "c_p_m_i_gi_y_ch_ng_nh_n_i_u_ki_n_v_an_ninh_tr_t_t_": {
+      "name": "Cấp mới Giấy chứng nhận đủ điều kiện về an ninh, trật tự",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "000_": {
+      "name": "000đ",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "c_p_l_i_gi_y_ch_ng_nh_n_i_u_ki_n_v_an_ninh_tr_t_t_": {
+      "name": "Cấp lại Giấy chứng nhận đủ điều kiện về an ninh, trật tự",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
+    },
+    "c_p_i_gi_y_ch_ng_nh_n_i_u_ki_n_v_an_ninh_tr_t_t_": {
+      "name": "Cấp đổi Giấy chứng nhận đủ điều kiện về an ninh, trật tự",
+      "keywords": [],
+      "dia_diem": "",
+      "ho_so": [],
+      "thoi_han": "",
+      "le_phi": ""
     }
-  ]
+  }
 }
