@@ -3,5 +3,19 @@
   "address1": "Cơ sở 1: số 130 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
   "address2": "Cơ sở 2: số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
   "fanpage": "https://www.facebook.com/profile.php?id=61579934543320",
-  "oa_name": "Công an phường Phù Liễn, TP Hải Phòng"
+  "oa_name": "Công an phường Phù Liễn, TP Hải Phòng",
+  "knowledge": [
+    {
+      "question": "Cấp tài khoản định danh điện tử mức 2",
+      "answer": "Công dân mang CCCD gắn chip đến Công an phường Phù Liễn để được hướng dẫn đăng ký tài khoản định danh điện tử mức độ 2."
+    },
+    {
+      "question": "Đăng ký thường trú",
+      "answer": "Người dân có thể nộp hồ sơ trực tuyến trên Cổng Dịch vụ công hoặc trực tiếp tại Công an phường Phù Liễn."
+    },
+    {
+      "question": "Xác nhận cư trú",
+      "answer": "Người dân có thể đề nghị cấp Giấy xác nhận thông tin cư trú theo quy định hiện hành."
+    }
+  ]
 }
