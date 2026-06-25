@@ -1,26 +1,24 @@
 from flask import Flask, request, jsonify
+from flask_cors import CORS
 import requests
 import os
 import json
 import google.generativeai as genai
 
 app = Flask(__name__)
+CORS(app)
 
 # ==========================================
-# API KEY VÀ TOKEN
+# API KEY
 # ==========================================
-# Khai báo trên Render -> Environment Variables
 ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-print("GEMINI KEY:", GEMINI_API_KEY[:10] if GEMINI_API_KEY else "KHONG CO")
-# ==========================================
-# KHỞI TẠO GEMINI
-# ==========================================
+
 genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ==========================================
-# ĐỌC DỮ LIỆU NGHIỆP VỤ
+# ĐỌC DỮ LIỆU
 # ==========================================
 with open("knowledge.json", "r", encoding="utf-8") as f:
     DATA = json.load(f)
@@ -32,24 +30,24 @@ ADDRESS2 = DATA.get("address2", "")
 FANPAGE = DATA.get("fanpage", "")
 OA_NAME = DATA.get("oa_name", "Công an phường Phù Liễn")
 
+
 # ==========================================
-# TÌM KIẾM DỮ LIỆU
+# TÌM KIẾM TRI THỨC
 # ==========================================
 def search_knowledge(question):
     question = question.lower()
 
-    if "điện thoại" in question or "số điện thoại" in question:
+    if "điện thoại" in question:
         return f"Số điện thoại của {OA_NAME}: {PHONE}"
 
     if "địa chỉ" in question:
         return f"{ADDRESS1}\n{ADDRESS2}"
 
-    if "fanpage" in question or "facebook" in question:
-        return f"Fanpage của {OA_NAME}:\n{FANPAGE}"
+    if "fanpage" in question:
+        return FANPAGE
 
     for item in KNOWLEDGE:
         q = item.get("question", "").lower()
-
         if q and q in question:
             return item.get("answer")
 
@@ -57,29 +55,29 @@ def search_knowledge(question):
 
 
 # ==========================================
-# GỌI GEMINI
+# GEMINI
 # ==========================================
-def ask_gemini(user_question):
-    data = search_knowledge(user_question)
+def ask_gemini(question):
+    data = search_knowledge(question)
 
     if data is None:
         return (
-            "Xin lỗi, tôi chỉ hỗ trợ giải đáp các thủ tục hành chính, "
-            "Đề án 06, cư trú, căn cước, định danh điện tử và các nội dung "
-            "tuyên truyền của Công an phường Phù Liễn."
+            "Xin lỗi, tôi hiện chỉ hỗ trợ giải đáp thủ tục hành chính, "
+            "Đề án 06, cư trú, căn cước và các nội dung tuyên truyền của "
+            "Công an phường Phù Liễn."
         )
 
     prompt = f"""
-Bạn là trợ lý ảo của Công an phường Phù Liễn, TP Hải Phòng.
+Bạn là trợ lý ảo của Công an phường Phù Liễn.
 
-Chỉ được trả lời dựa trên thông tin sau:
+Thông tin:
 
 {data}
 
-Hãy trả lời ngắn gọn, lịch sự và chính xác.
+Hãy trả lời ngắn gọn, lịch sự.
 
 Câu hỏi:
-{user_question}
+{question}
 """
 
     response = model.generate_content(prompt)
@@ -87,7 +85,41 @@ Câu hỏi:
 
 
 # ==========================================
-# GỬI TIN NHẮN VỀ ZALO OA
+# TRANG CHỦ
+# ==========================================
+@app.route("/")
+def home():
+    return "Bot Công an phường Phù Liễn đang hoạt động!"
+
+
+# ==========================================
+# HEALTH
+# ==========================================
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok"
+    })
+
+
+# ==========================================
+# API CHAT CHO MINI APP
+# ==========================================
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json()
+
+    question = data.get("question", "")
+
+    answer = ask_gemini(question)
+
+    return jsonify({
+        "answer": answer
+    })
+
+
+# ==========================================
+# GỬI TIN NHẮN ZALO OA
 # ==========================================
 def send_message(user_id, message):
     url = "https://openapi.zalo.me/v3.0/oa/message"
@@ -106,90 +138,30 @@ def send_message(user_id, message):
         }
     }
 
-    print("URL:", url)
-    print("PAYLOAD:", payload)
-
-    r = requests.post(
+    requests.post(
         url,
         headers=headers,
         json=payload,
         timeout=30
     )
 
-    print("STATUS:", r.status_code)
-    print("ZALO RESPONSE:", r.text)
 
 # ==========================================
-# TRANG CHỦ
-# ==========================================
-@app.route("/")
-def home():
-    return "Bot Công an phường Phù Liễn đang hoạt động!"
-
-
-# ==========================================
-# KIỂM TRA TRẠNG THÁI
-# ==========================================
-@app.route("/health")
-def health():
-    return jsonify({
-        "status": "ok"
-    })
-
-
-# ==========================================
-# XÁC THỰC DOMAIN ZALO
-# ==========================================
-@app.route("/zalo_verifierOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
-def zalo_verify():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-<meta property="zalo-platform-site-verification"
-content="OSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu" />
-</head>
-<body>
-There Is No Limit To What You Can Accomplish Using Zalo!
-</body>
-</html>
-"""
-# ==========================================
-# API CHAT CHO MINI APP
-# ==========================================
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-
-    data = request.json
-    question = data.get("question", "")
-
-    answer = ask_gemini(question)
-
-    return jsonify({
-        "answer": answer
-    })
-
-# ==========================================
-# WEBHOOK NHẬN TIN NHẮN TỪ ZALO
+# WEBHOOK
 # ==========================================
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
 
     if request.method == "GET":
-        return "Webhook OK", 200
+        return "Webhook OK"
 
     data = request.json
 
-    print("===== ZALO EVENT =====")
-    print(data)
-
     try:
-        if data and data.get("event_name") == "user_send_text":
+        if data.get("event_name") == "user_send_text":
 
             user_id = data["sender"]["id"]
             text = data["message"]["text"]
-
-            print("USER:", text)
 
             answer = ask_gemini(text)
 
@@ -199,7 +171,7 @@ def webhook():
             )
 
     except Exception as e:
-        print("ERROR:", str(e))
+        print(e)
 
     return jsonify({
         "success": True
@@ -207,7 +179,7 @@ def webhook():
 
 
 # ==========================================
-# CHẠY FLASK
+# RUN
 # ==========================================
 if __name__ == "__main__":
     app.run(
