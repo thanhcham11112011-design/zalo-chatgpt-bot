@@ -12,7 +12,7 @@ app = Flask(__name__)
 # Khai báo trên Render -> Environment Variables
 ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
+print("GEMINI KEY:", GEMINI_API_KEY[:10] if GEMINI_API_KEY else "KHONG CO")
 # ==========================================
 # KHỞI TẠO GEMINI
 # ==========================================
