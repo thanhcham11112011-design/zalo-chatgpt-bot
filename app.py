@@ -91,7 +91,7 @@ Câu hỏi:
 # ==========================================
 def send_message(user_id, message):
 
-    url = "https://openapi.zalo.me/v3.0/oa/message/cs"
+    url = "https://openapi.zalo.me/v3.0/oa/message"
 
     headers = {
         "access_token": ZALO_ACCESS_TOKEN,
