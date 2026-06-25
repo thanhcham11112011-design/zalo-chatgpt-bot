@@ -1,9 +1,9 @@
 {
   "oa_name": "Công an phường Phù Liễn - TP Hải Phòng",
   "greeting": "Tôi là trợ lý ảo của Công an phường Phù Liễn, hỗ trợ thủ tục hành chính và giải đáp thông tin cho người dân.",
-  "address1": "Số 130 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
-  "address2": "Số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng",
-  "phone": "",
+  "address1": "Số 130 đường Quy Tức, phường Phù Liễn, TP Hải Phòng (Trung tâm chỉ huy, tiếp nhận phản ánh kiến nghị, tố giác tội phạm, đăng ký tuyển sinh)",
+  "address2": "Số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng (Bộ phân tiếp dân giải quyết các thủ tục hành chính)",
+  "phone": "02253876018",
   "services": {
     "c_p_l_i_th_c_n_c_c": {
       "name": "Cấp lại thẻ căn cước",
@@ -14,7 +14,7 @@
         "làm cccd",
         "làm căn cước"
       ],
-      "dia_diem": "Cơ quan Công an có thẩm quyền cấp căn cước theo quy định.",
+      "dia_diem": "Công an phường Kiến An - số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -30,7 +30,7 @@
         "làm cccd",
         "làm căn cước"
       ],
-      "dia_diem": "Cơ quan Công an có thẩm quyền cấp căn cước theo quy định.",
+      "dia_diem": "Công an phường Kiến An - số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng..",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -46,7 +46,7 @@
         "làm cccd",
         "làm căn cước"
       ],
-      "dia_diem": "Cơ quan Công an có thẩm quyền cấp căn cước theo quy định.",
+      "dia_diem": "Công an phường Kiến An - số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -62,7 +62,7 @@
         "làm cccd",
         "làm căn cước"
       ],
-      "dia_diem": "Cơ quan Công an có thẩm quyền cấp căn cước theo quy định.",
+      "dia_diem": "Công an phường Kiến An - số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng..",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -170,7 +170,7 @@
       "keywords": [
         "tách hộ"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -221,7 +221,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -235,7 +235,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -249,7 +249,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -263,7 +263,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -277,7 +277,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -291,7 +291,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -305,7 +305,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -319,7 +319,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -333,7 +333,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -347,7 +347,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -361,7 +361,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -375,7 +375,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -387,7 +387,7 @@
       "keywords": [
         "thủ tục thu hồi"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -399,7 +399,7 @@
       "keywords": [
         "thủ tục đăng ký"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -411,7 +411,7 @@
       "keywords": [
         "hồ sơ thu hồi"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -423,7 +423,7 @@
       "keywords": [
         "hồ sơ đăng ký"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -437,7 +437,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -451,7 +451,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -463,7 +463,7 @@
       "keywords": [
         "thực hiện bằng dịch vụ công trực tuyến toàn trình"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -475,7 +475,7 @@
       "keywords": [
         "thực hiện bằng dịch vụ công trực tuyến một phần"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -489,7 +489,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -503,7 +503,7 @@
         "sang tên xe",
         "đăng ký xe"
       ],
-      "dia_diem": "Cơ quan đăng ký xe có thẩm quyền theo phân cấp.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -516,7 +516,7 @@
         "an ninh trật tự",
         "giấy chứng nhận an ninh trật tự"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -528,7 +528,7 @@
       "keywords": [
         "000đ"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -541,7 +541,7 @@
         "an ninh trật tự",
         "giấy chứng nhận an ninh trật tự"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
@@ -554,7 +554,7 @@
         "an ninh trật tự",
         "giấy chứng nhận an ninh trật tự"
       ],
-      "dia_diem": "Liên hệ Công an phường Phù Liễn để được hướng dẫn.",
+      "dia_diem": "Công an phường Phù Liễn, số 169 đường Quy Tức, TP Hải Phòng.",
       "ho_so": [],
       "thoi_han": "",
       "le_phi": "",
