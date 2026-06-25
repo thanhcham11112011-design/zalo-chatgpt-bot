@@ -154,7 +154,20 @@ There Is No Limit To What You Can Accomplish Using Zalo!
 </body>
 </html>
 """
+# ==========================================
+# API CHAT CHO MINI APP
+# ==========================================
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
 
+    data = request.json
+    question = data.get("question", "")
+
+    answer = ask_gemini(question)
+
+    return jsonify({
+        "answer": answer
+    })
 
 # ==========================================
 # WEBHOOK NHẬN TIN NHẮN TỪ ZALO
