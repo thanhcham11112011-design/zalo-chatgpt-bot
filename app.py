@@ -197,6 +197,19 @@ def webhook():
         "success": True
     })
 
+@app.route("/zalo_verifyOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
+def zalo_verify():
+    return 
+<!DOCTYPE html>
+<html>
+<head>
+<meta property="zalo-platform-site-verification"
+content="OSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu" />
+</head>
+<body>
+There Is No Limit To What You Can Accomplish Using Zalo!
+</body>
+</html>
 
 # ==========================================
 # CHẠY FLASK
