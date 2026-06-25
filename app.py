@@ -139,7 +139,7 @@ def health():
 # ==========================================
 # XÁC THỰC DOMAIN ZALO
 # ==========================================
-@app.route("/zalo_verifyOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
+@app.route("/zalo_verifierOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
 def zalo_verify():
     return """
 <!DOCTYPE html>
