@@ -6,11 +6,11 @@
   "oa_name": "Công an phường Phù Liễn, TP Hải Phòng",
    "knowledge": [
     {
-      "question": "làm căn cước",
+      "question": "làm căn cước, cccd, căn cước",
       "answer": "Người dân mang CCCD cũ hoặc giấy tờ tùy thân đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn cấp, đổi hoặc cấp lại căn cước."
     },
     {
-      "question": "định danh điện tử",
+      "question": "định danh điện tử, VneID",
       "answer": "Người dân mang căn cước công dân đến Công an phường Phù Liễn Cơ sở 2 tại địa chỉ số 169 đường Quy Tức, phường Phù Liễn, TP Hải Phòng để đăng ký tài khoản định danh điện tử mức 2."
     },
     {
@@ -35,7 +35,7 @@
     },
     {
       "question": "mất căn cước",
-      "answer": "Khi bị mất căn cước, người dân cần đến Công an phường để được hướng dẫn cấp lại theo quy định."
+      "answer": "Khi bị mất căn cước, người dân cần đến Công an phường Kiến An Địa chỉ tại số 109 đường Trần Thành Ngọ, phường Kiến An, TP Hải Phòng trong giờ hành chính để được hướng dẫn theo quy định."
     }
   ]
 }
