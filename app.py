@@ -199,7 +199,7 @@ def webhook():
 
 @app.route("/zalo_verifyOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
 def zalo_verify():
-    return 
+    return """
 <!DOCTYPE html>
 <html>
 <head>
@@ -210,6 +210,7 @@ content="OSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu" />
 There Is No Limit To What You Can Accomplish Using Zalo!
 </body>
 </html>
+"""
 
 # ==========================================
 # CHẠY FLASK
