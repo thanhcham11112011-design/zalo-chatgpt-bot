@@ -9,13 +9,9 @@ app = Flask(__name__)
 # ==========================================
 # API KEY VÀ TOKEN
 # ==========================================
-# Khuyến nghị dùng Environment Variables trên Render
-ZALO_ACCESS_TOKEN = os.getenv("7cqH2g13z0WUQ140f4Rz1XPi4mMiNRa7KH8DTub_YmzNBs5TbGZLM6aYIX24LDz8P3XAEwDF-dbyEb0AaNBL2duhHG-yRlHAL2aRG-Tcb3q02NaqyMRyN28MKY_CGkLz0HXuUgT8o1CUEonmhLEw95LyKt2x4FOMQ7LQ7wWBqLrw94WdXNxw9bm77sAKKvCsQmqQGzbpenOuGHbrsYwt4pfvE6pZ4Bu_FMasOkuNkJOIIojM_3MQBXbGDrxP9CO1O0rESfjM_mz-Vt9jcnND6L5pNrwH2-mTMLv2IkiFyqm4UsaDx5F2251XLdQFBCvqPLH7FTmIoa9cMMuLiXE3QMXlCXofFvH6J7418OaqhMTGG1HZeXAGD7ju54gV5e0pPqyaPAuNcJ8SQtDnuIIM9WOD1YNwS9niI6AB7zmneLp-3W")
-GEMINI_API_KEY = os.getenv("AQ.Ab8RN6LzJLVxj7cXzg9zdiLHbfqq2437NaXPnUyEd-TtMBlkbQ")
-
-# Nếu muốn ghi cứng thì bỏ comment:
-# ZALO_ACCESS_TOKEN = "7cqH2g13z0WUQ140f4Rz1XPi4mMiNRa7KH8DTub_YmzNBs5TbGZLM6aYIX24LDz8P3XAEwDF-dbyEb0AaNBL2duhHG-yRlHAL2aRG-Tcb3q02NaqyMRyN28MKY_CGkLz0HXuUgT8o1CUEonmhLEw95LyKt2x4FOMQ7LQ7wWBqLrw94WdXNxw9bm77sAKKvCsQmqQGzbpenOuGHbrsYwt4pfvE6pZ4Bu_FMasOkuNkJOIIojM_3MQBXbGDrxP9CO1O0rESfjM_mz-Vt9jcnND6L5pNrwH2-mTMLv2IkiFyqm4UsaDx5F2251XLdQFBCvqPLH7FTmIoa9cMMuLiXE3QMXlCXofFvH6J7418OaqhMTGG1HZeXAGD7ju54gV5e0pPqyaPAuNcJ8SQtDnuIIM9WOD1YNwS9niI6AB7zmneLp-3W"
-# GEMINI_API_KEY = "AQ.Ab8RN6LzJLVxj7cXzg9zdiLHbfqq2437NaXPnUyEd-TtMBlkbQ"
+# Khai báo trên Render -> Environment Variables
+ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ==========================================
 # KHỞI TẠO GEMINI
@@ -37,7 +33,7 @@ FANPAGE = DATA.get("fanpage", "")
 OA_NAME = DATA.get("oa_name", "Công an phường Phù Liễn")
 
 # ==========================================
-# TÌM KIẾN DỮ LIỆU
+# TÌM KIẾM DỮ LIỆU
 # ==========================================
 def search_knowledge(question):
     question = question.lower()
@@ -94,6 +90,7 @@ Câu hỏi:
 # GỬI TIN NHẮN VỀ ZALO OA
 # ==========================================
 def send_message(user_id, message):
+
     url = "https://openapi.zalo.me/v3.0/oa/message/cs"
 
     headers = {
@@ -140,29 +137,26 @@ def health():
 
 
 # ==========================================
-# XÁC THỰC DOMAIN VỚI ZALO
+# XÁC THỰC DOMAIN ZALO
 # ==========================================
 @app.route("/zalo_verifyOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
 def zalo_verify():
     return """
 <!DOCTYPE html>
-<html lang="en">
-
+<html>
 <head>
-    <meta property="zalo-platform-site-verification"
-          content="OSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu" />
+<meta property="zalo-platform-site-verification"
+content="OSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu" />
 </head>
-
 <body>
 There Is No Limit To What You Can Accomplish Using Zalo!
 </body>
-
 </html>
 """
 
 
 # ==========================================
-# WEBHOOK NHẬN TIN NHẮN ZALO
+# WEBHOOK NHẬN TIN NHẮN TỪ ZALO
 # ==========================================
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
@@ -176,7 +170,7 @@ def webhook():
     print(data)
 
     try:
-        if data.get("event_name") == "user_send_text":
+        if data and data.get("event_name") == "user_send_text":
 
             user_id = data["sender"]["id"]
             text = data["message"]["text"]
@@ -197,21 +191,7 @@ def webhook():
         "success": True
     })
 
-@app.route("/zalo_verifyOSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu.html")
-def zalo_verify():
-    return """
-<!DOCTYPE html>
-<html>
-<head>
-<meta property="zalo-platform-site-verification"
-content="OSUoEQBmFXWfpPuEziTELNNX_6oPboOoDJWu" />
-</head>
-<body>
-There Is No Limit To What You Can Accomplish Using Zalo!
-</body>
-</html>
-"""
-    
+
 # ==========================================
 # CHẠY FLASK
 # ==========================================
