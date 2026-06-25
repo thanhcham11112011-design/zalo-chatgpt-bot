@@ -176,6 +176,74 @@ def webhook():
     return jsonify({
         "success": True
     })
+# ==========================================
+# CHÍNH SÁCH BẢO MẬT
+# ==========================================
+@app.route("/privacy")
+def privacy():
+    return """
+    <html>
+    <head>
+        <title>Chính sách bảo mật</title>
+        <meta charset="utf-8">
+    </head>
+    <body style="font-family:Arial;padding:30px;">
+        <h2>CHÍNH SÁCH BẢO MẬT</h2>
+
+        <p>
+        Cổng dịch vụ điện tử Công an phường Phù Liễn cam kết bảo vệ thông tin cá nhân của người sử dụng.
+        </p>
+
+        <p>Thông tin được sử dụng nhằm:</p>
+
+        <ul>
+            <li>Hỗ trợ giải quyết thủ tục hành chính.</li>
+            <li>Tư vấn, giải đáp cho người dân.</li>
+            <li>Tiếp nhận phản ánh, kiến nghị.</li>
+            <li>Đặt lịch làm việc với Công an phường.</li>
+        </ul>
+
+        <p>
+        Chúng tôi không chia sẻ thông tin cá nhân cho bên thứ ba,
+        trừ trường hợp theo quy định của pháp luật.
+        </p>
+    </body>
+    </html>
+    """
+
+
+# ==========================================
+# ĐIỀU KHOẢN SỬ DỤNG
+# ==========================================
+@app.route("/terms")
+def terms():
+    return """
+    <html>
+    <head>
+        <title>Điều khoản sử dụng</title>
+        <meta charset="utf-8">
+    </head>
+    <body style="font-family:Arial;padding:30px;">
+        <h2>ĐIỀU KHOẢN SỬ DỤNG</h2>
+
+        <p>
+        Mini App Cổng dịch vụ điện tử Công an phường Phù Liễn được xây dựng nhằm hỗ trợ người dân tiếp cận thông tin và thực hiện các dịch vụ công.
+        </p>
+
+        <p>Người sử dụng cam kết:</p>
+
+        <ul>
+            <li>Cung cấp thông tin trung thực.</li>
+            <li>Không sử dụng Mini App vào mục đích vi phạm pháp luật.</li>
+            <li>Không phát tán thông tin sai sự thật.</li>
+        </ul>
+
+        <p>
+        Công an phường Phù Liễn có quyền cập nhật nội dung Mini App khi cần thiết.
+        </p>
+    </body>
+    </html>
+    """
 
 
 # ==========================================
