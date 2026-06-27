@@ -1,4 +1,4 @@
-```python
+
 """
 =========================================================
 PROJECT : AI AGENT V1 - CÔNG AN PHƯỜNG PHÙ LIỄN
@@ -138,5 +138,139 @@ VERIFY_TOKEN = os.getenv(
     ""
 
 ).strip()
-```
 
+
+# =========================================================
+# HTTP
+# =========================================================
+
+REQUEST_TIMEOUT = int(
+
+    os.getenv(
+
+        "REQUEST_TIMEOUT",
+
+        "30"
+
+    )
+
+)
+
+MAX_RETRY = int(
+
+    os.getenv(
+
+        "MAX_RETRY",
+
+        "3"
+
+    )
+
+)
+
+# =========================================================
+# LOGGING
+# =========================================================
+
+LOG_LEVEL = os.getenv(
+
+    "LOG_LEVEL",
+
+    "INFO"
+
+).upper()
+
+LOG_FORMAT = (
+
+    "%(asctime)s | "
+
+    "%(levelname)s | "
+
+    "%(name)s | "
+
+    "%(message)s"
+
+)
+
+# =========================================================
+# CACHE
+# =========================================================
+
+CACHE_ENABLED = os.getenv(
+
+    "CACHE_ENABLED",
+
+    "True"
+
+).lower() == "true"
+
+CACHE_EXPIRE = int(
+
+    os.getenv(
+
+        "CACHE_EXPIRE",
+
+        "300"
+
+    )
+
+)
+
+# =========================================================
+# DEFAULT PROMPT
+# =========================================================
+
+DEFAULT_SYSTEM_PROMPT = """
+Bạn là AI Agent của Công an phường Phù Liễn.
+
+Ưu tiên:
+1. Tra cứu Google Apps Script API.
+2. Trả lời đúng dữ liệu trong Google Sheets.
+3. Nếu không có dữ liệu thì mới sử dụng Gemini.
+4. Không tự bịa thông tin.
+"""
+
+# =========================================================
+# ACTION
+# =========================================================
+
+ACTION_MENU = "GET_MENU"
+
+ACTION_FAQ = "GET_FAQ"
+
+ACTION_PROCEDURE = "GET_PROCEDURE"
+
+ACTION_CONTACT = "GET_CONTACT"
+
+ACTION_SAVE_CHAT = "SAVE_CHAT"
+
+# =========================================================
+# VALIDATE CONFIG
+# =========================================================
+
+def validate_config():
+
+    errors = []
+
+    if not GEMINI_API_KEY:
+        errors.append("Thiếu GEMINI_API_KEY")
+
+    if not APPS_SCRIPT_URL:
+        errors.append("Thiếu APPS_SCRIPT_URL")
+
+    if not ZALO_ACCESS_TOKEN:
+        errors.append("Thiếu ZALO_ACCESS_TOKEN")
+
+    return errors
+
+# =========================================================
+# STARTUP CHECK
+# =========================================================
+
+CONFIG_ERRORS = validate_config()
+
+CONFIG_OK = len(CONFIG_ERRORS) == 0
+
+# =========================================================
+# END OF FILE
+# =========================================================
