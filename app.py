@@ -19,16 +19,13 @@ genai.configure(api_key=GEMINI_API_KEY)
 model = genai.GenerativeModel("gemini-2.5-flash")
 
 # ==========================
-# LOAD DATA
+# LOAD GOOGLE SHEETS
 # ==========================
-with open("knowledge.json", "r", encoding="utf-8") as f:
-    DATA = json.load(f)
+from services.sheet_service import SheetService
 
-SERVICES = DATA.get("services", {})
-OA_NAME = DATA.get("oa_name", "Công an phường Phù Liễn")
-ADDRESS1 = DATA.get("address1", "")
-ADDRESS2 = DATA.get("address2", "")
-PHONE = DATA.get("phone", "")
+sheet = SheetService()
+
+sheet.load_all()
 
 # ==========================
 # MEMORY
