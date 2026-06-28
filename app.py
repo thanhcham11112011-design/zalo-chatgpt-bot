@@ -297,7 +297,17 @@ def answer_menu_number(user_id, question):
     if not sheet_name:
         return None
 
-    if sheet_name in ["THONGTIN", "TRA_CUU_LIEN_HE", "FAQ"]:
+    if sheet_name == "TRA_CUU_LIEN_HE":
+        return contact_service.start_contact_flow(
+            user_id=user_id,
+            user_states=user_states
+        )
+
+    if sheet_name == "THONGTIN":
+        rows = sheet_api.read_sheet(sheet_name)
+        return build_sheet_answer(question, rows[:3])
+
+    if sheet_name == "FAQ":
         rows = sheet_api.read_sheet(sheet_name)
         return build_sheet_answer(question, rows[:3])
 
