@@ -642,14 +642,42 @@ def webhook():
 
     data = request.get_json(silent=True) or {}
 
-    try:
-        event_name = data.get("event_name", "")
+try:
+    event_name = data.get("event_name", "")
 
-        if event_name != "user_send_text":
-            return jsonify({
-                "success": True,
-                "message": "Ignored event"
-            })
+    if event_name != "user_send_text":
+        return jsonify({
+            "success": True,
+            "message": "Ignored event"
+        })
+
+    message = data.get("message", {})
+
+    # Sticker / ảnh / file...
+    if "text" not in message:
+        user_id = data.get("sender", {}).get("id")
+
+        if user_id:
+            answer = answer_greeting("menu")
+
+            zalo_service.send_text(
+                user_id=user_id,
+                text=answer
+            )
+
+        return jsonify({
+            "success": True,
+            "message": "Menu sent"
+        })
+
+    # Các xử lý tiếp theo...
+    text = message.get("text", "")
+
+    ...
+    
+except Exception as e:
+    print("WEBHOOK ERROR:", e)
+    return jsonify({"error": str(e)}), 500
 
         message_id = (
             data.get("message", {}).get("msg_id")
