@@ -547,7 +547,7 @@ def build_answer(user_id, question):
             build_sheet_answer,
             set_user_state,
             lambda question: False,
-            build_search_options
+            lambda user_id, context_items: None
         )
 
     if not answer:
