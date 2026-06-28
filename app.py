@@ -75,7 +75,7 @@ def build_sheet_answer(question, context_items):
     noi_nop = item.get("NOI_NOP") or ""
     thoi_han = item.get("THOI_HAN") or ""
     le_phi = item.get("LE_PHI") or ""
-        link = item.get("LINK_DVC") or ""
+    link = item.get("LINK_DVC") or ""
 
     parts = []
 
