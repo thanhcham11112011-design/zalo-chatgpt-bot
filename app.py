@@ -259,7 +259,8 @@ def answer_sub_menu_number(user_id, question):
 
     if not state:
         return None
-
+    if state.get("level") not in ["procedure_list", "search_results"]:
+        return None
     sheet_name = state.get("sheet_name")
 
     if not sheet_name:
