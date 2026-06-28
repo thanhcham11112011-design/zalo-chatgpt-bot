@@ -184,12 +184,13 @@ def handle_contact_flow(user_id, question, sheet_api, user_states):
 
     level = state.get("level")
 
+    # ===== MENU TRA CỨU LIÊN HỆ =====
     if level == "contact_menu":
         department_key = get_contact_key_from_question(question)
 
         if not department_key:
             return (
-                "Nội dung nhập chưa phù hợp với danh sách tra cứu liên hệ. "
+                "Nội dung nhập chưa phù hợp với danh sách tra cứu liên hệ.\n\n"
                 "Quý công dân vui lòng nhập số thứ tự hoặc tên bộ phận cần liên hệ."
             )
 
@@ -208,21 +209,27 @@ def handle_contact_flow(user_id, question, sheet_api, user_states):
 
         return build_department_answer(sheet_api, department_key)
 
+    # ===== TRA CỨU CSKV =====
     if level == "contact_cskv":
         answer = find_cskv_by_area(sheet_api, question)
 
         if answer:
             user_states[user_id] = {
-                "level": "contact_done",
+                "level": "contact_cskv",
                 "department": "CSKV"
             }
 
-            return answer
+            return (
+                answer
+                + "\n\n💡 Quý công dân có thể tiếp tục nhập tên TDP hoặc khu dân cư khác để tra cứu Cảnh sát khu vực phụ trách."
+                + "\nHoặc nhập 'menu' để quay lại danh mục hỗ trợ."
+            )
 
         return (
-            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp. "
-            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-            "để quay lại danh mục hỗ trợ."
+            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp.\n\n"
+            "Quý công dân vui lòng nhập đúng tên TDP hoặc khu dân cư cần tra cứu "
+            "(ví dụ: Trần Phú, Gò Công 1, Nam Hải, Tổ 6...).\n"
+            "Hoặc nhập 'menu' để quay lại danh mục hỗ trợ."
         )
 
     return None
