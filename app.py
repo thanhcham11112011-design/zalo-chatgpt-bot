@@ -225,6 +225,58 @@ def build_procedure_list(sheet_name):
     "📌 Quý công dân muốn tìm hiểu hoặc thực hiện thủ tục nào, "
     "xin vui lòng nhắn đúng tên thủ tục theo danh sách trên để được hướng dẫn chi tiết."
 )
+def set_user_state(user_id, state):
+    user_states[user_id] = state
+
+
+def get_user_state(user_id):
+    return user_states.get(user_id)
+
+
+def clear_user_state(user_id):
+    if user_id in user_states:
+        del user_states[user_id]
+
+
+def build_procedure_detail(row):
+    return build_sheet_answer("", [row])
+
+
+def answer_sub_menu_number(user_id, question):
+    q = str(question or "").strip()
+
+    if not q.isdigit():
+        return None
+
+    state = get_user_state(user_id)
+
+    if not state:
+        return None
+
+    sheet_name = state.get("sheet_name")
+
+    if not sheet_name:
+        return None
+
+    rows = sheet_api.read_sheet(sheet_name)
+
+    index = int(q) - 1
+
+    if index < 0 or index >= len(rows):
+        return (
+            "Số thứ tự không hợp lệ. "
+            "Quý công dân vui lòng chọn đúng số trong danh sách thủ tục."
+        )
+
+    selected_row = rows[index]
+
+    set_user_state(user_id, {
+        "level": "procedure_detail",
+        "sheet_name": sheet_name,
+        "procedure": selected_row
+    })
+
+    return build_procedure_detail(selected_row)
 
 def answer_menu_number(user_id, question):
     q = str(question or "").strip()
