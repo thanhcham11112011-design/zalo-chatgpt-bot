@@ -312,10 +312,25 @@ def answer_context_question(user_id, question):
     if not procedure:
         return None
 
-    if any(k in q for k in ["ở đâu", "làm ở đâu", "nộp ở đâu", "địa điểm", "nơi nộp"]):
-        noi_nop = procedure.get("NOI_NOP") or ""
-        if noi_nop:
-            return f"📍 Nơi nộp hồ sơ:\n{noi_nop}"
+    if any(k in q for k in [
+    "ở đâu",
+    "làm ở đâu",
+    "thực hiện ở đâu",
+    "địa điểm",
+    "đến đâu làm",
+    "cơ quan nào",
+    "thực hiện tại đâu",
+    "nộp ở đâu",
+    "địa điểm thực hiện"
+]):
+    co_quan = procedure.get("CO_QUAN_THUC_HIEN") or ""
+
+    if co_quan:
+        return f"📍 Cơ quan thực hiện:\n{co_quan}"
+
+    return (
+        "Hiện hệ thống chưa cập nhật thông tin cơ quan thực hiện của thủ tục này."
+    )
 
     if any(k in q for k in ["hồ sơ", "giấy tờ", "cần gì", "chuẩn bị gì"]):
         ho_so = procedure.get("HO_SO") or ""
