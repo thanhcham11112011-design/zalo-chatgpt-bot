@@ -380,13 +380,16 @@ def answer_context_question(user_id, question):
 
         return "Hiện hệ thống chưa cập nhật thông tin cơ quan thực hiện của thủ tục này."
 
-    # ===== HỒ SƠ =====
+   # ===== HỒ SƠ / GIẤY TỜ =====
     if any(k in q for k in [
         "hồ sơ",
         "giấy tờ",
         "cần gì",
+        "cần giấy",
+        "có cần",
         "chuẩn bị gì",
-        "mang gì"
+        "mang gì",
+        "giấy khai sinh"
     ]):
         ho_so = procedure.get("HO_SO") or ""
 
@@ -485,12 +488,13 @@ def answer_context_question(user_id, question):
 
     return None
 
-def build_answer(user_id, question):
+ddef build_answer(user_id, question):
     greeting_answer = answer_greeting(question)
 
     if greeting_answer:
         clear_user_state(user_id)
         answer = greeting_answer
+
     else:
         context_answer = answer_context_question(
             user_id,
@@ -499,6 +503,7 @@ def build_answer(user_id, question):
 
         if context_answer:
             answer = context_answer
+
         else:
             sub_menu_answer = answer_sub_menu_number(
                 user_id,
@@ -507,6 +512,7 @@ def build_answer(user_id, question):
 
             if sub_menu_answer:
                 answer = sub_menu_answer
+
             else:
                 menu_number_answer = answer_menu_number(
                     user_id,
@@ -515,6 +521,7 @@ def build_answer(user_id, question):
 
                 if menu_number_answer:
                     answer = menu_number_answer
+
                 else:
                     context_items = sheet_api.search(
                         question,
@@ -535,6 +542,7 @@ def build_answer(user_id, question):
                             })
 
                         answer = sheet_answer
+
                     else:
                         try:
                             history_text = get_history_text(user_id)
