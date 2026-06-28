@@ -108,9 +108,9 @@ def build_sheet_answer(question, context_items):
     if source_sheet == "THU_TUC_VNEID":
         if video_hd:
             parts.append(f"🎥 Video hướng dẫn:\n{video_hd}")
-else:
-    if link:
-        parts.append(f"🔗 Link dịch vụ công:\n{link}")
+    else:
+        if link:
+            parts.append(f"🔗 Link dịch vụ công:\n{link}")
 
     if not parts:
         return None
