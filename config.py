@@ -45,11 +45,7 @@ ZALO_ACCESS_TOKEN = os.getenv(
     ""
 )
 
-ZALO_API_URL = (
-    "ZALO_API_URL = (
-    "https://openapi.zalo.me/v2.0/oa/message"
-)"
-)
+
 
 # ==========================
 # FLASK
