@@ -364,58 +364,6 @@ def build_answer(user_id, question):
     return answer
 
     
-def build_answer(user_id, question):
-    greeting_answer = answer_greeting(question)
-
-    if greeting_answer:
-        answer = greeting_answer
-    else:
-        menu_number_answer = answer_menu_number(user_id, question)
-
-        if menu_number_answer:
-            answer = menu_number_answer
-        else:
-            context_items = sheet_api.search(
-                question,
-                limit=5
-            )
-
-            sheet_answer = build_sheet_answer(
-                question,
-                context_items
-            )
-
-            if sheet_answer:
-                answer = sheet_answer
-            else:
-                try:
-                    history_text = get_history_text(user_id)
-
-                    answer = gemini_service.ask(
-                        question=question,
-                        context_items=context_items,
-                        history_text=history_text
-                    )
-
-                except Exception as e:
-                    print("GEMINI FALLBACK ERROR:", e)
-
-                    answer = (
-                        "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
-                        "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi, ví dụ: "
-                        "'cấp căn cước', 'đăng ký tạm trú', 'đăng ký thường trú', "
-                        "'VNeID mức 2', hoặc liên hệ Công an phường Phù Liễn để được hỗ trợ."
-                    )
-
-    sheet_api.append_chat_history(
-        user_id=user_id,
-        user_message=question,
-        bot_reply=answer
-    )
-
-    return answer
-
-
 @app.route("/")
 def home():
     return jsonify({
