@@ -5,7 +5,6 @@ from config import (
     MAX_REPLY_LENGTH,
 )
 
-
 ZALO_API_URL = "https://openapi.zalo.me/v2.0/oa/message"
 
 
@@ -13,22 +12,12 @@ class ZaloService:
     def __init__(self):
         self.access_token = ZALO_ACCESS_TOKEN
 
-        if not self.access_token:
-            print("ZALO WARNING: Thiếu ZALO_ACCESS_TOKEN")
-
     def send_text(self, user_id, text):
         if not self.access_token:
-            print("ZALO ERROR: Thiếu access token")
+            print("ZALO ERROR: Thiếu ZALO_ACCESS_TOKEN")
             return False
 
-        if not user_id:
-            print("ZALO ERROR: Thiếu user_id")
-            return False
-
-        if not text:
-            text = "Xin lỗi, hệ thống chưa có nội dung phản hồi."
-
-        text = str(text)
+        text = str(text or "Xin lỗi, hệ thống chưa có nội dung phản hồi.")
 
         if len(text) > MAX_REPLY_LENGTH:
             text = text[:MAX_REPLY_LENGTH]
@@ -58,15 +47,7 @@ class ZaloService:
             print("ZALO STATUS:", response.status_code)
             print("ZALO RESPONSE:", response.text)
 
-            if response.status_code == 200:
-                data = response.json()
-
-                if data.get("error", 0) == 0:
-                    return True
-
-                return False
-
-            return False
+            return response.status_code == 200
 
         except Exception as e:
             print("ZALO SEND ERROR:", e)
