@@ -179,8 +179,7 @@ def answer_greeting(question):
             "5. Ngành nghề đầu tư kinh doanh có điều kiện về ANTT\n"
             "6. Phòng cháy chữa cháy\n"
             "7. Vũ khí - Vật liệu nổ - Công cụ hỗ trợ\n"
-            "8. Thông tin đơn vị\n"
-            "9. Tra cứu liên hệ"
+            "8. Tra cứu liên hệ\n"
         )
 
     return (
