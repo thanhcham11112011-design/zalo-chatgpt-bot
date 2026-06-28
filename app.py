@@ -333,7 +333,7 @@ def answer_context_question(user_id, question):
 
     menu_row = get_menu_row_by_sheet(sheet_name)
 
-    # ===== Hỏi vị trí =====
+    # ===== VỊ TRÍ / GOOGLE MAP =====
     if any(k in q for k in [
         "vị trí",
         "vi tri",
@@ -344,7 +344,6 @@ def answer_context_question(user_id, question):
         "đường đi",
         "duong di"
     ]):
-
         google_map = ""
 
         if menu_row:
@@ -359,8 +358,9 @@ def answer_context_question(user_id, question):
         if google_map:
             return f"🗺️ Vị trí trên Google Maps:\n{google_map}"
 
-        return "Hiện hệ thống chưa cập nhật Google Maps."
+        return "Hiện hệ thống chưa cập nhật Google Maps cho nội dung này."
 
+    # ===== CƠ QUAN THỰC HIỆN =====
     if any(k in q for k in [
         "ở đâu",
         "làm ở đâu",
@@ -380,6 +380,7 @@ def answer_context_question(user_id, question):
 
         return "Hiện hệ thống chưa cập nhật thông tin cơ quan thực hiện của thủ tục này."
 
+    # ===== HỒ SƠ =====
     if any(k in q for k in [
         "hồ sơ",
         "giấy tờ",
@@ -394,6 +395,22 @@ def answer_context_question(user_id, question):
 
         return "Hiện hệ thống chưa cập nhật thông tin hồ sơ của thủ tục này."
 
+    # ===== TRÌNH TỰ =====
+    if any(k in q for k in [
+        "trình tự",
+        "các bước",
+        "làm thế nào",
+        "thực hiện thế nào",
+        "quy trình"
+    ]):
+        trinh_tu = procedure.get("TRINH_TU") or ""
+
+        if trinh_tu:
+            return f"📝 Trình tự thực hiện:\n{trinh_tu}"
+
+        return "Hiện hệ thống chưa cập nhật trình tự thực hiện của thủ tục này."
+
+    # ===== THỜI HẠN =====
     if any(k in q for k in [
         "bao lâu",
         "thời hạn",
@@ -408,6 +425,7 @@ def answer_context_question(user_id, question):
 
         return "Hiện hệ thống chưa cập nhật thời hạn giải quyết của thủ tục này."
 
+    # ===== LỆ PHÍ =====
     if any(k in q for k in [
         "lệ phí",
         "phí",
@@ -422,6 +440,7 @@ def answer_context_question(user_id, question):
 
         return "Hiện hệ thống chưa cập nhật thông tin lệ phí của thủ tục này."
 
+    # ===== DỊCH VỤ CÔNG / ONLINE =====
     if any(k in q for k in [
         "online",
         "trực tuyến",
@@ -437,20 +456,7 @@ def answer_context_question(user_id, question):
 
         return "Hiện hệ thống chưa cập nhật link dịch vụ công của thủ tục này."
 
-    if any(k in q for k in [
-        "trình tự",
-        "các bước",
-        "làm thế nào",
-        "thực hiện thế nào",
-        "quy trình"
-    ]):
-        trinh_tu = procedure.get("TRINH_TU") or ""
-
-        if trinh_tu:
-            return f"📝 Trình tự thực hiện:\n{trinh_tu}"
-
-        return "Hiện hệ thống chưa cập nhật trình tự thực hiện của thủ tục này."
-
+    # ===== ĐIỀU KIỆN =====
     if any(k in q for k in [
         "điều kiện",
         "đủ điều kiện",
@@ -463,6 +469,19 @@ def answer_context_question(user_id, question):
             return f"✅ Điều kiện thực hiện:\n{dieu_kien}"
 
         return "Hiện hệ thống chưa cập nhật điều kiện thực hiện của thủ tục này."
+
+    # ===== KẾT QUẢ =====
+    if any(k in q for k in [
+        "kết quả",
+        "nhận gì",
+        "được gì"
+    ]):
+        ket_qua = procedure.get("KET_QUA") or ""
+
+        if ket_qua:
+            return f"📌 Kết quả thực hiện:\n{ket_qua}"
+
+        return "Hiện hệ thống chưa cập nhật kết quả thực hiện của thủ tục này."
 
     return None
 
