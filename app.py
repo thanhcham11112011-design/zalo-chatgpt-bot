@@ -634,103 +634,68 @@ def test_ai():
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
+
     if request.method == "GET":
-        return jsonify({
-            "status": "ok",
-            "message": "Webhook OK"
-        })
+        ...
 
     data = request.get_json(silent=True) or {}
 
-try:
-    event_name = data.get("event_name", "")
+    try:
 
-    if event_name != "user_send_text":
-        return jsonify({
-            "success": True,
-            "message": "Ignored event"
-        })
+        # ===== 1. Kiểm tra event =====
+        event_name = data.get("event_name", "")
 
-    message = data.get("message", {})
+        if event_name != "user_send_text":
+            return jsonify({
+                "success": True,
+                "message": "Ignored event"
+            })
 
-    # Sticker / ảnh / file...
-    if "text" not in message:
-        user_id = data.get("sender", {}).get("id")
+        # ===== 2. Lấy message object =====
+        message_data = data.get("message", {})
 
-        if user_id:
-            answer = answer_greeting("menu")
+        # ===== 3. Nếu không phải text =====
+        if "text" not in message_data:
 
-            zalo_service.send_text(
-                user_id=user_id,
-                text=answer
+            user_id = (
+                data.get("sender", {})
+                .get("id", "")
             )
 
-        return jsonify({
-            "success": True,
-            "message": "Menu sent"
-        })
+            if user_id:
+                answer = answer_greeting("menu")
 
-    # Các xử lý tiếp theo...
-    text = message.get("text", "")
+                zalo_service.send_text(
+                    user_id=user_id,
+                    text=answer
+                )
 
-    ...
-    
-except Exception as e:
-    print("WEBHOOK ERROR:", e)
-    return jsonify({"error": str(e)}), 500
+            return jsonify({
+                "success": True,
+                "message": "Menu sent"
+            })
 
+        # ===== 4. Chống gửi trùng =====
         message_id = (
-            data.get("message", {}).get("msg_id")
-            or data.get("message", {}).get("message_id")
+            message_data.get("msg_id")
+            or message_data.get("message_id")
             or ""
         )
 
         if message_id:
-            if message_id in processed_messages:
-                return jsonify({
-                    "success": True,
-                    "message": "Duplicate ignored"
-                })
+            ...
 
-            processed_messages.add(message_id)
-
+        # ===== 5. Lấy user và text =====
         user_id = (
             data.get("sender", {})
             .get("id", "")
         )
 
-        message = (
-            data.get("message", {})
-            .get("text", "")
-        )
+        message = message_data.get("text", "")
 
-        if not user_id or not message:
-            return jsonify({
-                "success": False,
-                "message": "Missing user_id or message"
-            }), 400
-
-        remember(
-            user_id=user_id,
-            role="user",
-            text=message
-        )
-
-        answer = build_answer(
-            user_id=user_id,
-            question=message
-        )
-
-        remember(
-            user_id=user_id,
-            role="assistant",
-            text=answer
-        )
-
-        zalo_service.send_text(
-            user_id=user_id,
-            text=answer
-        )
+        ...
+        # build_answer()
+        # send_text()
 
         return jsonify({
             "success": True
