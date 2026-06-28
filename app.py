@@ -12,6 +12,7 @@ from services.sheet_api import sheet_api
 from services.gemini_service import gemini_service
 from services.zalo_service import zalo_service
 from services import contact_service
+from services import router_service
 
 app = Flask(__name__)
 CORS(app)
@@ -513,59 +514,48 @@ def answer_menu_keyword(user_id, question):
     return build_procedure_list(sheet_name)
 
 def build_answer(user_id, question):
-    greeting_answer = answer_greeting(question)
+    answer = router_service.greeting_router(
+        user_id,
+        question,
+        answer_greeting,
+        clear_user_state
+    )
 
-    if greeting_answer:
-        clear_user_state(user_id)
-        answer = greeting_answer
+    if not answer:
+        answer = router_service.contact_router(
+            user_id,
+            question,
+            sheet_api,
+            user_states
+        )
 
-    else:
-        context_answer = answer_context_question(user_id, question)
+    if not answer:
+        answer = router_service.procedure_router(
+            user_id,
+            question,
+            answer_context_question,
+            answer_sub_menu_number,
+            answer_menu_number,
+            answer_menu_keyword
+        )
 
-        if context_answer:
-            answer = context_answer
+    if not answer:
+        answer = router_service.search_router(
+            user_id,
+            question,
+            sheet_api,
+            build_sheet_answer,
+            set_user_state,
+            is_broad_question,
+            build_search_options
+        )
 
-        else:
-            sub_menu_answer = answer_sub_menu_number(user_id, question)
-
-            if sub_menu_answer:
-                answer = sub_menu_answer
-
-            else:
-                menu_number_answer = answer_menu_number(user_id, question)
-
-                if menu_number_answer:
-                    answer = menu_number_answer
-
-                else:
-                    menu_keyword_answer = answer_menu_keyword(user_id, question)
-
-                    if menu_keyword_answer:
-                        answer = menu_keyword_answer
-
-                    else:
-                        context_items = sheet_api.search(question, limit=5)
-
-                        if is_broad_question(question) and len(context_items) > 1:
-                            answer = build_search_options(user_id, context_items)
-                        else:
-                            sheet_answer = build_sheet_answer(question, context_items)
-
-                            if sheet_answer:
-                                if context_items:
-                                    set_user_state(user_id, {
-                                        "level": "procedure_detail",
-                                        "sheet_name": context_items[0].get("_SOURCE_SHEET", ""),
-                                        "procedure": context_items[0]
-                                    })
-
-                                answer = sheet_answer
-                            else:
-                                answer = (
-                                    "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp. "
-                                    "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-                                    "để quay lại danh mục hỗ trợ."
-                                )
+    if not answer:
+        answer = (
+            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp. "
+            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
+            "để quay lại danh mục hỗ trợ."
+        )
 
     sheet_api.append_chat_history(
         user_id=user_id,
