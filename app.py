@@ -546,7 +546,7 @@ def build_answer(user_id, question):
             sheet_api,
             build_sheet_answer,
             set_user_state,
-            is_broad_question,
+            lambda question: False,
             build_search_options
         )
 
