@@ -488,7 +488,7 @@ def answer_context_question(user_id, question):
 
     return None
 
-ddef build_answer(user_id, question):
+def build_answer(user_id, question):
     greeting_answer = answer_greeting(question)
 
     if greeting_answer:
