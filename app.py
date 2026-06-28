@@ -300,6 +300,59 @@ def answer_menu_number(user_id, question):
 
     return build_procedure_list(sheet_name)
 
+def answer_context_question(user_id, question):
+    q = str(question or "").lower().strip()
+    state = get_user_state(user_id)
+
+    if not state:
+        return None
+
+    procedure = state.get("procedure")
+
+    if not procedure:
+        return None
+
+    if any(k in q for k in ["ở đâu", "làm ở đâu", "nộp ở đâu", "địa điểm", "nơi nộp"]):
+        noi_nop = procedure.get("NOI_NOP") or ""
+        if noi_nop:
+            return f"📍 Nơi nộp hồ sơ:\n{noi_nop}"
+
+    if any(k in q for k in ["hồ sơ", "giấy tờ", "cần gì", "chuẩn bị gì"]):
+        ho_so = procedure.get("HO_SO") or ""
+        if ho_so:
+            return f"📄 Hồ sơ cần chuẩn bị:\n{ho_so}"
+
+    if any(k in q for k in ["bao lâu", "thời hạn", "mấy ngày", "khi nào có"]):
+        thoi_han = procedure.get("THOI_HAN") or ""
+        if thoi_han:
+            return f"⏱ Thời hạn giải quyết:\n{thoi_han}"
+
+    if any(k in q for k in ["lệ phí", "phí", "bao nhiêu tiền", "mất tiền không"]):
+        le_phi = procedure.get("LE_PHI") or ""
+        if le_phi:
+            return f"💰 Lệ phí:\n{le_phi}"
+
+    if any(k in q for k in ["online", "trực tuyến", "làm online", "dịch vụ công", "link"]):
+        link = procedure.get("LINK_DVC") or ""
+        if link:
+            return f"🔗 Link dịch vụ công:\n{link}"
+
+    if any(k in q for k in ["trình tự", "các bước", "làm thế nào", "thực hiện thế nào"]):
+        trinh_tu = procedure.get("TRINH_TU") or ""
+        if trinh_tu:
+            return f"📝 Trình tự thực hiện:\n{trinh_tu}"
+
+    if any(k in q for k in ["điều kiện", "đủ điều kiện", "ai được làm"]):
+        dieu_kien = procedure.get("DIEU_KIEN") or ""
+        if dieu_kien:
+            return f"✅ Điều kiện thực hiện:\n{dieu_kien}"
+
+    if any(k in q for k in ["kết quả", "nhận gì", "được gì"]):
+        ket_qua = procedure.get("KET_QUA") or ""
+        if ket_qua:
+            return f"📌 Kết quả thực hiện:\n{ket_qua}"
+
+    return None
 
 def build_answer(user_id, question):
     greeting_answer = answer_greeting(question)
@@ -308,52 +361,67 @@ def build_answer(user_id, question):
         clear_user_state(user_id)
         answer = greeting_answer
     else:
-        sub_menu_answer = answer_sub_menu_number(
+        context_answer = answer_context_question(
             user_id,
             question
         )
 
-        if sub_menu_answer:
-            answer = sub_menu_answer
+        if context_answer:
+            answer = context_answer
         else:
-            menu_number_answer = answer_menu_number(
+            sub_menu_answer = answer_sub_menu_number(
                 user_id,
                 question
             )
 
-            if menu_number_answer:
-                answer = menu_number_answer
+            if sub_menu_answer:
+                answer = sub_menu_answer
             else:
-                context_items = sheet_api.search(
-                    question,
-                    limit=5
+                menu_number_answer = answer_menu_number(
+                    user_id,
+                    question
                 )
 
-                sheet_answer = build_sheet_answer(
-                    question,
-                    context_items
-                )
-
-                if sheet_answer:
-                    answer = sheet_answer
+                if menu_number_answer:
+                    answer = menu_number_answer
                 else:
-                    try:
-                        history_text = get_history_text(user_id)
+                    context_items = sheet_api.search(
+                        question,
+                        limit=5
+                    )
 
-                        answer = gemini_service.ask(
-                            question=question,
-                            context_items=context_items,
-                            history_text=history_text
-                        )
+                    sheet_answer = build_sheet_answer(
+                        question,
+                        context_items
+                    )
 
-                    except Exception as e:
-                        print("GEMINI FALLBACK ERROR:", e)
+                    if sheet_answer:
+                        if context_items:
+                            set_user_state(user_id, {
+                                "level": "procedure_detail",
+                                "sheet_name": context_items[0].get("_SOURCE_SHEET", ""),
+                                "procedure": context_items[0]
+                            })
 
-                        answer = (
-                            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
-                            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-                            "để quay lại danh mục hỗ trợ."
-                        )
+                        answer = sheet_answer
+                    else:
+                        try:
+                            history_text = get_history_text(user_id)
+
+                            answer = gemini_service.ask(
+                                question=question,
+                                context_items=context_items,
+                                history_text=history_text
+                            )
+
+                        except Exception as e:
+                            print("GEMINI FALLBACK ERROR:", e)
+
+                            answer = (
+                                "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
+                                "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
+                                "để quay lại danh mục hỗ trợ."
+                            )
 
     sheet_api.append_chat_history(
         user_id=user_id,
