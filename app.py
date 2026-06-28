@@ -318,7 +318,7 @@ def build_answer(user_id, question):
     if greeting_answer:
         answer = greeting_answer
     else:
-        menu_number_answer = answer_menu_number(question)
+        menu_number_answer = answer_menu_number(user_id, question)
 
         if menu_number_answer:
             answer = menu_number_answer
