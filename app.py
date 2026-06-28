@@ -1,370 +1,206 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import requests
-import google.generativeai as genai
-import json
-import os
-from datetime import datetime
+
+from config import (
+    HOST,
+    PORT,
+    BOT_NAME,
+    MAX_HISTORY,
+)
+
+from services.sheet_api import sheet_api
+from services.gemini_service import gemini_service
+from services.zalo_service import zalo_service
+
 
 app = Flask(__name__)
 CORS(app)
 
-# ==========================
-# CONFIG
-# ==========================
-ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-2.5-flash")
-
-# ==========================
-# LOAD GOOGLE SHEETS
-# ==========================
-from services.sheet_service import SheetService
-
-sheet = SheetService()
-
-sheet.load_all()
-
-# ==========================
-# MEMORY
-# ==========================
 conversation_memory = {}
+
 
 def remember(user_id, role, text):
     history = conversation_memory.get(user_id, [])
+
     history.append({
         "role": role,
         "text": text
     })
 
-    if len(history) > 10:
-        history = history[-10:]
+    if len(history) > MAX_HISTORY:
+        history = history[-MAX_HISTORY:]
 
     conversation_memory[user_id] = history
 
 
-def get_history(user_id):
+def get_history_text(user_id):
     history = conversation_memory.get(user_id, [])
-    text = ""
+
+    lines = []
 
     for item in history:
-        text += f"{item['role']}: {item['text']}\n"
-
-    return text
-
-
-# ==========================
-# LOG
-# ==========================
-def write_log(user_id, question, answer):
-    try:
-        with open(
-            "chat.log",
-            "a",
-            encoding="utf-8"
-        ) as f:
-            f.write(
-                f"{datetime.now()} | "
-                f"{user_id} | "
-                f"{question} | "
-                f"{answer}\n"
-            )
-    except:
-        pass
-
-
-# ==========================
-# DETECT SERVICE
-# ==========================
-def detect_service(question):
-
-    q = question.lower()
-
-    for key, service in SERVICES.items():
-
-        for keyword in service.get(
-            "keywords",
-            []
-        ):
-
-            if keyword.lower() in q:
-                return key
-
-    return None
-
-
-# ==========================
-# DETECT FIELD
-# ==========================
-def detect_field(question):
-
-    q = question.lower()
-
-    if any(x in q for x in [
-        "ở đâu",
-        "địa chỉ",
-        "nơi làm",
-        "làm ở đâu"
-    ]):
-        return "dia_diem"
-
-    if any(x in q for x in [
-        "giấy tờ",
-        "hồ sơ",
-        "cần gì",
-        "mang gì"
-    ]):
-        return "ho_so"
-
-    if any(x in q for x in [
-        "bao lâu",
-        "mấy ngày",
-        "thời gian"
-    ]):
-        return "thoi_han"
-
-    if any(x in q for x in [
-        "bao nhiêu tiền",
-        "lệ phí",
-        "mất phí",
-        "phí"
-    ]):
-        return "le_phi"
-
-    if any(x in q for x in [
-        "thủ tục",
-        "trình tự",
-        "các bước"
-    ]):
-        return "trinh_tu"
-
-    return None
-
-
-# ==========================
-# LOCAL ANSWER
-# ==========================
-def answer_service(question):
-
-    service = detect_service(question)
-
-    if not service:
-        return None
-
-    data = SERVICES.get(service)
-
-    field = detect_field(question)
-
-    if not field:
-
-        return (
-            f"Quý công dân đang hỏi về:\n"
-            f"{data['name']}\n\n"
-            "Xin vui lòng cho biết:\n"
-            "• Địa điểm thực hiện\n"
-            "• Hồ sơ cần chuẩn bị\n"
-            "• Thời hạn giải quyết\n"
-            "• Lệ phí\n"
-            "• Trình tự thực hiện"
+        lines.append(
+            f"{item['role']}: {item['text']}"
         )
 
-    value = data.get(field)
-
-    if not value:
-        return None
-
-    if isinstance(value, list):
-
-        text = ""
-
-        for i, item in enumerate(
-            value,
-            start=1
-        ):
-            text += f"{i}. {item}\n"
-
-        return text
-
-    return value
+    return "\n".join(lines)
 
 
-# ==========================
-# GEMINI
-# ==========================
-def ask_gemini(user_id, question):
-
-    local = answer_service(question)
-
-    if local:
-        return local
-
-    history = get_history(user_id)
-
-    prompt = f"""
-Bạn là trợ lý ảo của Công an phường Phù Liễn.
-
-Thông tin:
-- Địa chỉ 1:
-{ADDRESS1}
-
-- Địa chỉ 2:
-{ADDRESS2}
-
-Nếu câu hỏi không có trong dữ liệu,
-hãy trả lời mang tính tham khảo
-và hướng dẫn người dân liên hệ
-Công an phường hoặc tra cứu
-Cổng Dịch vụ công Bộ Công an.
-
-Lịch sử:
-{history}
-
-Câu hỏi:
-{question}
-"""
-
-    try:
-        response = model.generate_content(
-            prompt
-        )
-
-        return response.text
-
-    except Exception as e:
-
-        print("GEMINI ERROR:", e)
-
-        return (
-            "Xin lỗi, hiện hệ thống đang bận. "
-            "Quý công dân vui lòng thử lại sau."
-        )
-
-
-# ==========================
-# SEND MESSAGE
-# ==========================
-def send_message(
-    user_id,
-    message
-):
-
-    url = (
-        "https://openapi.zalo.me"
-        "/v2.0/oa/message"
+def build_answer(user_id, question):
+    context_items = sheet_api.search(
+        question,
+        limit=5
     )
 
-    headers = {
-        "access_token":
-            ZALO_ACCESS_TOKEN,
-        "Content-Type":
-            "application/json"
-    }
+    history_text = get_history_text(user_id)
 
-    payload = {
-        "recipient": {
-            "user_id":
-                str(user_id)
-        },
-        "message": {
-            "text":
-                message[:1900]
-        }
-    }
-
-    requests.post(
-        url,
-        headers=headers,
-        json=payload,
-        timeout=30
+    answer = gemini_service.ask(
+        question=question,
+        context_items=context_items,
+        history_text=history_text
     )
 
+    sheet_api.append_chat_history(
+        user_id=user_id,
+        user_message=question,
+        bot_reply=answer
+    )
 
-# ==========================
-# HOME
-# ==========================
+    return answer
+
+
 @app.route("/")
 def home():
-    return (
-        "Trợ lý ảo Công an "
-        "phường Phù Liễn "
-        "đang hoạt động."
-    )
-
-
-# ==========================
-# WEBHOOK
-# ==========================
-@app.route(
-    "/webhook",
-    methods=["POST", "GET"]
-)
-def webhook():
-
-    if request.method == "GET":
-        return "Webhook OK"
-
-    data = request.json
-
-    try:
-
-        if (
-            data
-            and data.get(
-                "event_name"
-            ) == "user_send_text"
-        ):
-
-            user_id = data["sender"]["id"]
-            text = data["message"]["text"]
-
-            remember(
-                user_id,
-                "user",
-                text
-            )
-
-            answer = ask_gemini(
-                user_id,
-                text
-            )
-
-            remember(
-                user_id,
-                "assistant",
-                answer
-            )
-
-            write_log(
-                user_id,
-                text,
-                answer
-            )
-
-            send_message(
-                user_id,
-                answer
-            )
-
-    except Exception as e:
-        print(e)
-
     return jsonify({
-        "success": True
+        "status": "ok",
+        "bot": BOT_NAME,
+        "message": "Bot đang hoạt động"
     })
 
 
-# ==========================
-# API MINI APP
-# ==========================
-@app.route(
-    "/api/chat",
-    methods=["POST"]
-)
-def api_chat():
+@app.route("/health")
+def health():
+    return jsonify({
+        "status": "ok"
+    })
 
-    data = request.get_json()
+
+@app.route("/test-sheet")
+def test_sheet():
+    try:
+        menu = sheet_api.read_menu()
+
+        return jsonify({
+            "status": "ok",
+            "menu_count": len(menu),
+            "sample": menu[:3]
+        })
+
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+
+
+@app.route("/test-ai", methods=["POST", "GET"])
+def test_ai():
+    question = ""
+
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        question = data.get("question", "")
+
+    if request.method == "GET":
+        question = request.args.get(
+            "q",
+            "Xin chào"
+        )
+
+    answer = build_answer(
+        user_id="test-web",
+        question=question
+    )
+
+    return jsonify({
+        "question": question,
+        "answer": answer
+    })
+
+
+@app.route("/webhook", methods=["GET", "POST"])
+def webhook():
+    if request.method == "GET":
+        return jsonify({
+            "status": "ok",
+            "message": "Webhook OK"
+        })
+
+    data = request.get_json(silent=True) or {}
+
+    try:
+        event_name = data.get("event_name", "")
+
+        if event_name != "user_send_text":
+            return jsonify({
+                "success": True,
+                "message": "Ignored event"
+            })
+
+        user_id = (
+            data.get("sender", {})
+            .get("id", "")
+        )
+
+        message = (
+            data.get("message", {})
+            .get("text", "")
+        )
+
+        if not user_id or not message:
+            return jsonify({
+                "success": False,
+                "message": "Missing user_id or message"
+            }), 400
+
+        remember(
+            user_id=user_id,
+            role="user",
+            text=message
+        )
+
+        answer = build_answer(
+            user_id=user_id,
+            question=message
+        )
+
+        remember(
+            user_id=user_id,
+            role="assistant",
+            text=answer
+        )
+
+        zalo_service.send_text(
+            user_id=user_id,
+            text=answer
+        )
+
+        return jsonify({
+            "success": True
+        })
+
+    except Exception as e:
+        print("WEBHOOK ERROR:", e)
+
+        return jsonify({
+            "success": False,
+            "message": str(e)
+        }), 500
+
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json(silent=True) or {}
 
     user_id = data.get(
         "user_id",
@@ -376,27 +212,37 @@ def api_chat():
         ""
     )
 
-    answer = ask_gemini(
-        user_id,
-        question
+    if not question:
+        return jsonify({
+            "success": False,
+            "message": "Missing question"
+        }), 400
+
+    remember(
+        user_id=user_id,
+        role="user",
+        text=question
+    )
+
+    answer = build_answer(
+        user_id=user_id,
+        question=question
+    )
+
+    remember(
+        user_id=user_id,
+        role="assistant",
+        text=answer
     )
 
     return jsonify({
-        "answer":
-            answer
+        "success": True,
+        "answer": answer
     })
 
 
-# ==========================
-# RUN
-# ==========================
 if __name__ == "__main__":
     app.run(
-        host="0.0.0.0",
-        port=int(
-            os.environ.get(
-                "PORT",
-                10000
-            )
-        )
+        host=HOST,
+        port=PORT
     )
