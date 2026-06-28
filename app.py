@@ -300,6 +300,20 @@ def answer_menu_number(user_id, question):
 
     return build_procedure_list(sheet_name)
 
+def get_menu_row_by_sheet(sheet_name):
+    if not sheet_name:
+        return None
+
+    menu_rows = sheet_api.read_menu()
+
+    for row in menu_rows:
+        row_sheet = sheet_api.get_menu_sheet_name(row)
+
+        if str(row_sheet).strip() == str(sheet_name).strip():
+            return row
+
+    return None
+
 def answer_context_question(user_id, question):
     q = str(question or "").lower().strip()
     state = get_user_state(user_id)
@@ -308,9 +322,36 @@ def answer_context_question(user_id, question):
         return None
 
     procedure = state.get("procedure")
+    sheet_name = state.get("sheet_name") or procedure.get("_SOURCE_SHEET", "")
+menu_row = get_menu_row_by_sheet(sheet_name)
 
     if not procedure:
         return None
+        if any(k in q for k in [
+    "vị trí",
+    "vi tri",
+    "bản đồ",
+    "ban do",
+    "google map",
+    "map",
+    "đường đi",
+    "duong di"
+]):
+    google_map = ""
+
+    if menu_row:
+        google_map = (
+            menu_row.get("GOOGLE_MAP")
+            or menu_row.get("Google Map")
+            or menu_row.get("MAP")
+            or menu_row.get("LINK_MAP")
+            or ""
+        )
+
+    if google_map:
+        return f"🗺️ Vị trí trên Google Maps:\n{google_map}"
+
+    return "Hiện hệ thống chưa cập nhật link Google Maps cho nội dung này."
 
     if any(k in q for k in [
         "ở đâu",
