@@ -113,6 +113,33 @@ def build_sheet_answer(question, context_items):
 
     return "\n\n".join(parts)
 
+def answer_greeting(question):
+    q = question.lower().strip()
+
+    greetings = [
+        "xin chào",
+        "chào",
+        "hello",
+        "hi",
+        "alo",
+        "1"
+    ]
+
+    if q in greetings:
+        return (
+            "Xin chào! Đây là Trợ lý AI Công an phường Phù Liễn.\n\n"
+            "Quý công dân có thể hỏi về:\n"
+            "1. Căn cước công dân\n"
+            "2. Cư trú, tạm trú, thường trú\n"
+            "3. VNeID\n"
+            "4. Phản ánh ANTT\n"
+            "5. Đăng ký phương tiện\n"
+            "6. Liên hệ Công an phường\n\n"
+            "Vui lòng nhập nội dung cần hỗ trợ."
+        )
+
+    return None
+
 
 def build_answer(user_id, question):
     context_items = sheet_api.search(
