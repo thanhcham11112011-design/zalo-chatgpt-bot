@@ -195,7 +195,57 @@ def answer_greeting(question):
         "• Số điện thoại trực ban\n\n"
         "Xin mời Quý công dân nhập nội dung cần hỗ trợ."
     )
+def build_procedure_list(sheet_name):
+    rows = sheet_api.read_sheet(sheet_name)
 
+    if not rows:
+        return None
+
+    lines = []
+
+    for index, row in enumerate(rows, start=1):
+        name = (
+            row.get("TEN_THU_TUC")
+            or row.get("Tên thủ tục")
+            or row.get("TEN")
+            or row.get("MO_TA")
+            or ""
+        )
+
+        name = str(name).strip()
+
+        if name:
+            lines.append(f"{index}. {name}")
+
+    if not lines:
+        return None
+
+    return (
+        "📋 DANH SÁCH THỦ TỤC\n\n"
+        + "\n".join(lines)
+        + "\n\n"
+        "Quý công dân vui lòng nhập tên thủ tục cần tra cứu, "
+        "ví dụ: 'cấp lại căn cước', 'đăng ký thường trú'."
+    )
+
+
+def answer_menu_number(question):
+    q = str(question or "").strip()
+
+    if not q.isdigit():
+        return None
+
+    sheet_name = sheet_api.get_sheet_by_menu_number(q)
+
+    if not sheet_name:
+        return None
+
+    # Các sheet thông tin không phải thủ tục
+    if sheet_name in ["THONGTIN", "TRA_CUU_LIEN_HE", "FAQ"]:
+        rows = sheet_api.read_sheet(sheet_name)
+        return build_sheet_answer(question, rows[:3])
+
+    return build_procedure_list(sheet_name)
 
 def build_answer(user_id, question):
     greeting_answer = answer_greeting(question)
@@ -203,37 +253,42 @@ def build_answer(user_id, question):
     if greeting_answer:
         answer = greeting_answer
     else:
-        context_items = sheet_api.search(
-            question,
-            limit=5
-        )
+        menu_number_answer = answer_menu_number(question)
 
-        sheet_answer = build_sheet_answer(
-            question,
-            context_items
-        )
-
-        if sheet_answer:
-            answer = sheet_answer
+        if menu_number_answer:
+            answer = menu_number_answer
         else:
-            try:
-                history_text = get_history_text(user_id)
+            context_items = sheet_api.search(
+                question,
+                limit=5
+            )
 
-                answer = gemini_service.ask(
-                    question=question,
-                    context_items=context_items,
-                    history_text=history_text
-                )
+            sheet_answer = build_sheet_answer(
+                question,
+                context_items
+            )
 
-            except Exception as e:
-                print("GEMINI FALLBACK ERROR:", e)
+            if sheet_answer:
+                answer = sheet_answer
+            else:
+                try:
+                    history_text = get_history_text(user_id)
 
-                answer = (
-                    "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
-                    "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi, ví dụ: "
-                    "'cấp căn cước', 'đăng ký tạm trú', 'đăng ký thường trú', "
-                    "'VNeID mức 2', hoặc liên hệ Công an phường Phù Liễn để được hỗ trợ."
-                )
+                    answer = gemini_service.ask(
+                        question=question,
+                        context_items=context_items,
+                        history_text=history_text
+                    )
+
+                except Exception as e:
+                    print("GEMINI FALLBACK ERROR:", e)
+
+                    answer = (
+                        "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
+                        "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi, ví dụ: "
+                        "'cấp căn cước', 'đăng ký tạm trú', 'đăng ký thường trú', "
+                        "'VNeID mức 2', hoặc liên hệ Công an phường Phù Liễn để được hỗ trợ."
+                    )
 
     sheet_api.append_chat_history(
         user_id=user_id,
