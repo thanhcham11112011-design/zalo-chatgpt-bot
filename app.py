@@ -76,8 +76,8 @@ def build_sheet_answer(question, context_items):
     thoi_han = item.get("THOI_HAN") or ""
     le_phi = item.get("LE_PHI") or ""
     link = item.get("LINK_DVC") or ""
-video_hd = item.get("VIDEO_HD") or ""
-source_sheet = item.get("_SOURCE_SHEET", "")
+    video_hd = item.get("VIDEO_HD") or ""
+    source_sheet = item.get("_SOURCE_SHEET", "")
 
     parts = []
 
