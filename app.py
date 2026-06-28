@@ -17,7 +17,7 @@ app = Flask(__name__)
 CORS(app)
 
 conversation_memory = {}
-
+processed_messages = set()
 
 def remember(user_id, role, text):
     history = conversation_memory.get(user_id, [])
@@ -140,39 +140,71 @@ def answer_greeting(question):
 
     return None
 
+def answer_greeting(question):
+    q = str(question or "").lower().strip()
+
+    greetings = [
+        "xin chào",
+        "chào",
+        "hello",
+        "hi",
+        "alo",
+        "1"
+    ]
+
+    if q in greetings:
+        return (
+            "Xin chào! Đây là Trợ lý AI Công an phường Phù Liễn.\n\n"
+            "Quý công dân có thể hỏi về:\n"
+            "1. Căn cước công dân\n"
+            "2. Cư trú, tạm trú, thường trú\n"
+            "3. VNeID, định danh điện tử\n"
+            "4. Phản ánh ANTT\n"
+            "5. Đăng ký phương tiện\n"
+            "6. Liên hệ Công an phường\n\n"
+            "Vui lòng nhập nội dung cần hỗ trợ."
+        )
+
+    return None
+
 
 def build_answer(user_id, question):
-    context_items = sheet_api.search(
-        question,
-        limit=5
-    )
+    greeting_answer = answer_greeting(question)
 
-    sheet_answer = build_sheet_answer(
-        question,
-        context_items
-    )
-
-    if sheet_answer:
-        answer = sheet_answer
+    if greeting_answer:
+        answer = greeting_answer
     else:
-        try:
-            history_text = get_history_text(user_id)
+        context_items = sheet_api.search(
+            question,
+            limit=5
+        )
 
-            answer = gemini_service.ask(
-                question=question,
-                context_items=context_items,
-                history_text=history_text
-            )
+        sheet_answer = build_sheet_answer(
+            question,
+            context_items
+        )
 
-        except Exception as e:
-            print("GEMINI FALLBACK ERROR:", e)
+        if sheet_answer:
+            answer = sheet_answer
+        else:
+            try:
+                history_text = get_history_text(user_id)
 
-            answer = (
-                "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
-                "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi, ví dụ: "
-                "'cấp căn cước', 'đăng ký tạm trú', 'VNeID mức 2', "
-                "hoặc liên hệ Công an phường Phù Liễn để được hỗ trợ."
-            )
+                answer = gemini_service.ask(
+                    question=question,
+                    context_items=context_items,
+                    history_text=history_text
+                )
+
+            except Exception as e:
+                print("GEMINI FALLBACK ERROR:", e)
+
+                answer = (
+                    "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
+                    "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi, ví dụ: "
+                    "'cấp căn cước', 'đăng ký tạm trú', 'đăng ký thường trú', "
+                    "'VNeID mức 2', hoặc liên hệ Công an phường Phù Liễn để được hỗ trợ."
+                )
 
     sheet_api.append_chat_history(
         user_id=user_id,
@@ -219,13 +251,10 @@ def test_sheet():
 
 @app.route("/test-ai", methods=["POST", "GET"])
 def test_ai():
-    question = ""
-
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         question = data.get("question", "")
-
-    if request.method == "GET":
+    else:
         question = request.args.get(
             "q",
             "Xin chào"
@@ -260,6 +289,21 @@ def webhook():
                 "success": True,
                 "message": "Ignored event"
             })
+
+        message_id = (
+            data.get("message", {}).get("msg_id")
+            or data.get("message", {}).get("message_id")
+            or ""
+        )
+
+        if message_id:
+            if message_id in processed_messages:
+                return jsonify({
+                    "success": True,
+                    "message": "Duplicate ignored"
+                })
+
+            processed_messages.add(message_id)
 
         user_id = (
             data.get("sender", {})
