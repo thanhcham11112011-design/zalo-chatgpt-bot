@@ -62,8 +62,7 @@ def get_contact_key_from_question(question):
 
 
 def format_contact_row(row):
-    print("DEBUG PHONE =", repr(row.get("ĐIỆN_THOẠI")))
-    print("DEBUG PHONE2 =", repr(row.get("DIEN_THOAI")))
+    
     ho_ten = get_value(row, ["HỌ_TÊN", "HO_TEN", "TEN"])
     chuc_vu = get_value(row, ["CHỨC_VỤ", "CHUC_VU"])
     dien_thoai = get_value(row, ["ĐIỆN_THOẠI", "DIEN_THOAI", "SDT", "SĐT"])
