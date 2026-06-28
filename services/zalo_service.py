@@ -2,18 +2,19 @@ import requests
 
 from config import (
     ZALO_ACCESS_TOKEN,
-    ZALO_API_URL,
     MAX_REPLY_LENGTH,
 )
 
 
+ZALO_API_URL = "https://openapi.zalo.me/v2.0/oa/message"
+
+
 class ZaloService:
     def __init__(self):
-        if not ZALO_ACCESS_TOKEN:
-            print("WARNING: Thiếu ZALO_ACCESS_TOKEN")
-
         self.access_token = ZALO_ACCESS_TOKEN
-        self.api_url = ZALO_API_URL
+
+        if not self.access_token:
+            print("ZALO WARNING: Thiếu ZALO_ACCESS_TOKEN")
 
     def send_text(self, user_id, text):
         if not self.access_token:
@@ -48,7 +49,7 @@ class ZaloService:
 
         try:
             response = requests.post(
-                self.api_url,
+                ZALO_API_URL,
                 headers=headers,
                 json=payload,
                 timeout=30
@@ -58,7 +59,12 @@ class ZaloService:
             print("ZALO RESPONSE:", response.text)
 
             if response.status_code == 200:
-                return True
+                data = response.json()
+
+                if data.get("error", 0) == 0:
+                    return True
+
+                return False
 
             return False
 
