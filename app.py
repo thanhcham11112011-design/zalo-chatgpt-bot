@@ -74,8 +74,7 @@ def build_sheet_answer(question, context_items):
     noi_nop = item.get("NOI_NOP") or ""
     thoi_han = item.get("THOI_HAN") or ""
     le_phi = item.get("LE_PHI") or ""
-    luu_y = item.get("LUU_Y") or ""
-    link = item.get("LINK_DVC") or ""
+        link = item.get("LINK_DVC") or ""
 
     parts = []
 
@@ -102,9 +101,7 @@ def build_sheet_answer(question, context_items):
     if le_phi:
         parts.append(f"💰 Lệ phí:\n{le_phi}")
 
-    if luu_y:
-        parts.append(f"⚠️ Lưu ý:\n{luu_y}")
-
+    
     if link:
         parts.append(f"🔗 Link dịch vụ công:\n{link}")
 
@@ -221,12 +218,12 @@ def build_procedure_list(sheet_name):
         return None
 
     return (
-        "📋 DANH SÁCH THỦ TỤC\n\n"
-        + "\n".join(lines)
-        + "\n\n"
-        "Quý công dân vui lòng nhập tên thủ tục cần tra cứu, "
-        "ví dụ: 'cấp lại căn cước', 'đăng ký thường trú'."
-    )
+    "📋 DANH SÁCH THỦ TỤC\n\n"
+    + "\n".join(lines)
+    + "\n\n"
+    "📌 Quý công dân muốn tìm hiểu hoặc thực hiện thủ tục nào, "
+    "xin vui lòng nhắn đúng tên thủ tục theo danh sách trên để được hướng dẫn chi tiết."
+)
 
 
 def answer_menu_number(question):
