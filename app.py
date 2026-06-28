@@ -76,6 +76,8 @@ def build_sheet_answer(question, context_items):
     thoi_han = item.get("THOI_HAN") or ""
     le_phi = item.get("LE_PHI") or ""
     link = item.get("LINK_DVC") or ""
+video_hd = item.get("VIDEO_HD") or ""
+source_sheet = item.get("_SOURCE_SHEET", "")
 
     parts = []
 
@@ -103,6 +105,10 @@ def build_sheet_answer(question, context_items):
         parts.append(f"💰 Lệ phí:\n{le_phi}")
 
     
+    if source_sheet == "THU_TUC_VNEID":
+    if video_hd:
+        parts.append(f"🎥 Video hướng dẫn:\n{video_hd}")
+else:
     if link:
         parts.append(f"🔗 Link dịch vụ công:\n{link}")
 
