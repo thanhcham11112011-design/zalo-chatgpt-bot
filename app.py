@@ -313,59 +313,107 @@ def answer_context_question(user_id, question):
         return None
 
     if any(k in q for k in [
-    "ở đâu",
-    "làm ở đâu",
-    "thực hiện ở đâu",
-    "địa điểm",
-    "đến đâu làm",
-    "cơ quan nào",
-    "thực hiện tại đâu",
-    "nộp ở đâu",
-    "địa điểm thực hiện"
-]):
-    co_quan = procedure.get("CO_QUAN_THUC_HIEN") or ""
+        "ở đâu",
+        "làm ở đâu",
+        "thực hiện ở đâu",
+        "thực hiện ở dâu",
+        "địa điểm",
+        "đến đâu làm",
+        "cơ quan nào",
+        "nơi thực hiện",
+        "địa điểm thực hiện",
+        "nộp ở đâu"
+    ]):
+        co_quan = procedure.get("CO_QUAN_THUC_HIEN") or ""
 
-    if co_quan:
-        return f"📍 Cơ quan thực hiện:\n{co_quan}"
+        if co_quan:
+            return f"📍 Cơ quan thực hiện:\n{co_quan}"
 
-    return (
-        "Hiện hệ thống chưa cập nhật thông tin cơ quan thực hiện của thủ tục này."
-    )
+        return "Hiện hệ thống chưa cập nhật thông tin cơ quan thực hiện của thủ tục này."
 
-    if any(k in q for k in ["hồ sơ", "giấy tờ", "cần gì", "chuẩn bị gì"]):
+    if any(k in q for k in [
+        "hồ sơ",
+        "giấy tờ",
+        "cần gì",
+        "chuẩn bị gì",
+        "mang gì"
+    ]):
         ho_so = procedure.get("HO_SO") or ""
+
         if ho_so:
             return f"📄 Hồ sơ cần chuẩn bị:\n{ho_so}"
 
-    if any(k in q for k in ["bao lâu", "thời hạn", "mấy ngày", "khi nào có"]):
+        return "Hiện hệ thống chưa cập nhật thông tin hồ sơ của thủ tục này."
+
+    if any(k in q for k in [
+        "bao lâu",
+        "thời hạn",
+        "mấy ngày",
+        "khi nào có",
+        "bao nhiêu ngày"
+    ]):
         thoi_han = procedure.get("THOI_HAN") or ""
+
         if thoi_han:
             return f"⏱ Thời hạn giải quyết:\n{thoi_han}"
 
-    if any(k in q for k in ["lệ phí", "phí", "bao nhiêu tiền", "mất tiền không"]):
+        return "Hiện hệ thống chưa cập nhật thời hạn giải quyết của thủ tục này."
+
+    if any(k in q for k in [
+        "lệ phí",
+        "phí",
+        "bao nhiêu tiền",
+        "mất tiền không",
+        "có mất phí không"
+    ]):
         le_phi = procedure.get("LE_PHI") or ""
+
         if le_phi:
             return f"💰 Lệ phí:\n{le_phi}"
 
-    if any(k in q for k in ["online", "trực tuyến", "làm online", "dịch vụ công", "link"]):
+        return "Hiện hệ thống chưa cập nhật thông tin lệ phí của thủ tục này."
+
+    if any(k in q for k in [
+        "online",
+        "trực tuyến",
+        "làm online",
+        "dịch vụ công",
+        "link",
+        "nộp online"
+    ]):
         link = procedure.get("LINK_DVC") or ""
+
         if link:
             return f"🔗 Link dịch vụ công:\n{link}"
 
-    if any(k in q for k in ["trình tự", "các bước", "làm thế nào", "thực hiện thế nào"]):
+        return "Hiện hệ thống chưa cập nhật link dịch vụ công của thủ tục này."
+
+    if any(k in q for k in [
+        "trình tự",
+        "các bước",
+        "làm thế nào",
+        "thực hiện thế nào",
+        "quy trình"
+    ]):
         trinh_tu = procedure.get("TRINH_TU") or ""
+
         if trinh_tu:
             return f"📝 Trình tự thực hiện:\n{trinh_tu}"
 
-    if any(k in q for k in ["điều kiện", "đủ điều kiện", "ai được làm"]):
+        return "Hiện hệ thống chưa cập nhật trình tự thực hiện của thủ tục này."
+
+    if any(k in q for k in [
+        "điều kiện",
+        "đủ điều kiện",
+        "ai được làm",
+        "đối tượng"
+    ]):
         dieu_kien = procedure.get("DIEU_KIEN") or ""
+
         if dieu_kien:
             return f"✅ Điều kiện thực hiện:\n{dieu_kien}"
 
-    if any(k in q for k in ["kết quả", "nhận gì", "được gì"]):
-        ket_qua = procedure.get("KET_QUA") or ""
-        if ket_qua:
-            return f"📌 Kết quả thực hiện:\n{ket_qua}"
+        return "Hiện hệ thống chưa cập nhật điều kiện thực hiện của thủ tục này."
 
     return None
 
@@ -445,7 +493,6 @@ def build_answer(user_id, question):
     )
 
     return answer
-
     
 @app.route("/")
 def home():
