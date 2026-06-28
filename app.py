@@ -157,6 +157,7 @@ def answer_greeting(question):
     greetings = [
         "xin chào",
         "chào",
+        "chào bạn",
         "hello",
         "hi",
         "alo",
