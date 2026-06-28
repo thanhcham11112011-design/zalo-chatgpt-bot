@@ -18,6 +18,7 @@ CORS(app)
 
 conversation_memory = {}
 processed_messages = set()
+user_states = {}
 
 def remember(user_id, role, text):
     history = conversation_memory.get(user_id, [])
@@ -225,8 +226,7 @@ def build_procedure_list(sheet_name):
     "xin vui lòng nhắn đúng tên thủ tục theo danh sách trên để được hướng dẫn chi tiết."
 )
 
-
-def answer_menu_number(question):
+def answer_menu_number(user_id, question):
     q = str(question or "").strip()
 
     if not q.isdigit():
@@ -237,13 +237,81 @@ def answer_menu_number(question):
     if not sheet_name:
         return None
 
-    # Các sheet thông tin không phải thủ tục
     if sheet_name in ["THONGTIN", "TRA_CUU_LIEN_HE", "FAQ"]:
         rows = sheet_api.read_sheet(sheet_name)
         return build_sheet_answer(question, rows[:3])
 
+    set_user_state(user_id, {
+        "level": "procedure_list",
+        "sheet_name": sheet_name
+    })
+
     return build_procedure_list(sheet_name)
 
+
+def build_answer(user_id, question):
+    greeting_answer = answer_greeting(question)
+
+    if greeting_answer:
+        clear_user_state(user_id)
+        answer = greeting_answer
+    else:
+        sub_menu_answer = answer_sub_menu_number(
+            user_id,
+            question
+        )
+
+        if sub_menu_answer:
+            answer = sub_menu_answer
+        else:
+            menu_number_answer = answer_menu_number(
+                user_id,
+                question
+            )
+
+            if menu_number_answer:
+                answer = menu_number_answer
+            else:
+                context_items = sheet_api.search(
+                    question,
+                    limit=5
+                )
+
+                sheet_answer = build_sheet_answer(
+                    question,
+                    context_items
+                )
+
+                if sheet_answer:
+                    answer = sheet_answer
+                else:
+                    try:
+                        history_text = get_history_text(user_id)
+
+                        answer = gemini_service.ask(
+                            question=question,
+                            context_items=context_items,
+                            history_text=history_text
+                        )
+
+                    except Exception as e:
+                        print("GEMINI FALLBACK ERROR:", e)
+
+                        answer = (
+                            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
+                            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
+                            "để quay lại danh mục hỗ trợ."
+                        )
+
+    sheet_api.append_chat_history(
+        user_id=user_id,
+        user_message=question,
+        bot_reply=answer
+    )
+
+    return answer
+
+    
 def build_answer(user_id, question):
     greeting_answer = answer_greeting(question)
 
