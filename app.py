@@ -11,7 +11,7 @@ from config import (
 from services.sheet_api import sheet_api
 from services.gemini_service import gemini_service
 from services.zalo_service import zalo_service
-
+from services import contact_service
 
 app = Flask(__name__)
 CORS(app)
