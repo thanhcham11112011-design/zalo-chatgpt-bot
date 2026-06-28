@@ -12,37 +12,22 @@ def normalize_text(text):
 
 
 CONTACT_MENU = [
-    {
-        "key": "CHI_HUY",
-        "name": "Liên hệ chỉ huy Công an phường",
-        "keywords": ["chỉ huy", "chi huy", "lãnh đạo", "lanh dao"]
-    },
-    {
-        "key": "CSKV",
-        "name": "Liên hệ bộ phận CSKV",
-        "keywords": ["cskv", "cảnh sát khu vực", "canh sat khu vuc", "khu vực"]
-    },
-    {
-        "key": "PCTP",
-        "name": "Liên hệ bộ phận PCTP",
-        "keywords": ["pctp", "phòng chống tội phạm", "phong chong toi pham"]
-    },
-    {
-        "key": "AN",
-        "name": "Liên hệ bộ phận An ninh",
-        "keywords": ["an ninh", "an"]
-    },
-    {
-        "key": "CNTT",
-        "name": "Liên hệ tổ CNTT",
-        "keywords": ["cntt", "công nghệ thông tin", "cong nghe thong tin"]
-    },
-    {
-        "key": "DOAN_THANH_NIEN",
-        "name": "Liên hệ đồng chí Bí thư ĐTNCS",
-        "keywords": ["đoàn", "doan", "bí thư", "bi thu", "thanh niên", "thanh nien"]
-    },
+    {"key": "CHI_HUY", "name": "Liên hệ chỉ huy Công an phường"},
+    {"key": "CSKV", "name": "Liên hệ bộ phận CSKV"},
+    {"key": "PCTP", "name": "Liên hệ bộ phận PCTP"},
+    {"key": "CSTT", "name": "Liên hệ bộ phận CSTT"},
+    {"key": "AN", "name": "Liên hệ bộ phận An ninh"},
+    {"key": "CNTT", "name": "Liên hệ tổ CNTT"},
+    {"key": "DOAN_THANH_NIEN", "name": "Liên hệ đồng chí Bí thư ĐTNCS"},
 ]
+
+
+def get_value(row, columns):
+    for col in columns:
+        value = row.get(col)
+        if value:
+            return str(value).strip()
+    return ""
 
 
 def build_contact_menu():
@@ -67,28 +52,22 @@ def get_contact_key_from_question(question):
             return CONTACT_MENU[index]["key"]
 
     for item in CONTACT_MENU:
-        for kw in item["keywords"]:
-            if normalize_text(kw) in q:
-                return item["key"]
+        if normalize_text(item["key"]) in q:
+            return item["key"]
+
+        if normalize_text(item["name"]) in q:
+            return item["key"]
 
     return None
 
 
-def get_value(row, columns):
-    for col in columns:
-        value = row.get(col)
-        if value:
-            return str(value).strip()
-    return ""
-
-
 def format_contact_row(row):
-    ho_ten = get_value(row, ["HO_TEN", "HỌ_TÊN", "Ho ten", "Tên", "TEN"])
-    chuc_vu = get_value(row, ["CHUC_VU", "CHỨC_VỤ", "Chức vụ"])
-    dien_thoai = get_value(row, ["DIEN_THOAI", "ĐIỆN_THOẠI", "SDT", "SĐT", "So dien thoai"])
-    bo_phan = get_value(row, ["BO_PHAN", "BỘ_PHẬN", "Bo phan"])
-    tdp = get_value(row, ["TDP", "TO_DAN_PHO", "TỔ_DÂN_PHỐ", "To dan pho"])
-    ghi_chu = get_value(row, ["GHI_CHU", "GHI_CHÚ", "Ghi chú"])
+    ho_ten = get_value(row, ["HỌ_TÊN", "HO_TEN", "TEN"])
+    chuc_vu = get_value(row, ["CHỨC_VỤ", "CHUC_VU"])
+    dien_thoai = get_value(row, ["ĐIỆN_THOẠI", "DIEN_THOAI", "SDT", "SĐT"])
+    email = get_value(row, ["EMAIL"])
+    tdp = get_value(row, ["TDP"])
+    ghi_chu = get_value(row, ["GHI_CHÚ", "GHI_CHU"])
 
     lines = []
 
@@ -96,33 +75,16 @@ def format_contact_row(row):
         lines.append(f"👤 Họ tên: {ho_ten}")
     if chuc_vu:
         lines.append(f"💼 Chức vụ/Bộ phận: {chuc_vu}")
-    elif bo_phan:
-        lines.append(f"💼 Bộ phận: {bo_phan}")
     if tdp:
         lines.append(f"🏘️ Phụ trách: {tdp}")
     if dien_thoai:
         lines.append(f"☎️ Số điện thoại: {dien_thoai}")
+    if email:
+        lines.append(f"📧 Email: {email}")
     if ghi_chu:
         lines.append(f"📝 Ghi chú: {ghi_chu}")
 
     return "\n".join(lines)
-
-
-def row_match_department(row, department_key):
-    bo_phan = normalize_text(
-        get_value(row, ["BO_PHAN", "BỘ_PHẬN", "Bo phan", "NHOM", "NHÓM"])
-    )
-
-    key = normalize_text(department_key)
-
-    if key == "DOAN_THANH_NIEN":
-        return (
-            "doan" in bo_phan
-            or "thanh nien" in bo_phan
-            or "dtncs" in bo_phan
-        )
-
-    return key.lower() in bo_phan
 
 
 def find_department_contacts(sheet_api, department_key):
@@ -130,7 +92,9 @@ def find_department_contacts(sheet_api, department_key):
     results = []
 
     for row in rows:
-        if row_match_department(row, department_key):
+        bo_phan = normalize_text(get_value(row, ["BO_PHAN"]))
+
+        if bo_phan == normalize_text(department_key):
             results.append(row)
 
     return results
@@ -161,47 +125,40 @@ def build_cskv_prompt():
         "Để tra cứu đúng đồng chí Cảnh sát khu vực phụ trách, "
         "Quý công dân vui lòng nhập tên hoặc số Tổ dân phố nơi cư trú/cần liên hệ.\n\n"
         "Ví dụ:\n"
-        "- TDP số 1\n"
-        "- Tổ dân phố số 5\n"
-        "- Tôi ở TDP 7"
+        "- Tổ 1\n"
+        "- Gò Công 1\n"
+        "- Trần Phú\n"
+        "- Tôi ở Tổ Trần phú\n"
+        "- Tôi ở Tổ Gò Công 1"
     )
 
 
-def extract_tdp(question):
+def find_cskv_by_area(sheet_api, question):
     q = normalize_text(question)
-
-    match = re.search(r"(tdp|to dan pho|tổ dân phố|to)\s*(so|số)?\s*(\d+)", q)
-    if match:
-        return match.group(3)
-
-    match = re.search(r"\b(\d+)\b", q)
-    if match:
-        return match.group(1)
-
-    return ""
-
-
-def find_cskv_by_tdp(sheet_api, question):
-    tdp_number = extract_tdp(question)
-
-    if not tdp_number:
-        return None
-
     rows = find_department_contacts(sheet_api, "CSKV")
     results = []
 
     for row in rows:
-        tdp = normalize_text(
-            get_value(row, ["TDP", "TO_DAN_PHO", "TỔ_DÂN_PHỐ", "To dan pho"])
-        )
+        tdp = normalize_text(get_value(row, ["TDP"]))
+        tu_khoa = normalize_text(get_value(row, ["TU_KHOA"]))
 
-        if tdp_number and tdp_number in tdp:
-            results.append(row)
+        search_text = f"{tdp}, {tu_khoa}"
+
+        keywords = [
+            normalize_text(x)
+            for x in re.split(r"[,;|\n]+", search_text)
+            if normalize_text(x)
+        ]
+
+        for kw in keywords:
+            if kw and kw in q:
+                results.append(row)
+                break
 
     if not results:
         return None
 
-    lines = [f"👮 CẢNH SÁT KHU VỰC PHỤ TRÁCH TDP {tdp_number}\n"]
+    lines = ["👮 CẢNH SÁT KHU VỰC PHỤ TRÁCH\n"]
 
     for row in results:
         text = format_contact_row(row)
@@ -241,6 +198,7 @@ def handle_contact_flow(user_id, question, sheet_api, user_states):
                 "level": "contact_cskv",
                 "department": "CSKV"
             }
+
             return build_cskv_prompt()
 
         user_states[user_id] = {
@@ -251,13 +209,14 @@ def handle_contact_flow(user_id, question, sheet_api, user_states):
         return build_department_answer(sheet_api, department_key)
 
     if level == "contact_cskv":
-        answer = find_cskv_by_tdp(sheet_api, question)
+        answer = find_cskv_by_area(sheet_api, question)
 
         if answer:
             user_states[user_id] = {
                 "level": "contact_done",
                 "department": "CSKV"
             }
+
             return answer
 
         return (
