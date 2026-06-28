@@ -113,32 +113,39 @@ def build_sheet_answer(question, context_items):
 
     return "\n\n".join(parts)
 
-def answer_greeting(question):
-    q = question.lower().strip()
+def build_menu_from_sheet():
+    try:
+        menu_rows = sheet_api.read_menu()
 
-    greetings = [
-        "xin chào",
-        "chào",
-        "hello",
-        "hi",
-        "alo",
-        "1"
-    ]
+        if not menu_rows:
+            return None
 
-    if q in greetings:
-        return (
-            "Xin chào! Đây là Trợ lý AI Công an phường Phù Liễn.\n\n"
-            "Quý công dân có thể hỏi về:\n"
-            "1. Căn cước công dân\n"
-            "2. Cư trú, tạm trú, thường trú\n"
-            "3. VNeID\n"
-            "4. Phản ánh ANTT\n"
-            "5. Đăng ký phương tiện\n"
-            "6. Liên hệ Công an phường\n\n"
-            "Vui lòng nhập nội dung cần hỗ trợ."
-        )
+        lines = []
 
-    return None
+        for index, row in enumerate(menu_rows, start=1):
+            title = (
+                row.get("TEN")
+                or row.get("TEN_CHUC_NANG")
+                or row.get("Tên chức năng")
+                or row.get("CHU_DE")
+                or row.get("MO_TA")
+                or ""
+            )
+
+            title = str(title).strip()
+
+            if title:
+                lines.append(f"{index}. {title}")
+
+        if not lines:
+            return None
+
+        return "\n".join(lines)
+
+    except Exception as e:
+        print("BUILD MENU ERROR:", e)
+        return None
+
 
 def answer_greeting(question):
     q = str(question or "").lower().strip()
@@ -149,23 +156,45 @@ def answer_greeting(question):
         "hello",
         "hi",
         "alo",
-        "1"
+        "menu",
+        "danh mục",
+        "0"
     ]
 
-    if q in greetings:
-        return (
-            "Xin chào! Đây là Trợ lý AI Công an phường Phù Liễn.\n\n"
-            "Quý công dân có thể hỏi về:\n"
-            "1. Căn cước công dân\n"
-            "2. Cư trú, tạm trú, thường trú\n"
-            "3. VNeID, định danh điện tử\n"
-            "4. Phản ánh ANTT\n"
-            "5. Đăng ký phương tiện\n"
-            "6. Liên hệ Công an phường\n\n"
-            "Vui lòng nhập nội dung cần hỗ trợ."
+    if q not in greetings:
+        return None
+
+    menu_text = build_menu_from_sheet()
+
+    if not menu_text:
+        menu_text = (
+            "1. Căn cước\n"
+            "2. Cư trú\n"
+            "3. VNeID\n"
+            "4. Phương tiện giao thông\n"
+            "5. Ngành nghề đầu tư kinh doanh có điều kiện về ANTT\n"
+            "6. Phòng cháy chữa cháy\n"
+            "7. Vũ khí - Vật liệu nổ - Công cụ hỗ trợ\n"
+            "8. Thông tin đơn vị\n"
+            "9. Tra cứu liên hệ"
         )
 
-    return None
+    return (
+        "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
+        "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
+        "🤖 Tôi có thể hỗ trợ tra cứu thủ tục hành chính, hướng dẫn hồ sơ, "
+        "địa điểm tiếp nhận, thời hạn giải quyết và giải đáp câu hỏi thường gặp.\n\n"
+        "📋 DANH MỤC HỖ TRỢ\n"
+        f"{menu_text}\n\n"
+        "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi.\n\n"
+        "Ví dụ:\n"
+        "• Cấp lại căn cước\n"
+        "• Đăng ký thường trú\n"
+        "• Kích hoạt VNeID mức 2\n"
+        "• Đăng ký xe máy\n"
+        "• Số điện thoại trực ban\n\n"
+        "Xin mời Quý công dân nhập nội dung cần hỗ trợ."
+    )
 
 
 def build_answer(user_id, question):
