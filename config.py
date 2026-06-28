@@ -46,7 +46,9 @@ ZALO_ACCESS_TOKEN = os.getenv(
 )
 
 ZALO_API_URL = (
-    "https://openapi.zalo.me/v3.0/oa/message/cs"
+    "ZALO_API_URL = (
+    "https://openapi.zalo.me/v2.0/oa/message"
+)"
 )
 
 # ==========================
