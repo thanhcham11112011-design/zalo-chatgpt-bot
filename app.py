@@ -230,7 +230,7 @@ def build_procedure_list(sheet_name):
     + "\n".join(lines)
     + "\n\n"
     "📌 Quý công dân muốn tìm hiểu hoặc thực hiện thủ tục nào, "
-    "xin vui lòng nhắn đúng tên thủ tục theo danh sách trên để được hướng dẫn chi tiết."
+    "vui lòng nhập số thứ tự hoặc nhắn đúng tên thủ tục theo danh sách trên để được hướng dẫn chi tiết.."
 )
 def set_user_state(user_id, state):
     user_states[user_id] = state
