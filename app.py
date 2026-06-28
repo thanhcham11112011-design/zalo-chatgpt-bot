@@ -322,36 +322,44 @@ def answer_context_question(user_id, question):
         return None
 
     procedure = state.get("procedure")
-    sheet_name = state.get("sheet_name") or procedure.get("_SOURCE_SHEET", "")
-menu_row = get_menu_row_by_sheet(sheet_name)
 
     if not procedure:
         return None
-        if any(k in q for k in [
-    "vị trí",
-    "vi tri",
-    "bản đồ",
-    "ban do",
-    "google map",
-    "map",
-    "đường đi",
-    "duong di"
-]):
-    google_map = ""
 
-    if menu_row:
-        google_map = (
-            menu_row.get("GOOGLE_MAP")
-            or menu_row.get("Google Map")
-            or menu_row.get("MAP")
-            or menu_row.get("LINK_MAP")
-            or ""
-        )
+    sheet_name = (
+        state.get("sheet_name")
+        or procedure.get("_SOURCE_SHEET", "")
+    )
 
-    if google_map:
-        return f"🗺️ Vị trí trên Google Maps:\n{google_map}"
+    menu_row = get_menu_row_by_sheet(sheet_name)
 
-    return "Hiện hệ thống chưa cập nhật link Google Maps cho nội dung này."
+    # ===== Hỏi vị trí =====
+    if any(k in q for k in [
+        "vị trí",
+        "vi tri",
+        "bản đồ",
+        "ban do",
+        "google map",
+        "map",
+        "đường đi",
+        "duong di"
+    ]):
+
+        google_map = ""
+
+        if menu_row:
+            google_map = (
+                menu_row.get("GOOGLE_MAP")
+                or menu_row.get("Google Map")
+                or menu_row.get("MAP")
+                or menu_row.get("LINK_MAP")
+                or ""
+            )
+
+        if google_map:
+            return f"🗺️ Vị trí trên Google Maps:\n{google_map}"
+
+        return "Hiện hệ thống chưa cập nhật Google Maps."
 
     if any(k in q for k in [
         "ở đâu",
