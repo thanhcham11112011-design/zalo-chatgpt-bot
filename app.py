@@ -488,6 +488,24 @@ def answer_context_question(user_id, question):
 
     return None
 
+#========== NHẬN DIỆN MENU ==========
+def answer_menu_keyword(user_id, question):
+    sheet_name = sheet_api.get_sheet_by_menu_keyword(question)
+
+    if not sheet_name:
+        return None
+
+    if sheet_name in ["THONGTIN", "TRA_CUU_LIEN_HE", "FAQ"]:
+        rows = sheet_api.read_sheet(sheet_name)
+        return build_sheet_answer(question, rows[:3])
+
+    set_user_state(user_id, {
+        "level": "procedure_list",
+        "sheet_name": sheet_name
+    })
+
+    return build_procedure_list(sheet_name)
+
 def build_answer(user_id, question):
     greeting_answer = answer_greeting(question)
 
@@ -496,71 +514,52 @@ def build_answer(user_id, question):
         answer = greeting_answer
 
     else:
-        context_answer = answer_context_question(
-            user_id,
-            question
-        )
+        context_answer = answer_context_question(user_id, question)
 
         if context_answer:
             answer = context_answer
 
         else:
-            sub_menu_answer = answer_sub_menu_number(
-                user_id,
-                question
-            )
+            sub_menu_answer = answer_sub_menu_number(user_id, question)
 
             if sub_menu_answer:
                 answer = sub_menu_answer
 
             else:
-                menu_number_answer = answer_menu_number(
-                    user_id,
-                    question
-                )
+                menu_number_answer = answer_menu_number(user_id, question)
 
                 if menu_number_answer:
                     answer = menu_number_answer
 
                 else:
-                    context_items = sheet_api.search(
-                        question,
-                        limit=5
-                    )
+                    menu_keyword_answer = answer_menu_keyword(user_id, question)
 
-                    sheet_answer = build_sheet_answer(
-                        question,
-                        context_items
-                    )
-
-                    if sheet_answer:
-                        if context_items:
-                            set_user_state(user_id, {
-                                "level": "procedure_detail",
-                                "sheet_name": context_items[0].get("_SOURCE_SHEET", ""),
-                                "procedure": context_items[0]
-                            })
-
-                        answer = sheet_answer
+                    if menu_keyword_answer:
+                        answer = menu_keyword_answer
 
                     else:
-                        try:
-                            history_text = get_history_text(user_id)
+                        context_items = sheet_api.search(question, limit=5)
 
-                            answer = gemini_service.ask(
-                                question=question,
-                                context_items=context_items,
-                                history_text=history_text
-                            )
+                        if is_broad_question(question) and len(context_items) > 1:
+                            answer = build_search_options(user_id, context_items)
+                        else:
+                            sheet_answer = build_sheet_answer(question, context_items)
 
-                        except Exception as e:
-                            print("GEMINI FALLBACK ERROR:", e)
+                            if sheet_answer:
+                                if context_items:
+                                    set_user_state(user_id, {
+                                        "level": "procedure_detail",
+                                        "sheet_name": context_items[0].get("_SOURCE_SHEET", ""),
+                                        "procedure": context_items[0]
+                                    })
 
-                            answer = (
-                                "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong dữ liệu. "
-                                "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-                                "để quay lại danh mục hỗ trợ."
-                            )
+                                answer = sheet_answer
+                            else:
+                                answer = (
+                                    "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp. "
+                                    "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
+                                    "để quay lại danh mục hỗ trợ."
+                                )
 
     sheet_api.append_chat_history(
         user_id=user_id,
