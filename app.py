@@ -259,6 +259,43 @@ def answer_sub_menu_number(user_id, question):
     """
 
     return None
+def build_procedure_search_intro(sheet_name):
+    menu_row = get_menu_row_by_sheet(sheet_name)
+
+    title = ""
+    keywords = ""
+
+    if menu_row:
+        title = (
+            menu_row.get("Tên chức năng")
+            or menu_row.get("TEN_CHUC_NANG")
+            or menu_row.get("TEN")
+            or menu_row.get("CHU_DE")
+            or ""
+        )
+
+        keywords = (
+            menu_row.get("Từ khóa")
+            or menu_row.get("TU_KHOA")
+            or menu_row.get("GOI_Y")
+            or menu_row.get("GOI_Y_CAU_HOI")
+            or ""
+        )
+
+    if not title:
+        title = "Lĩnh vực thủ tục hành chính"
+
+    if not keywords:
+        keywords = "cấp lại, cấp đổi, đăng ký, xác nhận, khai báo, hướng dẫn"
+
+    return (
+        f"📌 {title}\n\n"
+        "Lĩnh vực này gồm nhiều thủ tục/hướng dẫn khác nhau.\n"
+        "Quý công dân vui lòng nhập rõ nội dung cần hỏi hoặc tên thủ tục cần thực hiện.\n\n"
+        "Ví dụ:\n"
+        f"• {keywords}\n\n"
+        "BOT sẽ tự tra cứu trong dữ liệu thủ tục tương ứng và hướng dẫn chi tiết."
+    )    
 
 def answer_menu_number(user_id, question):
     q = str(question or "").strip()
