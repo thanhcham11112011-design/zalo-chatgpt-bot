@@ -35,6 +35,7 @@ def procedure_router(
     user_id,
     question,
     answer_context_question,
+    answer_procedure_search_context,
     answer_sub_menu_number,
     answer_menu_number,
     answer_menu_keyword
@@ -43,6 +44,11 @@ def procedure_router(
 
     if context_answer:
         return context_answer
+
+    procedure_search_answer = answer_procedure_search_context(user_id, question)
+
+    if procedure_search_answer:
+        return procedure_search_answer
 
     sub_menu_answer = answer_sub_menu_number(user_id, question)
 
