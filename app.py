@@ -658,7 +658,6 @@ def answer_procedure_search_context(user_id, question):
 
 def build_answer(user_id, question):
 
-    # Intent (Chào + Cảm ơn)
     answer = router_service.intent_router(
         user_id,
         question,
@@ -666,6 +665,12 @@ def build_answer(user_id, question):
         answer_greeting,
         clear_user_state
     )
+
+    if not answer:
+        answer = router_service.general_ai_router(
+            question,
+            gemini_service
+        )
 
     if not answer:
         answer = router_service.contact_router(
