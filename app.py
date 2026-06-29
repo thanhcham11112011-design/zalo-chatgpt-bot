@@ -647,7 +647,29 @@ def webhook():
 
         event_name = data.get("event_name", "")
 
+        # Sticker / ảnh / gif / link / vị trí...
         if event_name != "user_send_text":
+            user_id = data.get("sender", {}).get("id", "")
+
+            if user_id and event_name in [
+                "user_send_sticker",
+                "user_send_image",
+                "user_send_gif",
+                "user_send_link",
+                "user_send_location"
+            ]:
+                answer = answer_greeting("menu")
+
+                zalo_service.send_text(
+                    user_id=user_id,
+                    text=answer
+                )
+
+                return jsonify({
+                    "success": True,
+                    "message": "Menu sent for non-text event"
+                })
+
             return jsonify({
                 "success": True,
                 "message": "Ignored event"
@@ -739,7 +761,6 @@ def webhook():
             "success": False,
             "message": str(e)
         }), 500
-
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
