@@ -600,13 +600,6 @@ def answer_menu_keyword(user_id, question):
                     "sheet_name": sheet_name
                 })
 
-                procedure_answer = answer_procedure_search_context(
-                    user_id,
-                    question
-                )
-
-                if procedure_answer:
-                    return procedure_answer
 
                 return build_procedure_search_intro(sheet_name)
 
