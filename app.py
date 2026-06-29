@@ -290,7 +290,7 @@ def build_procedure_search_intro(sheet_name):
 
     return (
         f"📌 {title}\n\n"
-        "Lĩnh vực này gồm nhiều thủ tục/hướng dẫn khác nhau.\n"
+        "Để tim hiểu, trao đổi, hỗ trợ, hướng dẫn lĩnh vực này.\n"
         "Quý công dân vui lòng nhập rõ nội dung cần hỏi hoặc tên thủ tục cần thực hiện.\n\n"
         "Ví dụ:\n"
         f"• {keywords}\n\n"
