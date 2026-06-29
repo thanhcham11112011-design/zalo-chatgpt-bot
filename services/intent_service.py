@@ -46,17 +46,25 @@ def is_general_question(question):
 
     general_keywords = [
         "tinh yeu",
+        "tinh yeu la gi",
+        "tình yêu",
+        "tình yêu là gì",
         "thoi tiet",
+        "thời tiết",
         "bong da",
+        "bóng đá",
         "world cup",
         "ke chuyen",
+        "kể chuyện",
         "ban la ai",
+        "bạn là ai",
         "viet nam co bao nhieu",
-        "hom nay la ngay nao"
+        "việt nam có bao nhiêu",
+        "hom nay la ngay nao",
+        "hôm nay là ngày nào"
     ]
 
     return any(k in q for k in general_keywords)
-
 
 def detect_intent(question):
     if is_thanks(question):
