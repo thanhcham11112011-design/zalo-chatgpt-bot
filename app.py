@@ -1,6 +1,8 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-
+import re
+import unicodedata
+from difflib import SequenceMatcher
 from config import (
     HOST,
     PORT,
@@ -323,6 +325,68 @@ def build_procedure_search_intro(sheet_name):
         f"• {keywords}\n\n"
         "BOT sẽ tự tra cứu trong dữ liệu thủ tục tương ứng và hướng dẫn chi tiết."
     )    
+def normalize_vn(text):
+    text = str(text or "").lower().strip()
+    text = text.replace("đ", "d")
+
+    text = unicodedata.normalize("NFD", text)
+    text = "".join(
+        ch for ch in text
+        if unicodedata.category(ch) != "Mn"
+    )
+
+    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    return text
+
+
+def split_keywords(text):
+    raw = str(text or "")
+    raw = raw.replace(";", ",")
+    raw = raw.replace("|", ",")
+
+    return [
+        x.strip()
+        for x in raw.split(",")
+        if x.strip()
+    ]
+
+
+def is_followup_question(question):
+    q = normalize_vn(question)
+
+    followups = [
+        "ho so",
+        "giay to",
+        "can gi",
+        "chuan bi gi",
+        "mang gi",
+        "o dau",
+        "lam o dau",
+        "dia diem",
+        "co quan",
+        "noi thuc hien",
+        "nop o dau",
+        "trinh tu",
+        "cac buoc",
+        "quy trinh",
+        "bao lau",
+        "thoi han",
+        "may ngay",
+        "le phi",
+        "phi",
+        "online",
+        "truc tuyen",
+        "link",
+        "dieu kien",
+        "ket qua",
+        "vi tri",
+        "google map",
+        "ban do"
+    ]
+
+    return any(k in q for k in followups)
 
 def answer_menu_number(user_id, question):
     q = str(question or "").strip()
@@ -550,7 +614,8 @@ def answer_context_question(user_id, question):
 
 #========== NHẬN DIỆN MENU ==========
 def answer_menu_keyword(user_id, question):
-    q = str(question or "").lower().strip()
+    q_raw = str(question or "").strip()
+    q = normalize_vn(q_raw)
 
     if not q:
         return None
@@ -574,12 +639,15 @@ def answer_menu_keyword(user_id, question):
 
         sheet_name = sheet_api.get_menu_sheet_name(row)
 
-        text_check = f"{ten} {tu_khoa}".lower()
+        menu_terms = [ten] + split_keywords(tu_khoa)
+        menu_terms_norm = [
+            normalize_vn(x)
+            for x in menu_terms
+            if normalize_vn(x)
+        ]
 
-        if q in text_check or any(
-            word.strip() and word.strip() in q
-            for word in str(tu_khoa).lower().replace(";", ",").split(",")
-        ):
+        # Trường hợp người dân chỉ nhập đúng tên lĩnh vực: "cư trú", "căn cước", "vneid"
+        if q in menu_terms_norm:
             if sheet_name == "TRA_CUU_LIEN_HE":
                 return contact_service.start_contact_flow(
                     user_id=user_id,
@@ -600,10 +668,28 @@ def answer_menu_keyword(user_id, question):
                     "sheet_name": sheet_name
                 })
 
+                return build_procedure_search_intro(sheet_name)
+
+        # Trường hợp người dân hỏi tự nhiên có chứa lĩnh vực: "mất căn cước", "đăng ký tài khoản vneid"
+        if any(term and term in q for term in menu_terms_norm):
+            if str(sheet_name).startswith("THU_TUC_"):
+                set_user_state(user_id, {
+                    "level": "procedure_search",
+                    "sheet_name": sheet_name
+                })
+
+                procedure_answer = answer_procedure_search_context(
+                    user_id,
+                    question
+                )
+
+                if procedure_answer:
+                    return procedure_answer
 
                 return build_procedure_search_intro(sheet_name)
 
     return None
+    
 def answer_procedure_search_context(user_id, question):
     state = get_user_state(user_id)
 
@@ -611,6 +697,9 @@ def answer_procedure_search_context(user_id, question):
         return None
 
     if state.get("level") not in ["procedure_search", "procedure_detail"]:
+        return None
+
+    if state.get("level") == "procedure_detail" and is_followup_question(question):
         return None
 
     sheet_name = state.get("sheet_name")
@@ -627,60 +716,56 @@ def answer_procedure_search_context(user_id, question):
     if not rows:
         return "Hiện hệ thống chưa cập nhật dữ liệu cho lĩnh vực này."
 
-    q = str(question or "").lower().strip()
+    q = normalize_vn(question)
 
-    # Ưu tiên 1: khớp chính xác tên thủ tục
-    for row in rows:
-        ten_thu_tuc = str(row.get("TEN_THU_TUC") or "").lower().strip()
-
-        if ten_thu_tuc == q:
-            row["_SOURCE_SHEET"] = sheet_name
-
-            set_user_state(user_id, {
-                "level": "procedure_detail",
-                "sheet_name": sheet_name,
-                "procedure": row
-            })
-
-            return build_procedure_detail(row)
-
-    # Ưu tiên 2: câu hỏi nằm trong tên thủ tục
-    for row in rows:
-        ten_thu_tuc = str(row.get("TEN_THU_TUC") or "").lower().strip()
-
-        if q and q in ten_thu_tuc:
-            row["_SOURCE_SHEET"] = sheet_name
-
-            set_user_state(user_id, {
-                "level": "procedure_detail",
-                "sheet_name": sheet_name,
-                "procedure": row
-            })
-
-            return build_procedure_detail(row)
+    if not q:
+        return None
 
     best_row = None
     best_score = 0
 
     for row in rows:
-        search_text = " ".join([
-            str(row.get("TEN_THU_TUC") or ""),
-            str(row.get("TU_KHOA") or ""),
-            str(row.get("MO_TA") or ""),
-            str(row.get("GOI_Y_CAU_HOI") or "")
-        ]).lower()
+        ten_thu_tuc = str(row.get("TEN_THU_TUC") or "")
+        tu_khoa = str(row.get("TU_KHOA") or "")
+        mo_ta = str(row.get("MO_TA") or "")
+        goi_y = str(row.get("GOI_Y_CAU_HOI") or "")
+
+        name_norm = normalize_vn(ten_thu_tuc)
+        keyword_norm = normalize_vn(tu_khoa)
+        search_text = normalize_vn(
+            f"{ten_thu_tuc} {tu_khoa} {mo_ta} {goi_y}"
+        )
 
         score = 0
 
-        for word in q.split():
-            if len(word) >= 3 and word in search_text:
-                score += 1
+        if q == name_norm:
+            score += 100
+
+        if q and q in name_norm:
+            score += 80
+
+        if q and q in keyword_norm:
+            score += 70
+
+        q_words = set(q.split())
+        text_words = set(search_text.split())
+
+        overlap = q_words.intersection(text_words)
+        score += len(overlap) * 10
+
+        similarity = SequenceMatcher(
+            None,
+            q,
+            name_norm
+        ).ratio()
+
+        score += int(similarity * 40)
 
         if score > best_score:
             best_score = score
             best_row = row
 
-    if not best_row or best_score == 0:
+    if not best_row or best_score < 35:
         if state.get("level") == "procedure_detail":
             return None
 
@@ -699,7 +784,7 @@ def answer_procedure_search_context(user_id, question):
     })
 
     return build_procedure_detail(best_row)
-
+    
 def build_answer(user_id, question):
 
     answer = router_service.intent_router(
