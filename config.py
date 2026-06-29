@@ -1,116 +1,33 @@
-"""
-=============================================
-FILE: config.py
-PROJECT: AI AGENT ZALO OA
-VERSION: 1.0
-=============================================
-"""
-
 import os
 
-# ==========================
+# ==========================================
+# GEMINI
+# ==========================================
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+
+# ==========================================
 # GOOGLE SHEETS
-# ==========================
+# ==========================================
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
+GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "")
 
-GOOGLE_SHEET_ID = os.getenv(
-    "GOOGLE_SHEET_ID",
-    ""
-)
-
-GOOGLE_CREDENTIALS_FILE = os.getenv(
-    "GOOGLE_CREDENTIALS_FILE",
-    "credentials.json"
-)
-
-# ==========================
-# GEMINI AI
-# ==========================
-
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY",
-    ""
-)
-
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.0-flash"
-)
-
-# ==========================
+# ==========================================
 # ZALO OA
-# ==========================
+# ==========================================
+ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN", "")
 
-ZALO_ACCESS_TOKEN = os.getenv(
-    "ZALO_ACCESS_TOKEN",
-    ""
-)
+# Thêm mới để hỗ trợ tự động làm mới Access Token
+ZALO_REFRESH_TOKEN = os.getenv("ZALO_REFRESH_TOKEN", "")
+ZALO_APP_ID = os.getenv("ZALO_APP_ID", "")
+ZALO_APP_SECRET = os.getenv("ZALO_APP_SECRET", "")
 
+# ==========================================
+# CHAT
+# ==========================================
+MAX_REPLY_LENGTH = int(os.getenv("MAX_REPLY_LENGTH", "1900"))
 
-
-# ==========================
+# ==========================================
 # FLASK
-# ==========================
-
-HOST = "0.0.0.0"
-
-PORT = int(
-    os.getenv(
-        "PORT",
-        10000
-    )
-)
-
-DEBUG = False
-
-# ==========================
-# BOT
-# ==========================
-
-BOT_NAME = "Trợ lý AI Công an phường Phù Liễn"
-
-BOT_VERSION = "1.0"
-
-MAX_HISTORY = 10
-
-MAX_REPLY_LENGTH = 1900
-
-# ==========================
-# CACHE
-# ==========================
-
-CACHE_TIMEOUT = 300
-
-# ==========================
-# GOOGLE SHEETS
-# ==========================
-
-MENU_SHEET = "MENU"
-
-FAQ_SHEET = "FAQ"
-
-CONTACT_SHEET = "TRA_CUU_LIEN_HE"
-
-INFO_SHEET = "THONGTIN"
-
-PROMPT_SHEET = "PROMPT"
-
-CHAT_LOG_SHEET = "LICH_SU_CHAT"
-
-PROCEDURE_SHEETS = [
-    "THU_TUC_ANTT",
-    "THU_TUC_CCCD",
-    "THU_TUC_CUTRU",
-    "THU_TUC_VNEID",
-    "THU_TUC_LLTP",
-    "THU_TUC_PTGT",
-    "THU_TUC_PCCC",
-    "THU_TUC_VKVLN"
-]
-
-# ==========================
-# LOGGING
-# ==========================
-
-LOG_LEVEL = "INFO"
-
-LOG_FILE = "bot.log"
+# ==========================================
+PORT = int(os.getenv("PORT", "10000"))
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
