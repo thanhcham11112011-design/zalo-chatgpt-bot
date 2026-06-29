@@ -25,11 +25,6 @@ def greeting_router(user_id, question, answer_greeting, clear_user_state):
     return None
 
 def general_ai_router(question, gemini_service):
-    intent = intent_service.detect_intent(question)
-
-    if intent != "GENERAL_AI":
-        return None
-
     try:
         return gemini_service.ask(
             question=question,
@@ -41,8 +36,9 @@ def general_ai_router(question, gemini_service):
         print("GENERAL AI ERROR:", e)
 
         return (
-            "Xin lỗi, hiện hệ thống chưa thể trả lời nội dung này. "
-            "Quý công dân vui lòng nhập 'menu' để quay lại danh mục hỗ trợ."
+            "Xin lỗi, hệ thống chúng tôi chưa cập nhật thông tin dữ liệu như nội dung Quý công dân hỏi, "
+            "hoặc máy chủ đang bận. Quý công dân vui lòng chờ ít phút rồi thử lại, "
+            "hoặc nhắn 'menu' để quay lại danh mục hỗ trợ."
         )
 
 def contact_router(user_id, question, sheet_api, user_states):
@@ -110,11 +106,34 @@ def search_router(
         limit=5
     )
 
-    if is_broad_question(question) and len(context_items) > 1:
-        return build_search_options(
-            user_id,
-            context_items
-        )
+    if not context_items:
+        return None
+
+    q = str(question or "").lower().strip()
+
+    # Chặn câu hỏi quá ngắn hoặc ngoài luồng không rõ nghiệp vụ
+    procedure_words = [
+        "cấp",
+        "đổi",
+        "lại",
+        "đăng ký",
+        "xác nhận",
+        "khai báo",
+        "tạm trú",
+        "thường trú",
+        "căn cước",
+        "vneid",
+        "pccc",
+        "giấy phép",
+        "công cụ hỗ trợ",
+        "vũ khí",
+        "hộ khẩu",
+        "lưu trú"
+    ]
+
+    if not any(word in q for word in procedure_words):
+        print("SEARCH ROUTER SKIP: Câu hỏi không rõ nghiệp vụ:", question)
+        return None
 
     sheet_answer = build_sheet_answer(
         question,
@@ -132,7 +151,6 @@ def search_router(
         return sheet_answer
 
     return None
-
 
 def ai_router(
     user_id,
