@@ -24,6 +24,26 @@ def greeting_router(user_id, question, answer_greeting, clear_user_state):
 
     return None
 
+def general_ai_router(question, gemini_service):
+    intent = intent_service.detect_intent(question)
+
+    if intent != "GENERAL_AI":
+        return None
+
+    try:
+        return gemini_service.ask(
+            question=question,
+            context_items=[],
+            history_text=""
+        )
+
+    except Exception as e:
+        print("GENERAL AI ERROR:", e)
+
+        return (
+            "Xin lỗi, hiện hệ thống chưa thể trả lời nội dung này. "
+            "Quý công dân vui lòng nhập 'menu' để quay lại danh mục hỗ trợ."
+        )
 
 def contact_router(user_id, question, sheet_api, user_states):
     contact_answer = contact_service.handle_contact_flow(
