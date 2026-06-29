@@ -150,6 +150,33 @@ def build_menu_from_sheet():
     except Exception as e:
         print("BUILD MENU ERROR:", e)
         return None
+def answer_thanks(user_id, question):
+    q = str(question or "").lower().strip()
+
+    thanks_words = [
+        "cảm ơn",
+        "cám ơn",
+        "thank",
+        "thanks",
+        "ok cảm ơn",
+        "ok",
+        "được rồi",
+        "tạm biệt",
+        "bye",
+        "goodbye"
+    ]
+
+    if not any(word in q for word in thanks_words):
+        return None
+
+    clear_user_state(user_id)
+
+    return (
+        "❤️ Cảm ơn Quý công dân đã sử dụng Trợ lý AI Công an phường Phù Liễn.\n\n"
+        "Chúc Quý công dân nhiều sức khỏe, hạnh phúc và thành công.\n\n"
+        "Nếu cần hỗ trợ thêm về thủ tục hành chính, vui lòng nhắn 'menu' hoặc gửi nội dung cần hỏi bất cứ lúc nào.\n\n"
+        "Xin trân trọng cảm ơn!"
+    )
 
 
 def answer_greeting(question):
