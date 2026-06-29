@@ -667,12 +667,6 @@ def build_answer(user_id, question):
     )
 
     if not answer:
-        answer = router_service.general_ai_router(
-            question,
-            gemini_service
-        )
-
-    if not answer:
         answer = router_service.contact_router(
             user_id,
             question,
@@ -703,10 +697,16 @@ def build_answer(user_id, question):
         )
 
     if not answer:
+        answer = router_service.general_ai_router(
+            question,
+            gemini_service
+        )
+
+    if not answer:
         answer = (
-            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp. "
-            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-            "để quay lại danh mục hỗ trợ."
+            "Xin lỗi, hệ thống chúng tôi chưa cập nhật thông tin dữ liệu như nội dung Quý công dân hỏi, "
+            "hoặc máy chủ đang bận. Quý công dân vui lòng chờ ít phút rồi thử lại, "
+            "hoặc nhắn 'menu' để quay lại danh mục hỗ trợ."
         )
 
     sheet_api.append_chat_history(
