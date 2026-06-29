@@ -69,28 +69,23 @@ def procedure_router(
     answer_menu_number,
     answer_menu_keyword
 ):
-    context_answer = answer_context_question(user_id, question)
-    if context_answer:
-        return context_answer
-
     menu_number_answer = answer_menu_number(user_id, question)
     if menu_number_answer:
         return menu_number_answer
-
-    procedure_search_answer = answer_procedure_search_context(user_id, question)
-    if procedure_search_answer:
-        return procedure_search_answer
 
     menu_keyword_answer = answer_menu_keyword(user_id, question)
     if menu_keyword_answer:
         return menu_keyword_answer
 
-    sub_menu_answer = answer_sub_menu_number(user_id, question)
-    if sub_menu_answer:
-        return sub_menu_answer
+    procedure_search_answer = answer_procedure_search_context(user_id, question)
+    if procedure_search_answer:
+        return procedure_search_answer
+
+    context_answer = answer_context_question(user_id, question)
+    if context_answer:
+        return context_answer
 
     return None
-
 
 def search_router(
     user_id,
