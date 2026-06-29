@@ -618,6 +618,36 @@ def answer_procedure_search_context(user_id, question):
 
     q = str(question or "").lower().strip()
 
+    # Ưu tiên 1: khớp chính xác tên thủ tục
+    for row in rows:
+        ten_thu_tuc = str(row.get("TEN_THU_TUC") or "").lower().strip()
+
+        if ten_thu_tuc == q:
+            row["_SOURCE_SHEET"] = sheet_name
+
+            set_user_state(user_id, {
+                "level": "procedure_detail",
+                "sheet_name": sheet_name,
+                "procedure": row
+            })
+
+            return build_procedure_detail(row)
+
+    # Ưu tiên 2: câu hỏi nằm trong tên thủ tục
+    for row in rows:
+        ten_thu_tuc = str(row.get("TEN_THU_TUC") or "").lower().strip()
+
+        if q and q in ten_thu_tuc:
+            row["_SOURCE_SHEET"] = sheet_name
+
+            set_user_state(user_id, {
+                "level": "procedure_detail",
+                "sheet_name": sheet_name,
+                "procedure": row
+            })
+
+            return build_procedure_detail(row)
+
     best_row = None
     best_score = 0
 
