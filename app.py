@@ -657,6 +657,23 @@ def answer_procedure_search_context(user_id, question):
     return build_procedure_detail(best_row)
 
 def build_answer(user_id, question):
+    # ==========================
+    # KẾT THÚC HỘI THOẠI
+    # ==========================
+    thanks_answer = answer_thanks(
+        user_id,
+        question
+    )
+
+    if thanks_answer:
+        sheet_api.append_chat_history(
+            user_id=user_id,
+            user_message=question,
+            bot_reply=thanks_answer
+        )
+
+        return thanks_answer
+
     answer = router_service.greeting_router(
         user_id,
         question,
