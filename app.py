@@ -596,17 +596,21 @@ def answer_menu_keyword(user_id, question):
                 return build_procedure_search_intro(sheet_name)
 
     return None
-    
+
 def answer_procedure_search_context(user_id, question):
     state = get_user_state(user_id)
 
     if not state:
         return None
 
-    if state.get("level") != "procedure_search":
+    if state.get("level") not in ["procedure_search", "procedure_detail"]:
         return None
 
     sheet_name = state.get("sheet_name")
+
+    if not sheet_name:
+        procedure = state.get("procedure") or {}
+        sheet_name = procedure.get("_SOURCE_SHEET", "")
 
     if not sheet_name:
         return None
@@ -670,6 +674,9 @@ def answer_procedure_search_context(user_id, question):
             best_row = row
 
     if not best_row or best_score == 0:
+        if state.get("level") == "procedure_detail":
+            return None
+
         return (
             "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong lĩnh vực này.\n\n"
             "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
