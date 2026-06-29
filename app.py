@@ -634,15 +634,17 @@ def test_ai():
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-
     if request.method == "GET":
-        ...
+        return jsonify({
+            "status": "ok",
+            "message": "Webhook OK"
+        })
 
     data = request.get_json(silent=True) or {}
 
     try:
+        print("WEBHOOK DATA:", data)
 
-        # ===== 1. Kiểm tra event =====
         event_name = data.get("event_name", "")
 
         if event_name != "user_send_text":
@@ -651,31 +653,29 @@ def webhook():
                 "message": "Ignored event"
             })
 
-        # ===== 2. Lấy message object =====
-        message_data = data.get("message", {})
+        message_data = data.get("message", {}) or {}
 
-        # ===== 3. Nếu không phải text =====
+        user_id = data.get("sender", {}).get("id", "")
+
+        if not user_id:
+            return jsonify({
+                "success": False,
+                "message": "Missing user_id"
+            }), 400
+
         if "text" not in message_data:
+            answer = answer_greeting("menu")
 
-            user_id = (
-                data.get("sender", {})
-                .get("id", "")
+            zalo_service.send_text(
+                user_id=user_id,
+                text=answer
             )
-
-            if user_id:
-                answer = answer_greeting("menu")
-
-                zalo_service.send_text(
-                    user_id=user_id,
-                    text=answer
-                )
 
             return jsonify({
                 "success": True,
-                "message": "Menu sent"
+                "message": "Menu sent for non-text"
             })
 
-        # ===== 4. Chống gửi trùng =====
         message_id = (
             message_data.get("msg_id")
             or message_data.get("message_id")
@@ -683,19 +683,50 @@ def webhook():
         )
 
         if message_id:
-            ...
+            if message_id in processed_messages:
+                return jsonify({
+                    "success": True,
+                    "message": "Duplicate ignored"
+                })
 
-        # ===== 5. Lấy user và text =====
-        user_id = (
-            data.get("sender", {})
-            .get("id", "")
-        )
+            processed_messages.add(message_id)
 
         message = message_data.get("text", "")
 
-        ...
-        # build_answer()
-        # send_text()
+        if not message:
+            answer = answer_greeting("menu")
+
+            zalo_service.send_text(
+                user_id=user_id,
+                text=answer
+            )
+
+            return jsonify({
+                "success": True,
+                "message": "Empty text menu sent"
+            })
+
+        remember(
+            user_id=user_id,
+            role="user",
+            text=message
+        )
+
+        answer = build_answer(
+            user_id=user_id,
+            question=message
+        )
+
+        remember(
+            user_id=user_id,
+            role="assistant",
+            text=answer
+        )
+
+        zalo_service.send_text(
+            user_id=user_id,
+            text=answer
+        )
 
         return jsonify({
             "success": True
