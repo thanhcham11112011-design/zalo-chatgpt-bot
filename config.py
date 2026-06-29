@@ -29,5 +29,6 @@ MAX_REPLY_LENGTH = int(os.getenv("MAX_REPLY_LENGTH", "1900"))
 # ==========================================
 # FLASK
 # ==========================================
+HOST = os.getenv("HOST", "0.0.0.0")
 PORT = int(os.getenv("PORT", "10000"))
 DEBUG = os.getenv("DEBUG", "False").lower() == "true"
