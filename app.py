@@ -380,15 +380,6 @@ def answer_context_question(user_id, question):
     if not state:
         return None
 
-    # Nếu người dân chuyển sang lĩnh vực khác
-    # khi đang ở ngữ cảnh thủ tục cũ
-    menu_answer = answer_menu_keyword(
-        user_id,
-        question
-    )
-
-    if menu_answer:
-        return menu_answer
 
     procedure = state.get("procedure")
 
