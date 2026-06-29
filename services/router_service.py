@@ -1,5 +1,19 @@
 from services import contact_service
+from services import intent_service
+def intent_router(user_id, question, answer_thanks, answer_greeting, clear_user_state):
+    intent = intent_service.detect_intent(question)
 
+    if intent == "THANKS":
+        return answer_thanks(user_id, question)
+
+    if intent == "GREETING":
+        answer = answer_greeting(question)
+
+        if answer:
+            clear_user_state(user_id)
+            return answer
+
+    return None
 
 def greeting_router(user_id, question, answer_greeting, clear_user_state):
     answer = answer_greeting(question)
