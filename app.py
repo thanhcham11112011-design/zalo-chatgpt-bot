@@ -379,7 +379,11 @@ def answer_context_question(user_id, question):
 
     if not state:
         return None
+    # Nếu người dân chuyển sang lĩnh vực khác khi đang trong ngữ cảnh cũ
+    menu_answer = answer_menu_keyword(user_id, question)
 
+    if menu_answer:
+        return menu_answer
     procedure = state.get("procedure")
 
     if not procedure:
@@ -551,6 +555,9 @@ def answer_context_question(user_id, question):
 def answer_menu_keyword(user_id, question):
     q = str(question or "").lower().strip()
 
+    if not q:
+        return None
+
     menu_rows = sheet_api.read_menu()
 
     for row in menu_rows:
@@ -572,7 +579,10 @@ def answer_menu_keyword(user_id, question):
 
         text_check = f"{ten} {tu_khoa}".lower()
 
-        if q and q in text_check:
+        if q in text_check or any(
+            word.strip() and word.strip() in q
+            for word in str(tu_khoa).lower().replace(";", ",").split(",")
+        ):
             if sheet_name == "TRA_CUU_LIEN_HE":
                 return contact_service.start_contact_flow(
                     user_id=user_id,
@@ -593,10 +603,17 @@ def answer_menu_keyword(user_id, question):
                     "sheet_name": sheet_name
                 })
 
+                procedure_answer = answer_procedure_search_context(
+                    user_id,
+                    question
+                )
+
+                if procedure_answer:
+                    return procedure_answer
+
                 return build_procedure_search_intro(sheet_name)
 
     return None
-
 def answer_procedure_search_context(user_id, question):
     state = get_user_state(user_id)
 
