@@ -312,12 +312,12 @@ def answer_menu_number(user_id, question):
         return build_sheet_answer(question, rows[:3])
 
     set_user_state(user_id, {
-        "level": "procedure_list",
+        "level": "procedure_search",
         "sheet_name": sheet_name
-    })
+        })
 
-    return build_procedure_list(sheet_name)
-
+    return build_procedure_search_intro(sheet_name)
+    
 def get_menu_row_by_sheet(sheet_name):
     if not sheet_name:
         return None
@@ -518,11 +518,69 @@ def answer_menu_keyword(user_id, question):
         return build_sheet_answer(question, rows[:3])
 
     set_user_state(user_id, {
-        "level": "procedure_list",
+        "level": "procedure_search",
         "sheet_name": sheet_name
     })
 
-    return build_procedure_list(sheet_name)
+    return build_procedure_search_intro(sheet_name)
+def answer_procedure_search_context(user_id, question):
+    state = get_user_state(user_id)
+
+    if not state:
+        return None
+
+    if state.get("level") != "procedure_search":
+        return None
+
+    sheet_name = state.get("sheet_name")
+
+    if not sheet_name:
+        return None
+
+    rows = sheet_api.read_sheet(sheet_name)
+
+    if not rows:
+        return "Hiện hệ thống chưa cập nhật dữ liệu cho lĩnh vực này."
+
+    q = str(question or "").lower().strip()
+
+    best_row = None
+    best_score = 0
+
+    for row in rows:
+        search_text = " ".join([
+            str(row.get("TEN_THU_TUC") or ""),
+            str(row.get("TU_KHOA") or ""),
+            str(row.get("MO_TA") or ""),
+            str(row.get("GOI_Y_CAU_HOI") or "")
+        ]).lower()
+
+        score = 0
+
+        for word in q.split():
+            if len(word) >= 3 and word in search_text:
+                score += 1
+
+        if score > best_score:
+            best_score = score
+            best_row = row
+
+    if not best_row or best_score == 0:
+        return (
+            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong lĩnh vực này.\n\n"
+            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
+            "để quay lại danh mục hỗ trợ."
+        )
+
+    best_row["_SOURCE_SHEET"] = sheet_name
+
+    set_user_state(user_id, {
+        "level": "procedure_detail",
+        "sheet_name": sheet_name,
+        "procedure": best_row
+    })
+
+    return build_procedure_detail(best_row)
 
 def build_answer(user_id, question):
     answer = router_service.greeting_router(
@@ -545,6 +603,7 @@ def build_answer(user_id, question):
             user_id,
             question,
             answer_context_question,
+            answer_procedure_search_context,
             answer_sub_menu_number,
             answer_menu_number,
             answer_menu_keyword
