@@ -250,41 +250,15 @@ def build_procedure_detail(row):
 
 
 def answer_sub_menu_number(user_id, question):
-    q = str(question or "").strip()
+    """
+    Đã bỏ chế độ chọn thủ tục theo số thứ tự.
 
-    if not q.isdigit():
-        return None
+    Tất cả các lĩnh vực THU_TUC_* đều chuyển sang
+    chế độ người dân nhập trực tiếp nội dung cần hỏi,
+    vì vậy hàm này luôn bỏ qua.
+    """
 
-    state = get_user_state(user_id)
-
-    if not state:
-        return None
-    if state.get("level") not in ["procedure_list", "search_results"]:
-        return None
-    sheet_name = state.get("sheet_name")
-
-    if not sheet_name:
-        return None
-
-    rows = sheet_api.read_sheet(sheet_name)
-
-    index = int(q) - 1
-
-    if index < 0 or index >= len(rows):
-        return (
-            "Số thứ tự không hợp lệ. "
-            "Quý công dân vui lòng chọn đúng số trong danh sách thủ tục."
-        )
-
-    selected_row = rows[index]
-
-    set_user_state(user_id, {
-        "level": "procedure_detail",
-        "sheet_name": sheet_name,
-        "procedure": selected_row
-    })
-
-    return build_procedure_detail(selected_row)
+    return None
 
 def answer_menu_number(user_id, question):
     q = str(question or "").strip()
