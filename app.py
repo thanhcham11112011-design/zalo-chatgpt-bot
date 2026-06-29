@@ -311,12 +311,15 @@ def answer_menu_number(user_id, question):
         rows = sheet_api.read_sheet(sheet_name)
         return build_sheet_answer(question, rows[:3])
 
-    set_user_state(user_id, {
-        "level": "procedure_search",
-        "sheet_name": sheet_name
+    if str(sheet_name).startswith("THU_TUC_"):
+        set_user_state(user_id, {
+            "level": "procedure_search",
+            "sheet_name": sheet_name
         })
 
-    return build_procedure_search_intro(sheet_name)
+        return build_procedure_search_intro(sheet_name)
+
+    return None
     
 def get_menu_row_by_sheet(sheet_name):
     if not sheet_name:
@@ -508,21 +511,54 @@ def answer_context_question(user_id, question):
 
 #========== NHẬN DIỆN MENU ==========
 def answer_menu_keyword(user_id, question):
-    sheet_name = sheet_api.get_sheet_by_menu_keyword(question)
+    q = str(question or "").lower().strip()
 
-    if not sheet_name:
-        return None
+    menu_rows = sheet_api.read_menu()
 
-    if sheet_name in ["THONGTIN", "TRA_CUU_LIEN_HE", "FAQ"]:
-        rows = sheet_api.read_sheet(sheet_name)
-        return build_sheet_answer(question, rows[:3])
+    for row in menu_rows:
+        ten = (
+            row.get("Tên chức năng")
+            or row.get("TEN_CHUC_NANG")
+            or row.get("TEN")
+            or row.get("CHU_DE")
+            or ""
+        )
 
-    set_user_state(user_id, {
-        "level": "procedure_search",
-        "sheet_name": sheet_name
-    })
+        tu_khoa = (
+            row.get("Từ khóa")
+            or row.get("TU_KHOA")
+            or ""
+        )
 
-    return build_procedure_search_intro(sheet_name)
+        sheet_name = sheet_api.get_menu_sheet_name(row)
+
+        text_check = f"{ten} {tu_khoa}".lower()
+
+        if q and q in text_check:
+            if sheet_name == "TRA_CUU_LIEN_HE":
+                return contact_service.start_contact_flow(
+                    user_id=user_id,
+                    user_states=user_states
+                )
+
+            if sheet_name == "THONGTIN":
+                rows = sheet_api.read_sheet(sheet_name)
+                return build_sheet_answer(question, rows[:3])
+
+            if sheet_name == "FAQ":
+                rows = sheet_api.read_sheet(sheet_name)
+                return build_sheet_answer(question, rows[:3])
+
+            if str(sheet_name).startswith("THU_TUC_"):
+                set_user_state(user_id, {
+                    "level": "procedure_search",
+                    "sheet_name": sheet_name
+                })
+
+                return build_procedure_search_intro(sheet_name)
+
+    return None
+    
 def answer_procedure_search_context(user_id, question):
     state = get_user_state(user_id)
 
