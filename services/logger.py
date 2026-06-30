@@ -1,116 +1,107 @@
-# -*- coding: utf-8 -*-
+# logger.py
+# Ghi lịch sử chat vào Google Sheet
 
-# """
+from datetime import datetime
 
-PROJECT : AI AGENT V1 - CÔNG AN PHƯỜNG PHÙ LIỄN
-FILE    : services/logger.py
-VERSION : 1.1.0 Production
-AUTHOR  : OpenAI
+from sheet_api import log_chat
 
-## Chức năng
 
-* Ghi log hệ thống
-* Console Logger
-* Định dạng thống nhất
-  =========================================================
-  """
+def current_time():
+    """
+    Trả về thời gian hiện tại.
+    Định dạng: YYYY-MM-DD HH:MM:SS
+    """
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-import logging
-import sys
 
-from services.config import (
-LOG_LEVEL,
-LOG_FORMAT
-)
+def write_log(
+    user_id,
+    user_message,
+    bot_reply,
+    source="BOT"
+):
+    """
+    Ghi 01 bản ghi vào sheet LICH_SU_CHAT
+    """
 
-# =========================================================
+    try:
+        return log_chat(
+            thoi_gian=current_time(),
+            user_id=user_id,
+            user_message=user_message,
+            bot_reply=bot_reply,
+            source=source
+        )
 
-# LOGGER
+    except Exception as e:
+        print(f"[LOGGER ERROR] {e}")
+        return False
 
-# =========================================================
 
-logger = logging.getLogger("AI_AGENT_V1")
+def log_menu(user_id, user_message, bot_reply):
+    return write_log(
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply=bot_reply,
+        source="MENU"
+    )
 
-if not logger.handlers:
 
-```
-logger.setLevel(LOG_LEVEL)
+def log_faq(user_id, user_message, bot_reply):
+    return write_log(
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply=bot_reply,
+        source="FAQ"
+    )
 
-formatter = logging.Formatter(LOG_FORMAT)
 
-console = logging.StreamHandler(sys.stdout)
+def log_thu_tuc(user_id, user_message, bot_reply):
+    return write_log(
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply=bot_reply,
+        source="THU_TUC"
+    )
 
-console.setFormatter(formatter)
 
-logger.addHandler(console)
+def log_lien_he(user_id, user_message, bot_reply):
+    return write_log(
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply=bot_reply,
+        source="TRA_CUU_LIEN_HE"
+    )
 
-logger.propagate = False
-```
 
-# =========================================================
+def log_ai(user_id, user_message, bot_reply):
+    return write_log(
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply=bot_reply,
+        source="GEMINI_AI"
+    )
 
-# INFO
 
-# =========================================================
+def log_error(user_id, user_message, error_message):
+    return write_log(
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply=error_message,
+        source="ERROR"
+    )
 
-def log_info(message: str) -> None:
 
-```
-logger.info(message)
-```
+if __name__ == "__main__":
 
-# =========================================================
+    ok = write_log(
+        user_id="TEST_USER",
+        user_message="Xin chào",
+        bot_reply="Đây là bản ghi kiểm tra.",
+        source="TEST"
+    )
 
-# WARNING
-
-# =========================================================
-
-def log_warning(message: str) -> None:
-
-```
-logger.warning(message)
-```
-
-# =========================================================
-
-# ERROR
-
-# =========================================================
-
-def log_error(message: str) -> None:
-
-```
-logger.error(message)
-```
-
-# =========================================================
-
-# DEBUG
-
-# =========================================================
-
-def log_debug(message: str) -> None:
-
-```
-logger.debug(message)
-```
-
-# =========================================================
-
-# EXCEPTION
-
-# =========================================================
-
-def log_exception(err: Exception) -> None:
-
-```
-logger.exception(err)
-```
-
-# =========================================================
-
-# STARTUP
-
-# =========================================================
-
-log_info("Logger initialized successfully.")
+    if ok:
+        print("✅ Ghi log thành công")
+    else:
+        print("❌ Ghi log thất bại")
