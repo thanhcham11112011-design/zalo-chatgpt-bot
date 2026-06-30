@@ -1,78 +1,78 @@
-import os
+# gemini_ai.py
+# Xử lý trả lời AI bằng Gemini
+
 from google import genai
 
+from config import (
+    GEMINI_API_KEY,
+    GEMINI_MODEL,
+    DEFAULT_REPLY,
+)
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 
-class GeminiService:
-    def __init__(self):
-        if not GEMINI_API_KEY:
-            raise RuntimeError("Thiếu biến môi trường GEMINI_API_KEY")
-
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
-
-    def build_prompt(self, question, context_items=None, history_text=""):
-        context_items = context_items or []
-
-        context_text = ""
-
-        for i, item in enumerate(context_items, start=1):
-            context_text += f"\n--- Dữ liệu {i} ---\n"
-            for key, value in item.items():
-                if value:
-                    context_text += f"{key}: {value}\n"
-
-        return f"""
-Bạn là trợ lý ảo của Công an phường Phù Liễn.
+SYSTEM_INSTRUCTION = """
+Bạn là Trợ lý ảo của Công an phường Phù Liễn, TP Hải Phòng.
 
 Nhiệm vụ:
-- Trả lời ngắn gọn, rõ ràng, lịch sự.
-- Ưu tiên trả lời dựa trên dữ liệu được cung cấp.
-- Nếu chưa đủ thông tin, hướng dẫn người dân liên hệ Công an phường.
-- Không bịa thông tin ngoài dữ liệu.
+- Hỗ trợ người dân tra cứu thủ tục hành chính.
+- Hướng dẫn ngắn gọn, dễ hiểu, đúng trọng tâm.
+- Ưu tiên trả lời theo dữ liệu đã được cung cấp từ Google Sheets.
+- Không tự bịa số điện thoại, địa chỉ, lệ phí, thời hạn hoặc căn cứ pháp lý.
+- Nếu không chắc chắn, hướng dẫn người dân liên hệ trực ban Công an phường để được hỗ trợ.
 
-Dữ liệu tham khảo:
-{context_text}
-
-Lịch sử hội thoại:
-{history_text}
-
-Câu hỏi của người dân:
-{question}
-
-Hãy trả lời bằng tiếng Việt:
+Phong cách trả lời:
+- Lịch sự.
+- Rõ ràng.
+- Ngắn gọn.
+- Phù hợp với người dân sử dụng Zalo.
 """
 
-    def ask(self, question, context_items=None, history_text=""):
-        try:
-            prompt = self.build_prompt(
-                question=question,
-                context_items=context_items,
-                history_text=history_text
-            )
 
-            response = self.client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt
-            )
+def build_prompt(user_message, context=""):
+    if context:
+        return f"""
+{SYSTEM_INSTRUCTION}
 
-            if hasattr(response, "text") and response.text:
-                return response.text.strip()
+Dữ liệu tham khảo:
+{context}
 
-            return (
-                "Xin lỗi, hiện hệ thống chưa tạo được câu trả lời. "
-                "Quý công dân vui lòng thử lại sau."
-            )
+Câu hỏi của người dân:
+{user_message}
 
-        except Exception as e:
-            print("GEMINI ERROR:", e)
+Yêu cầu:
+Trả lời ngắn gọn, dễ hiểu, không vượt quá 1.500 ký tự.
+"""
+    else:
+        return f"""
+{SYSTEM_INSTRUCTION}
 
-            return (
-                "Xin lỗi, hiện hệ thống AI đang bận. "
-                "Quý công dân vui lòng thử lại sau hoặc liên hệ Công an phường để được hỗ trợ."
-            )
+Câu hỏi của người dân:
+{user_message}
+
+Yêu cầu:
+Nếu không có đủ dữ liệu chắc chắn, hãy trả lời theo hướng dẫn chung và đề nghị người dân liên hệ trực ban Công an phường.
+Không tự bịa thông tin.
+Trả lời không vượt quá 1.500 ký tự.
+"""
 
 
-gemini_service = GeminiService()
+def ask_gemini(user_message, context=""):
+    try:
+        prompt = build_prompt(user_message, context)
+
+        response = client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+        )
+
+        if response and response.text:
+            return response.text.strip()
+
+        return DEFAULT_REPLY
+
+    except Exception as e:
+        print(f"[GEMINI ERROR] {e}")
+        return DEFAULT_REPLY
