@@ -1,9 +1,9 @@
-# logger.py
+# services/logger.py
 # Ghi lịch sử chat vào Google Sheet
 
 from datetime import datetime
 
-from sheet_api import log_chat
+from services.sheet_api import log_chat
 
 
 def current_time():
@@ -21,9 +21,8 @@ def write_log(
     source="BOT"
 ):
     """
-    Ghi 01 bản ghi vào sheet LICH_SU_CHAT
+    Ghi lịch sử hội thoại vào sheet LICH_SU_CHAT
     """
-
     try:
         return log_chat(
             thoi_gian=current_time(),
