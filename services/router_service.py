@@ -1,8 +1,8 @@
-# router.py
+# services/router_service.py
 # Điều hướng câu hỏi người dân sang đúng nguồn dữ liệu
 
 from config import DEFAULT_REPLY
-from search_engine import (
+from services.search_engine import (
     normalize_text,
     search_menu,
     search_lien_he,
@@ -26,6 +26,8 @@ def is_greeting(user_text):
         "alo",
         "menu",
         "bat dau",
+        "danh muc",
+        "0",
     ]
 
     return text in greetings
@@ -33,32 +35,54 @@ def is_greeting(user_text):
 
 def get_welcome_message():
     return (
-        "Xin chào! Đây là Trợ lý ảo Công an phường Phù Liễn.\n\n"
-        "Vui lòng nhập nội dung cần hỏi hoặc chọn nhanh:\n"
+        "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
+        "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
+        "📋 DANH MỤC HỖ TRỢ\n"
         "1. Làm căn cước\n"
         "2. Đăng ký cư trú\n"
         "3. VNeID / định danh điện tử\n"
         "4. Phản ánh ANTT\n"
         "5. Số điện thoại trực ban\n"
-        "6. Gặp cán bộ trực"
+        "6. Gặp cán bộ trực\n\n"
+        "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi.\n\n"
+        "Ví dụ:\n"
+        "• Cấp lại căn cước\n"
+        "• Đăng ký thường trú\n"
+        "• Kích hoạt VNeID mức 2\n"
+        "• Đăng ký xe máy\n"
+        "• Số điện thoại trực ban"
     )
 
 
 def answer_from_menu(menu_row):
-    ten = menu_row.get("TEN_CHUC_NANG", "")
+    ten = (
+        menu_row.get("TEN_CHUC_NANG")
+        or menu_row.get("TEN")
+        or menu_row.get("CHU_DE")
+        or ""
+    )
+
     mo_ta = menu_row.get("MO_TA", "")
-    sheet = menu_row.get("SHEET_DU_LIEU", "")
+    sheet = (
+        menu_row.get("SHEET_DU_LIEU")
+        or menu_row.get("SHEET")
+        or ""
+    )
 
     parts = []
 
     if ten:
         parts.append(f"📌 {ten}")
-    if mo_ta:
-        parts.append(mo_ta)
-    if sheet:
-        parts.append(f"Bạn có thể nhập câu hỏi cụ thể hơn để tôi tra cứu trong nhóm: {sheet}")
 
-    return "\n".join(parts)
+    if mo_ta:
+        parts.append(str(mo_ta))
+
+    if sheet:
+        parts.append(
+            f"Quý công dân vui lòng nhập nội dung cụ thể để tôi tra cứu trong nhóm: {sheet}"
+        )
+
+    return "\n\n".join(parts) if parts else get_welcome_message()
 
 
 def route_message(user_text):
@@ -105,11 +129,6 @@ def route_message(user_text):
 
 
 def route_message_for_ai(user_text):
-    """
-    Hàm này dùng cho app.py:
-    - Nếu tìm thấy dữ liệu trong sheet thì trả lời ngay.
-    - Nếu không tìm thấy thì trả DEFAULT để app.py gọi Gemini.
-    """
     reply, source = route_message(user_text)
 
     use_ai = source in ["DEFAULT", "EMPTY"]
