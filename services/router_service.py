@@ -1,173 +1,121 @@
-from services import contact_service
-from services import intent_service
-def intent_router(user_id, question, answer_thanks, answer_greeting, clear_user_state):
-    intent = intent_service.detect_intent(question)
+# router.py
+# Điều hướng câu hỏi người dân sang đúng nguồn dữ liệu
 
-    if intent == "THANKS":
-        return answer_thanks(user_id, question)
+from config import DEFAULT_REPLY
+from search_engine import (
+    normalize_text,
+    search_menu,
+    search_lien_he,
+    search_faq,
+    search_thu_tuc,
+    format_lien_he,
+    format_faq,
+    format_thu_tuc,
+    format_multiple_results,
+)
 
-    if intent == "GREETING":
-        answer = answer_greeting(question)
 
-        if answer:
-            clear_user_state(user_id)
-            return answer
+def is_greeting(user_text):
+    text = normalize_text(user_text)
 
-    return None
-
-def greeting_router(user_id, question, answer_greeting, clear_user_state):
-    answer = answer_greeting(question)
-
-    if answer:
-        clear_user_state(user_id)
-        return answer
-
-    return None
-
-def general_ai_router(question, gemini_service):
-    try:
-        return gemini_service.ask(
-            question=question,
-            context_items=[],
-            history_text=""
-        )
-
-    except Exception as e:
-        print("GENERAL AI ERROR:", e)
-
-        return (
-            "Xin lỗi, hệ thống chúng tôi chưa cập nhật thông tin dữ liệu như nội dung Quý công dân hỏi, "
-            "hoặc máy chủ đang bận. Quý công dân vui lòng chờ ít phút rồi thử lại, "
-            "hoặc nhắn 'menu' để quay lại danh mục hỗ trợ."
-        )
-
-def contact_router(user_id, question, sheet_api, user_states):
-    contact_answer = contact_service.handle_contact_flow(
-        user_id=user_id,
-        question=question,
-        sheet_api=sheet_api,
-        user_states=user_states
-    )
-
-    if contact_answer:
-        return contact_answer
-
-    if contact_service.is_contact_request(question):
-        return contact_service.start_contact_flow(
-            user_id=user_id,
-            user_states=user_states
-        )
-
-    return None
-
-def procedure_router(
-    user_id,
-    question,
-    answer_context_question,
-    answer_procedure_search_context,
-    answer_sub_menu_number,
-    answer_menu_number,
-    answer_menu_keyword
-):
-    menu_number_answer = answer_menu_number(user_id, question)
-    if menu_number_answer:
-        return menu_number_answer
-
-    menu_keyword_answer = answer_menu_keyword(user_id, question)
-    if menu_keyword_answer:
-        return menu_keyword_answer
-
-    procedure_search_answer = answer_procedure_search_context(user_id, question)
-    if procedure_search_answer:
-        return procedure_search_answer
-
-    context_answer = answer_context_question(user_id, question)
-    if context_answer:
-        return context_answer
-
-    return None
-
-def search_router(
-    user_id,
-    question,
-    sheet_api,
-    build_sheet_answer,
-    set_user_state,
-    is_broad_question,
-    build_search_options
-):
-    context_items = sheet_api.search(
-        question,
-        limit=5
-    )
-
-    if not context_items:
-        return None
-
-    q = str(question or "").lower().strip()
-
-    # Chặn câu hỏi quá ngắn hoặc ngoài luồng không rõ nghiệp vụ
-    procedure_words = [
-        "cấp",
-        "đổi",
-        "lại",
-        "đăng ký",
-        "xác nhận",
-        "khai báo",
-        "tạm trú",
-        "thường trú",
-        "căn cước",
-        "vneid",
-        "pccc",
-        "giấy phép",
-        "công cụ hỗ trợ",
-        "vũ khí",
-        "hộ khẩu",
-        "lưu trú"
+    greetings = [
+        "xin chao",
+        "chao",
+        "hello",
+        "hi",
+        "alo",
+        "menu",
+        "bat dau",
     ]
 
-    if not any(word in q for word in procedure_words):
-        print("SEARCH ROUTER SKIP: Câu hỏi không rõ nghiệp vụ:", question)
-        return None
+    return text in greetings
 
-    sheet_answer = build_sheet_answer(
-        question,
-        context_items
+
+def get_welcome_message():
+    return (
+        "Xin chào! Đây là Trợ lý ảo Công an phường Phù Liễn.\n\n"
+        "Vui lòng nhập nội dung cần hỏi hoặc chọn nhanh:\n"
+        "1. Làm căn cước\n"
+        "2. Đăng ký cư trú\n"
+        "3. VNeID / định danh điện tử\n"
+        "4. Phản ánh ANTT\n"
+        "5. Số điện thoại trực ban\n"
+        "6. Gặp cán bộ trực"
     )
 
-    if sheet_answer:
-        if context_items:
-            set_user_state(user_id, {
-                "level": "procedure_detail",
-                "sheet_name": context_items[0].get("_SOURCE_SHEET", ""),
-                "procedure": context_items[0]
-            })
 
-        return sheet_answer
+def answer_from_menu(menu_row):
+    ten = menu_row.get("TEN_CHUC_NANG", "")
+    mo_ta = menu_row.get("MO_TA", "")
+    sheet = menu_row.get("SHEET_DU_LIEU", "")
 
-    return None
+    parts = []
 
-def ai_router(
-    user_id,
-    question,
-    context_items,
-    get_history_text,
-    gemini_service
-):
-    try:
-        history_text = get_history_text(user_id)
+    if ten:
+        parts.append(f"📌 {ten}")
+    if mo_ta:
+        parts.append(mo_ta)
+    if sheet:
+        parts.append(f"Bạn có thể nhập câu hỏi cụ thể hơn để tôi tra cứu trong nhóm: {sheet}")
 
-        return gemini_service.ask(
-            question=question,
-            context_items=context_items,
-            history_text=history_text
+    return "\n".join(parts)
+
+
+def route_message(user_text):
+    if not user_text or not str(user_text).strip():
+        return DEFAULT_REPLY, "EMPTY"
+
+    text = str(user_text).strip()
+
+    if is_greeting(text):
+        return get_welcome_message(), "WELCOME"
+
+    menu_result = search_menu(text)
+    if menu_result:
+        return answer_from_menu(menu_result), "MENU"
+
+    lien_he_results = search_lien_he(text, limit=3)
+    if lien_he_results:
+        reply = format_multiple_results(
+            lien_he_results,
+            format_lien_he,
+            limit=3
         )
+        return reply, "TRA_CUU_LIEN_HE"
 
-    except Exception as e:
-        print("GEMINI FALLBACK ERROR:", e)
-
-        return (
-            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp. "
-            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-            "để quay lại danh mục hỗ trợ."
+    faq_results = search_faq(text, limit=3)
+    if faq_results:
+        reply = format_multiple_results(
+            faq_results,
+            format_faq,
+            limit=3
         )
+        return reply, "FAQ"
+
+    thu_tuc_results = search_thu_tuc(text, limit=3)
+    if thu_tuc_results:
+        reply = format_multiple_results(
+            thu_tuc_results,
+            format_thu_tuc,
+            limit=3
+        )
+        return reply, "THU_TUC"
+
+    return DEFAULT_REPLY, "DEFAULT"
+
+
+def route_message_for_ai(user_text):
+    """
+    Hàm này dùng cho app.py:
+    - Nếu tìm thấy dữ liệu trong sheet thì trả lời ngay.
+    - Nếu không tìm thấy thì trả DEFAULT để app.py gọi Gemini.
+    """
+    reply, source = route_message(user_text)
+
+    use_ai = source in ["DEFAULT", "EMPTY"]
+
+    return {
+        "reply": reply,
+        "source": source,
+        "use_ai": use_ai,
+    }
