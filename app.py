@@ -1,1082 +1,578 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
+# sheet_api.py
+# Đọc dữ liệu Google Sheets cho BOT Công an phường Phù Liễn
+
+import os
 import re
 import unicodedata
-from difflib import SequenceMatcher
-from config import (
-    HOST,
-    PORT,
-    BOT_NAME,
-    MAX_HISTORY,
-)
+from datetime import datetime
 
-from services.sheet_api import sheet_api
-from services.gemini_service import gemini_service
-from services.zalo_service import zalo_service
-from services import contact_service
-from services import router_service
-
-app = Flask(__name__)
-CORS(app)
-
-conversation_memory = {}
-processed_messages = set()
-user_states = {}
-
-def remember(user_id, role, text):
-    history = conversation_memory.get(user_id, [])
-
-    history.append({
-        "role": role,
-        "text": text
-    })
-
-    if len(history) > MAX_HISTORY:
-        history = history[-MAX_HISTORY:]
-
-    conversation_memory[user_id] = history
+import gspread
+from google.oauth2.service_account import Credentials
 
 
-def get_history_text(user_id):
-    history = conversation_memory.get(user_id, [])
+# =========================
+# CẤU HÌNH CHUNG
+# =========================
 
-    lines = []
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
 
-    for item in history:
-        lines.append(
-            f"{item['role']}: {item['text']}"
-        )
-
-    return "\n".join(lines)
+GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json")
+SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "")
 
 
-def build_sheet_answer(question, context_items):
-    if not context_items:
-        return None
+SHEET_NAMES = {
+    "MENU": "MENU",
+    "SETTING_SYSTEM": "SETTING_SYSTEM",
+    "SETTING_AI": "SETTING_AI",
+    "SETTING_CHAT": "SETTING_CHAT",
+    "PROMPT": "PROMPT",
+    "THONGTIN": "THONGTIN",
+    "TRA_CUU_LIEN_HE": "TRA_CUU_LIEN_HE",
+    "FAQ": "FAQ",
+    "LICH_SU_CHAT": "LICH_SU_CHAT",
 
-    item = context_items[0]
+    "THU_TUC_CCCD": "THU_TUC_CCCD",
+    "THU_TUC_CUTRU": "THU_TUC_CUTRU",
+    "THU_TUC_VNEID": "THU_TUC_VNEID",
+    "THU_TUC_LLTP": "THU_TUC_LLTP",
+    "THU_TUC_PTGT": "THU_TUC_PTGT",
+    "THU_TUC_PCCC": "THU_TUC_PCCC",
+    "THU_TUC_VKVLN": "THU_TUC_VKVLN",
+    "THU_TUC_ANTT": "THU_TUC_ANTT",
+}
 
-    title = (
-        item.get("TEN_THU_TUC")
-        or item.get("CAU_HOI")
-        or item.get("TIEU_DE")
-        or item.get("TEN")
-        or ""
+THU_TUC_SHEETS = [
+    "THU_TUC_CCCD",
+    "THU_TUC_CUTRU",
+    "THU_TUC_VNEID",
+    "THU_TUC_LLTP",
+    "THU_TUC_PTGT",
+    "THU_TUC_PCCC",
+    "THU_TUC_VKVLN",
+    "THU_TUC_ANTT",
+]
+
+
+# =========================
+# KẾT NỐI GOOGLE SHEET
+# =========================
+
+def get_client():
+    credentials = Credentials.from_service_account_file(
+        GOOGLE_CREDENTIALS_FILE,
+        scopes=SCOPES
     )
-
-    short_answer = (
-        item.get("TRA_LOI_NGAN")
-        or item.get("TRA_LOI")
-        or item.get("NOI_DUNG")
-        or ""
-    )
-
-    full_answer = item.get("TRA_LOI_DAY_DU") or ""
-
-    ho_so = item.get("HO_SO") or ""
-    trinh_tu = item.get("TRINH_TU") or ""
-    noi_nop = item.get("NOI_NOP") or ""
-    thoi_han = item.get("THOI_HAN") or ""
-    le_phi = item.get("LE_PHI") or ""
-    link = item.get("LINK_DVC") or ""
-    video_hd = item.get("VIDEO_HD") or ""
-    source_sheet = item.get("_SOURCE_SHEET", "")
-
-    parts = []
-
-    if title:
-        parts.append(f"📌 {title}")
-
-    if short_answer:
-        parts.append(short_answer)
-    elif full_answer:
-        parts.append(full_answer)
-
-    if ho_so:
-        parts.append(f"📄 Hồ sơ cần chuẩn bị:\n{ho_so}")
-
-    if trinh_tu:
-        parts.append(f"📝 Trình tự thực hiện:\n{trinh_tu}")
-
-    if noi_nop:
-        parts.append(f"📍 Nơi nộp:\n{noi_nop}")
-
-    if thoi_han:
-        parts.append(f"⏱ Thời hạn giải quyết:\n{thoi_han}")
-
-    if le_phi:
-        parts.append(f"💰 Lệ phí:\n{le_phi}")
-
-    
-    if source_sheet == "THU_TUC_VNEID":
-        if video_hd:
-            parts.append(f"🎥 Video hướng dẫn:\n{video_hd}")
-    else:
-        if link:
-            parts.append(f"🔗 Link dịch vụ công:\n{link}")
-
-    if not parts:
-        return None
-
-    return "\n\n".join(parts)
-
-def build_menu_from_sheet():
-    try:
-        menu_rows = sheet_api.read_menu()
-
-        if not menu_rows:
-            return None
-
-        lines = []
-
-        for index, row in enumerate(menu_rows, start=1):
-            title = (
-                row.get("TEN")
-                or row.get("TEN_CHUC_NANG")
-                or row.get("Tên chức năng")
-                or row.get("CHU_DE")
-                or row.get("MO_TA")
-                or ""
-            )
-
-            title = str(title).strip()
-
-            if title:
-                lines.append(f"{index}. {title}")
-
-        if not lines:
-            return None
-
-        return "\n".join(lines)
-
-    except Exception as e:
-        print("BUILD MENU ERROR:", e)
-        return None
-def answer_thanks(user_id, question):
-    q = str(question or "").lower().strip()
-
-    thanks_words = [
-        "cảm ơn",
-        "cám ơn",
-        "thank",
-        "thanks",
-        "ok cảm ơn",
-        "ok",
-        "được rồi",
-        "tạm biệt",
-        "bye",
-        "goodbye"
-    ]
-
-    if not any(word in q for word in thanks_words):
-        return None
-
-    clear_user_state(user_id)
-
-    return (
-        "❤️ Cảm ơn Quý công dân đã sử dụng Trợ lý AI Công an phường Phù Liễn.\n\n"
-        "Chúc Quý công dân nhiều sức khỏe, hạnh phúc và thành công.\n\n"
-        "Nếu cần hỗ trợ thêm về thủ tục hành chính, vui lòng nhắn 'menu' hoặc gửi nội dung cần hỏi bất cứ lúc nào.\n\n"
-        "Xin trân trọng cảm ơn!"
-    )
+    return gspread.authorize(credentials)
 
 
-def answer_greeting(question):
-    q = str(question or "").lower().strip()
-
-    greetings = [
-        "xin chào",
-        "chào",
-        "chào bạn",
-        "hello",
-        "hi",
-        "alo",
-        "menu",
-        "danh mục",
-        "0"
-    ]
-
-    if q not in greetings:
-        return None
-
-    menu_text = build_menu_from_sheet()
-
-    if not menu_text:
-        menu_text = (
-            "1. Căn cước\n"
-            "2. Cư trú\n"
-            "3. VNeID\n"
-            "4. Phương tiện giao thông\n"
-            "5. Ngành nghề đầu tư kinh doanh có điều kiện về ANTT\n"
-            "6. Phòng cháy chữa cháy\n"
-            "7. Vũ khí - Vật liệu nổ - Công cụ hỗ trợ\n"
-            "8. Tra cứu liên hệ\n"
-        )
-
-    return (
-        "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
-        "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
-        "🤖 Tôi có thể hỗ trợ tra cứu thủ tục hành chính, hướng dẫn hồ sơ, "
-        "địa điểm tiếp nhận, thời hạn giải quyết và giải đáp câu hỏi thường gặp.\n\n"
-        "📋 DANH MỤC HỖ TRỢ\n"
-        f"{menu_text}\n\n"
-        "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi.\n\n"
-        "Ví dụ:\n"
-        "• Cấp lại căn cước\n"
-        "• Đăng ký thường trú\n"
-        "• Kích hoạt VNeID mức 2\n"
-        "• Đăng ký xe máy\n"
-        "• Số điện thoại trực ban\n\n"
-        "Xin mời Quý công dân nhập nội dung cần hỗ trợ."
-    )
-def build_procedure_list(sheet_name):
-    rows = sheet_api.read_sheet(sheet_name)
-
-    if not rows:
-        return None
-
-    lines = []
-
-    for index, row in enumerate(rows, start=1):
-        name = (
-            row.get("TEN_THU_TUC")
-            or row.get("Tên thủ tục")
-            or row.get("TEN")
-            or row.get("MO_TA")
-            or ""
-        )
-
-        name = str(name).strip()
-
-        if name:
-            lines.append(f"{index}. {name}")
-
-    if not lines:
-        return None
-
-    return (
-    "📋 DANH SÁCH THỦ TỤC\n\n"
-    + "\n".join(lines)
-    + "\n\n"
-    "📌 Quý công dân muốn tìm hiểu hoặc thực hiện thủ tục nào, "
-    "vui lòng nhập số thứ tự hoặc nhắn đúng tên thủ tục theo danh sách trên để được hướng dẫn chi tiết.."
-)
-def set_user_state(user_id, state):
-    user_states[user_id] = state
+def get_spreadsheet():
+    if not SPREADSHEET_ID:
+        raise ValueError("Chưa cấu hình SPREADSHEET_ID trong biến môi trường.")
+    client = get_client()
+    return client.open_by_key(SPREADSHEET_ID)
 
 
-def get_user_state(user_id):
-    return user_states.get(user_id)
+def get_worksheet(sheet_name):
+    spreadsheet = get_spreadsheet()
+    return spreadsheet.worksheet(sheet_name)
 
 
-def clear_user_state(user_id):
-    if user_id in user_states:
-        del user_states[user_id]
+# =========================
+# TIỆN ÍCH XỬ LÝ TEXT
+# =========================
 
-
-def build_procedure_detail(row):
-    return build_sheet_answer("", [row])
-
-
-def answer_sub_menu_number(user_id, question):
+def normalize_text(text):
     """
-    Đã bỏ chế độ chọn thủ tục theo số thứ tự.
-
-    Tất cả các lĩnh vực THU_TUC_* đều chuyển sang
-    chế độ người dân nhập trực tiếp nội dung cần hỏi,
-    vì vậy hàm này luôn bỏ qua.
+    Chuẩn hóa tiếng Việt:
+    - chuyển thường
+    - bỏ dấu
+    - xóa ký tự thừa
     """
+    if text is None:
+        return ""
 
-    return None
-def build_procedure_search_intro(sheet_name):
-    menu_row = get_menu_row_by_sheet(sheet_name)
-
-    title = ""
-    keywords = ""
-
-    if menu_row:
-        title = (
-            menu_row.get("Tên chức năng")
-            or menu_row.get("TEN_CHUC_NANG")
-            or menu_row.get("TEN")
-            or menu_row.get("CHU_DE")
-            or ""
-        )
-
-        keywords = (
-            menu_row.get("Từ khóa")
-            or menu_row.get("TU_KHOA")
-            or menu_row.get("GOI_Y")
-            or menu_row.get("GOI_Y_CAU_HOI")
-            or ""
-        )
-
-    if not title:
-        title = "Lĩnh vực thủ tục hành chính"
-
-    if not keywords:
-        keywords = "cấp lại, cấp đổi, đăng ký, xác nhận, khai báo, hướng dẫn"
-
-    return (
-        f"📌 {title}\n\n"
-        "Để tim hiểu, trao đổi, hỗ trợ, hướng dẫn lĩnh vực này.\n"
-        "Quý công dân vui lòng nhập rõ nội dung cần hỏi hoặc tên thủ tục cần thực hiện.\n\n"
-        "Ví dụ:\n"
-        f"• {keywords}\n\n"
-        "BOT sẽ tự tra cứu trong dữ liệu thủ tục tương ứng và hướng dẫn chi tiết."
-    )    
-def normalize_vn(text):
-    text = str(text or "").lower().strip()
-    text = text.replace("đ", "d")
+    text = str(text).strip().lower()
 
     text = unicodedata.normalize("NFD", text)
     text = "".join(
-        ch for ch in text
-        if unicodedata.category(ch) != "Mn"
+        char for char in text
+        if unicodedata.category(char) != "Mn"
     )
 
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
+    text = text.replace("đ", "d")
+    text = re.sub(r"[^a-z0-9\s,./:-]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
 
 
-def split_keywords(text):
-    raw = str(text or "")
-    raw = raw.replace(";", ",")
-    raw = raw.replace("|", ",")
+def is_on(row):
+    """
+    Chỉ dùng dòng có TRANG_THAI = ON.
+    Nếu sheet chưa có cột TRANG_THAI thì mặc định dùng.
+    """
+    status = str(row.get("TRANG_THAI", "ON")).strip().upper()
+    return status == "ON"
 
-    return [
-        x.strip()
-        for x in raw.split(",")
-        if x.strip()
+
+def safe_int(value, default=999):
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+def keyword_match(user_text, keywords):
+    """
+    So khớp từ khóa trong cột TU_KHOA.
+    """
+    user_text_norm = normalize_text(user_text)
+    keywords_norm = normalize_text(keywords)
+
+    if not user_text_norm or not keywords_norm:
+        return False
+
+    keyword_list = [
+        kw.strip()
+        for kw in keywords_norm.split(",")
+        if kw.strip()
     ]
 
+    for kw in keyword_list:
+        if kw in user_text_norm:
+            return True
 
-def is_followup_question(question):
-    q = normalize_vn(question)
+    return False
 
-    followups = [
-        "ho so",
-        "giay to",
-        "can gi",
-        "chuan bi gi",
-        "mang gi",
-        "o dau",
-        "lam o dau",
-        "dia diem",
-        "co quan",
-        "noi thuc hien",
-        "nop o dau",
-        "trinh tu",
-        "cac buoc",
-        "quy trinh",
-        "bao lau",
-        "thoi han",
-        "may ngay",
-        "le phi",
-        "phi",
-        "online",
-        "truc tuyen",
-        "link",
-        "dieu kien",
-        "ket qua",
-        "vi tri",
-        "google map",
-        "ban do"
+
+def score_keyword_match(user_text, keywords):
+    """
+    Chấm điểm theo số từ khóa khớp.
+    """
+    user_text_norm = normalize_text(user_text)
+    keywords_norm = normalize_text(keywords)
+
+    if not user_text_norm or not keywords_norm:
+        return 0
+
+    score = 0
+    keyword_list = [
+        kw.strip()
+        for kw in keywords_norm.split(",")
+        if kw.strip()
     ]
 
-    return any(k in q for k in followups)
-
-def answer_menu_number(user_id, question):
-    q = str(question or "").strip()
-
-    if not q.isdigit():
-        return None
-
-    sheet_name = sheet_api.get_sheet_by_menu_number(q)
-
-    if not sheet_name:
-        return None
-
-    if sheet_name == "TRA_CUU_LIEN_HE":
-        return contact_service.start_contact_flow(
-            user_id=user_id,
-            user_states=user_states
-        )
-
-    if sheet_name == "THONGTIN":
-        rows = sheet_api.read_sheet(sheet_name)
-        return build_sheet_answer(question, rows[:3])
-
-    if sheet_name == "FAQ":
-        rows = sheet_api.read_sheet(sheet_name)
-        return build_sheet_answer(question, rows[:3])
-
-    if str(sheet_name).startswith("THU_TUC_"):
-        set_user_state(user_id, {
-            "level": "procedure_search",
-            "sheet_name": sheet_name
-        })
-
-        return build_procedure_search_intro(sheet_name)
-
-    return None
-    
-def get_menu_row_by_sheet(sheet_name):
-    if not sheet_name:
-        return None
-
-    menu_rows = sheet_api.read_menu()
-
-    for row in menu_rows:
-        row_sheet = sheet_api.get_menu_sheet_name(row)
-
-        if str(row_sheet).strip() == str(sheet_name).strip():
-            return row
-
-    return None
-
-def answer_context_question(user_id, question):
-    q = str(question or "").lower().strip()
-    state = get_user_state(user_id)
-
-    if not state:
-        return None
-
-
-    procedure = state.get("procedure")
-
-    if not procedure:
-        return None
-
-    sheet_name = (
-        state.get("sheet_name")
-        or procedure.get("_SOURCE_SHEET", "")
-    )
-
-    menu_row = get_menu_row_by_sheet(sheet_name)
-
-    # ===== VỊ TRÍ / GOOGLE MAP =====
-    if any(k in q for k in [
-        "vị trí",
-        "vi tri",
-        "bản đồ",
-        "ban do",
-        "google map",
-        "map",
-        "đường đi",
-        "duong di"
-    ]):
-        google_map = ""
-
-        if menu_row:
-            google_map = (
-                menu_row.get("GOOGLE_MAP")
-                or menu_row.get("Google Map")
-                or menu_row.get("MAP")
-                or menu_row.get("LINK_MAP")
-                or ""
-            )
-
-        if google_map:
-            return f"🗺️ Vị trí trên Google Maps:\n{google_map}"
-
-        return "Hiện hệ thống chưa cập nhật Google Maps cho nội dung này."
-
-    # ===== CƠ QUAN THỰC HIỆN =====
-    if any(k in q for k in [
-        "ở đâu",
-        "làm ở đâu",
-        "thực hiện ở đâu",
-        "thực hiện ở dâu",
-        "địa điểm",
-        "đến đâu làm",
-        "cơ quan nào",
-        "nơi thực hiện",
-        "địa điểm thực hiện",
-        "nộp ở đâu"
-    ]):
-        co_quan = procedure.get("CO_QUAN_THUC_HIEN") or ""
-
-        if co_quan:
-            return f"📍 Cơ quan thực hiện:\n{co_quan}"
-
-        return "Hiện hệ thống chưa cập nhật thông tin cơ quan thực hiện của thủ tục này."
-
-   # ===== HỒ SƠ / GIẤY TỜ =====
-    if any(k in q for k in [
-        "hồ sơ",
-        "giấy tờ",
-        "cần gì",
-        "cần giấy",
-        "có cần",
-        "chuẩn bị gì",
-        "mang gì",
-        "giấy khai sinh"
-    ]):
-        ho_so = procedure.get("HO_SO") or ""
-
-        if ho_so:
-            return f"📄 Hồ sơ cần chuẩn bị:\n{ho_so}"
-
-        return "Hiện hệ thống chưa cập nhật thông tin hồ sơ của thủ tục này."
-
-    # ===== TRÌNH TỰ =====
-    if any(k in q for k in [
-        "trình tự",
-        "các bước",
-        "làm thế nào",
-        "thực hiện thế nào",
-        "quy trình"
-    ]):
-        trinh_tu = procedure.get("TRINH_TU") or ""
-
-        if trinh_tu:
-            return f"📝 Trình tự thực hiện:\n{trinh_tu}"
-
-        return "Hiện hệ thống chưa cập nhật trình tự thực hiện của thủ tục này."
-
-    # ===== THỜI HẠN =====
-    if any(k in q for k in [
-        "bao lâu",
-        "thời hạn",
-        "mấy ngày",
-        "khi nào có",
-        "bao nhiêu ngày"
-    ]):
-        thoi_han = procedure.get("THOI_HAN") or ""
-
-        if thoi_han:
-            return f"⏱ Thời hạn giải quyết:\n{thoi_han}"
-
-        return "Hiện hệ thống chưa cập nhật thời hạn giải quyết của thủ tục này."
-
-    # ===== LỆ PHÍ =====
-    if any(k in q for k in [
-        "lệ phí",
-        "phí",
-        "bao nhiêu tiền",
-        "mất tiền không",
-        "có mất phí không"
-    ]):
-        le_phi = procedure.get("LE_PHI") or ""
-
-        if le_phi:
-            return f"💰 Lệ phí:\n{le_phi}"
-
-        return "Hiện hệ thống chưa cập nhật thông tin lệ phí của thủ tục này."
-
-    # ===== DỊCH VỤ CÔNG / ONLINE =====
-    if any(k in q for k in [
-        "online",
-        "trực tuyến",
-        "làm online",
-        "dịch vụ công",
-        "link",
-        "nộp online"
-    ]):
-        link = procedure.get("LINK_DVC") or ""
-
-        if link:
-            return f"🔗 Link dịch vụ công:\n{link}"
-
-        return "Hiện hệ thống chưa cập nhật link dịch vụ công của thủ tục này."
-
-    # ===== ĐIỀU KIỆN =====
-    if any(k in q for k in [
-        "điều kiện",
-        "đủ điều kiện",
-        "ai được làm",
-        "đối tượng"
-    ]):
-        dieu_kien = procedure.get("DIEU_KIEN") or ""
-
-        if dieu_kien:
-            return f"✅ Điều kiện thực hiện:\n{dieu_kien}"
-
-        return "Hiện hệ thống chưa cập nhật điều kiện thực hiện của thủ tục này."
-
-    # ===== KẾT QUẢ =====
-    if any(k in q for k in [
-        "kết quả",
-        "nhận gì",
-        "được gì"
-    ]):
-        ket_qua = procedure.get("KET_QUA") or ""
-
-        if ket_qua:
-            return f"📌 Kết quả thực hiện:\n{ket_qua}"
-
-        return "Hiện hệ thống chưa cập nhật kết quả thực hiện của thủ tục này."
-
-    return None
-
-#========== NHẬN DIỆN MENU ==========
-def answer_menu_keyword(user_id, question):
-    q_raw = str(question or "").strip()
-    q = normalize_vn(q_raw)
-
-    if not q:
-        return None
-
-    menu_rows = sheet_api.read_menu()
-
-    for row in menu_rows:
-        ten = (
-            row.get("Tên chức năng")
-            or row.get("TEN_CHUC_NANG")
-            or row.get("TEN")
-            or row.get("CHU_DE")
-            or ""
-        )
-
-        tu_khoa = (
-            row.get("Từ khóa")
-            or row.get("TU_KHOA")
-            or ""
-        )
-
-        sheet_name = sheet_api.get_menu_sheet_name(row)
-
-        menu_terms = [ten] + split_keywords(tu_khoa)
-        menu_terms_norm = [
-            normalize_vn(x)
-            for x in menu_terms
-            if normalize_vn(x)
-        ]
-
-        # Trường hợp người dân chỉ nhập đúng tên lĩnh vực: "cư trú", "căn cước", "vneid"
-        if q in menu_terms_norm:
-            if sheet_name == "TRA_CUU_LIEN_HE":
-                return contact_service.start_contact_flow(
-                    user_id=user_id,
-                    user_states=user_states
-                )
-
-            if sheet_name == "THONGTIN":
-                rows = sheet_api.read_sheet(sheet_name)
-                return build_sheet_answer(question, rows[:3])
-
-            if sheet_name == "FAQ":
-                rows = sheet_api.read_sheet(sheet_name)
-                return build_sheet_answer(question, rows[:3])
-
-            if str(sheet_name).startswith("THU_TUC_"):
-                set_user_state(user_id, {
-                    "level": "procedure_search",
-                    "sheet_name": sheet_name
-                })
-
-                return build_procedure_search_intro(sheet_name)
-
-        # Trường hợp người dân hỏi tự nhiên có chứa lĩnh vực: "mất căn cước", "đăng ký tài khoản vneid"
-        if any(term and term in q for term in menu_terms_norm):
-            if str(sheet_name).startswith("THU_TUC_"):
-                set_user_state(user_id, {
-                    "level": "procedure_search",
-                    "sheet_name": sheet_name
-                })
-
-                procedure_answer = answer_procedure_search_context(
-                    user_id,
-                    question
-                )
-
-                if procedure_answer:
-                    return procedure_answer
-
-                return build_procedure_search_intro(sheet_name)
-
-    return None
-    
-def answer_procedure_search_context(user_id, question):
-    state = get_user_state(user_id)
-
-    if not state:
-        return None
-
-    if state.get("level") not in ["procedure_search", "procedure_detail"]:
-        return None
-
-    if state.get("level") == "procedure_detail" and is_followup_question(question):
-        return None
-
-    sheet_name = state.get("sheet_name")
-
-    if not sheet_name:
-        procedure = state.get("procedure") or {}
-        sheet_name = procedure.get("_SOURCE_SHEET", "")
-
-    if not sheet_name:
-        return None
-
-    rows = sheet_api.read_sheet(sheet_name)
-
-    if not rows:
-        return "Hiện hệ thống chưa cập nhật dữ liệu cho lĩnh vực này."
-
-    q = normalize_vn(question)
-
-    if not q:
-        return None
-
-    best_row = None
-    best_score = 0
+    for kw in keyword_list:
+        if kw in user_text_norm:
+            score += len(kw)
+
+    return score
+
+
+# =========================
+# ĐỌC SHEET CƠ BẢN
+# =========================
+
+def read_sheet(sheet_name):
+    """
+    Đọc toàn bộ sheet thành list dict.
+    """
+    try:
+        ws = get_worksheet(sheet_name)
+        rows = ws.get_all_records()
+        return rows
+    except Exception as e:
+        print(f"[ERROR] Không đọc được sheet {sheet_name}: {e}")
+        return []
+
+
+def read_active_rows(sheet_name):
+    """
+    Đọc sheet và chỉ lấy dòng TRANG_THAI = ON.
+    """
+    rows = read_sheet(sheet_name)
+    return [row for row in rows if is_on(row)]
+
+
+# =========================
+# ĐỌC SETTING
+# =========================
+
+def get_settings(sheet_name):
+    """
+    Dùng cho SETTING_SYSTEM, SETTING_AI, SETTING_CHAT.
+    Cấu trúc khuyến nghị:
+    KEY | VALUE | DESCRIPTION | TRANG_THAI
+    """
+    rows = read_active_rows(sheet_name)
+    settings = {}
 
     for row in rows:
-        ten_thu_tuc = str(row.get("TEN_THU_TUC") or "")
-        tu_khoa = str(row.get("TU_KHOA") or "")
-        mo_ta = str(row.get("MO_TA") or "")
-        goi_y = str(row.get("GOI_Y_CAU_HOI") or "")
+        key = str(row.get("KEY", "")).strip()
+        value = row.get("VALUE", "")
 
-        name_norm = normalize_vn(ten_thu_tuc)
-        keyword_norm = normalize_vn(tu_khoa)
-        search_text = normalize_vn(
-            f"{ten_thu_tuc} {tu_khoa} {mo_ta} {goi_y}"
-        )
+        if key:
+            settings[key] = value
+
+    return settings
+
+
+def get_system_settings():
+    return get_settings("SETTING_SYSTEM")
+
+
+def get_ai_settings():
+    return get_settings("SETTING_AI")
+
+
+def get_chat_settings():
+    return get_settings("SETTING_CHAT")
+
+
+# =========================
+# ĐỌC PROMPT
+# =========================
+
+def get_prompts():
+    """
+    Cấu trúc khuyến nghị:
+    PROMPT_NAME | NOI_DUNG | TRANG_THAI
+    """
+    rows = read_active_rows("PROMPT")
+    prompts = {}
+
+    for row in rows:
+        name = str(row.get("PROMPT_NAME", "")).strip()
+        content = str(row.get("NOI_DUNG", "")).strip()
+
+        if name:
+            prompts[name] = content
+
+    return prompts
+
+
+def get_prompt(prompt_name, default=""):
+    prompts = get_prompts()
+    return prompts.get(prompt_name, default)
+
+
+# =========================
+# MENU
+# =========================
+
+def get_menu():
+    return read_active_rows("MENU")
+
+
+def find_menu(user_text):
+    """
+    Tìm menu theo TU_KHOA hoặc ID.
+    """
+    rows = get_menu()
+    user_norm = normalize_text(user_text)
+
+    matches = []
+
+    for row in rows:
+        menu_id = str(row.get("ID", "")).strip()
+        keywords = row.get("TU_KHOA", "")
+
+        if user_norm == normalize_text(menu_id):
+            matches.append(row)
+            continue
+
+        if keyword_match(user_text, keywords):
+            row["_score"] = score_keyword_match(user_text, keywords)
+            matches.append(row)
+
+    matches.sort(key=lambda x: x.get("_score", 0), reverse=True)
+
+    return matches[0] if matches else None
+
+
+# =========================
+# THÔNG TIN ĐƠN VỊ
+# =========================
+
+def get_thongtin():
+    """
+    Cấu trúc khuyến nghị:
+    KEY | VALUE | GHI_CHU | TRANG_THAI
+    """
+    rows = read_active_rows("THONGTIN")
+    info = {}
+
+    for row in rows:
+        key = str(row.get("KEY", "")).strip()
+        value = row.get("VALUE", "")
+
+        if key:
+            info[key] = value
+
+    return info
+
+
+# =========================
+# TRA CỨU LIÊN HỆ
+# =========================
+
+def get_lien_he():
+    return read_active_rows("TRA_CUU_LIEN_HE")
+
+
+def search_lien_he(user_text, limit=3):
+    """
+    Sheet TRA_CUU_LIEN_HE gồm 10 cột:
+    BO_PHAN
+    TDP
+    TU_KHOA
+    TEN_CO_QUAN
+    CHUC_NANG
+    SO_DIEN_THOAI
+    GOOGLE_MAP
+    GHI_CHU
+    TRANG_THAI
+    UU_TIEN
+    """
+    rows = get_lien_he()
+    results = []
+
+    for row in rows:
+        keywords = row.get("TU_KHOA", "")
+        ten = row.get("TEN_CO_QUAN", "")
+        chuc_nang = row.get("CHUC_NANG", "")
+        tdp = row.get("TDP", "")
 
         score = 0
+        score += score_keyword_match(user_text, keywords)
+        score += score_keyword_match(user_text, ten)
+        score += score_keyword_match(user_text, chuc_nang)
+        score += score_keyword_match(user_text, tdp)
 
-        if q == name_norm:
-            score += 100
+        if score > 0:
+            row["_score"] = score
+            row["_uu_tien"] = safe_int(row.get("UU_TIEN", 999))
+            results.append(row)
 
-        if q and q in name_norm:
-            score += 80
+    results.sort(key=lambda x: (x["_uu_tien"], -x["_score"]))
 
-        if q and q in keyword_norm:
-            score += 70
-
-        q_words = set(q.split())
-        text_words = set(search_text.split())
-
-        overlap = q_words.intersection(text_words)
-        score += len(overlap) * 10
-
-        similarity = SequenceMatcher(
-            None,
-            q,
-            name_norm
-        ).ratio()
-
-        score += int(similarity * 40)
-
-        if score > best_score:
-            best_score = score
-            best_row = row
-
-    if not best_row or best_score < 35:
-        if state.get("level") == "procedure_detail":
-            return None
-
-        return (
-            "Xin lỗi, hiện hệ thống chưa tìm thấy nội dung phù hợp trong lĩnh vực này.\n\n"
-            "Quý công dân vui lòng nhập rõ hơn nội dung cần hỏi hoặc nhập 'menu' "
-            "để quay lại danh mục hỗ trợ."
-        )
-
-    best_row["_SOURCE_SHEET"] = sheet_name
-
-    set_user_state(user_id, {
-        "level": "procedure_detail",
-        "sheet_name": sheet_name,
-        "procedure": best_row
-    })
-
-    return build_procedure_detail(best_row)
-    
-def build_answer(user_id, question):
-
-    answer = router_service.intent_router(
-        user_id,
-        question,
-        answer_thanks,
-        answer_greeting,
-        clear_user_state
-    )
-
-    if not answer:
-        answer = router_service.contact_router(
-            user_id,
-            question,
-            sheet_api,
-            user_states
-        )
-
-    if not answer:
-        answer = router_service.procedure_router(
-            user_id,
-            question,
-            answer_context_question,
-            answer_procedure_search_context,
-            answer_sub_menu_number,
-            answer_menu_number,
-            answer_menu_keyword
-        )
-
-    if not answer:
-        answer = router_service.search_router(
-            user_id,
-            question,
-            sheet_api,
-            build_sheet_answer,
-            set_user_state,
-            lambda question: False,
-            lambda user_id, context_items: None
-        )
-
-    if not answer:
-        answer = router_service.general_ai_router(
-            question,
-            gemini_service
-        )
-
-    if not answer:
-        answer = (
-            "Xin lỗi, hệ thống chúng tôi chưa cập nhật thông tin dữ liệu như nội dung Quý công dân hỏi, "
-            "hoặc máy chủ đang bận. Quý công dân vui lòng chờ ít phút rồi thử lại, "
-            "hoặc nhắn 'menu' để quay lại danh mục hỗ trợ."
-        )
-
-    sheet_api.append_chat_history(
-        user_id=user_id,
-        user_message=question,
-        bot_reply=answer
-    )
-
-    return answer
-    
-@app.route("/")
-def home():
-    return jsonify({
-        "status": "ok",
-        "bot": BOT_NAME,
-        "message": "Bot đang hoạt động"
-    })
+    return results[:limit]
 
 
-@app.route("/health")
-def health():
-    return jsonify({
-        "status": "ok"
-    })
+# =========================
+# FAQ
+# =========================
+
+def get_faq():
+    return read_active_rows("FAQ")
 
 
-@app.route("/test-sheet")
-def test_sheet():
+def search_faq(user_text, limit=3):
+    rows = get_faq()
+    results = []
+
+    for row in rows:
+        keywords = row.get("TU_KHOA", "")
+        cau_hoi = row.get("CAU_HOI", "")
+        tra_loi = row.get("TRA_LOI", "")
+
+        score = 0
+        score += score_keyword_match(user_text, keywords)
+        score += score_keyword_match(user_text, cau_hoi)
+
+        if score > 0:
+            row["_score"] = score
+            results.append(row)
+
+    results.sort(key=lambda x: x["_score"], reverse=True)
+
+    return results[:limit]
+
+
+# =========================
+# THỦ TỤC HÀNH CHÍNH
+# =========================
+
+def get_thu_tuc_by_sheet(sheet_name):
+    return read_active_rows(sheet_name)
+
+
+def get_all_thu_tuc():
+    all_rows = []
+
+    for sheet in THU_TUC_SHEETS:
+        rows = read_active_rows(sheet)
+
+        for row in rows:
+            row["_sheet"] = sheet
+            all_rows.append(row)
+
+    return all_rows
+
+
+def search_thu_tuc(user_text, limit=5):
+    """
+    Tìm thủ tục theo:
+    TU_KHOA
+    TEN_THU_TUC
+    CHU_DE
+    TRA_LOI_NGAN
+    TRA_LOI_DAY_DU
+    """
+    rows = get_all_thu_tuc()
+    results = []
+
+    for row in rows:
+        score = 0
+
+        score += score_keyword_match(user_text, row.get("TU_KHOA", ""))
+        score += score_keyword_match(user_text, row.get("TEN_THU_TUC", ""))
+        score += score_keyword_match(user_text, row.get("CHU_DE", ""))
+        score += score_keyword_match(user_text, row.get("TRA_LOI_NGAN", ""))
+        score += score_keyword_match(user_text, row.get("GOI_Y_CAU_HOI", ""))
+
+        if score > 0:
+            row["_score"] = score
+            row["_uu_tien"] = safe_int(row.get("MUC_UU_TIEN", 999))
+            results.append(row)
+
+    results.sort(key=lambda x: (x["_uu_tien"], -x["_score"]))
+
+    return results[:limit]
+
+
+# =========================
+# FORMAT CÂU TRẢ LỜI
+# =========================
+
+def format_lien_he(row):
+    ten = row.get("TEN_CO_QUAN", "")
+    chuc_nang = row.get("CHUC_NANG", "")
+    phone = row.get("SO_DIEN_THOAI", "")
+    map_link = row.get("GOOGLE_MAP", "")
+    note = row.get("GHI_CHU", "")
+
+    parts = []
+
+    if ten:
+        parts.append(f"📌 {ten}")
+    if chuc_nang:
+        parts.append(f"Chức năng: {chuc_nang}")
+    if phone:
+        parts.append(f"Điện thoại: {phone}")
+    if note:
+        parts.append(f"Ghi chú: {note}")
+    if map_link:
+        parts.append(f"Bản đồ: {map_link}")
+
+    return "\n".join(parts)
+
+
+def format_thu_tuc(row):
+    ten = row.get("TEN_THU_TUC", "")
+    mo_ta = row.get("MO_TA", "")
+    ho_so = row.get("HO_SO", "")
+    trinh_tu = row.get("TRINH_TU", "")
+    noi_nop = row.get("NOI_NOP", "")
+    thoi_han = row.get("THOI_HAN", "")
+    le_phi = row.get("LE_PHI", "")
+    ket_qua = row.get("KET_QUA", "")
+    luu_y = row.get("LUU_Y", "")
+    link = row.get("LINK_DVC", "")
+
+    parts = []
+
+    if ten:
+        parts.append(f"📄 {ten}")
+    if mo_ta:
+        parts.append(f"Mô tả: {mo_ta}")
+    if ho_so:
+        parts.append(f"Hồ sơ: {ho_so}")
+    if trinh_tu:
+        parts.append(f"Trình tự: {trinh_tu}")
+    if noi_nop:
+        parts.append(f"Nơi nộp: {noi_nop}")
+    if thoi_han:
+        parts.append(f"Thời hạn: {thoi_han}")
+    if le_phi:
+        parts.append(f"Lệ phí: {le_phi}")
+    if ket_qua:
+        parts.append(f"Kết quả: {ket_qua}")
+    if luu_y:
+        parts.append(f"Lưu ý: {luu_y}")
+    if link:
+        parts.append(f"Link DVC: {link}")
+
+    return "\n".join(parts)
+
+
+def format_faq(row):
+    question = row.get("CAU_HOI", "")
+    answer = row.get("TRA_LOI", "")
+
+    if question and answer:
+        return f"❓ {question}\n\n{answer}"
+
+    return answer or question
+
+
+# =========================
+# GHI LỊCH SỬ CHAT
+# =========================
+
+def log_chat(user_id, user_message, bot_reply, source="BOT"):
+    """
+    Ghi vào sheet LICH_SU_CHAT.
+
+    Cột khuyến nghị:
+    THOI_GIAN | USER_ID | USER_MESSAGE | BOT_REPLY | SOURCE
+    """
     try:
-        menu = sheet_api.read_menu()
+        ws = get_worksheet("LICH_SU_CHAT")
 
-        return jsonify({
-            "status": "ok",
-            "menu_count": len(menu),
-            "sample": menu[:3]
-        })
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+        ws.append_row([
+            now,
+            user_id,
+            user_message,
+            bot_reply,
+            source
+        ])
+
+        return True
 
     except Exception as e:
-        return jsonify({
-            "status": "error",
-            "message": str(e)
-        }), 500
+        print(f"[ERROR] Không ghi được LICH_SU_CHAT: {e}")
+        return False
 
 
-@app.route("/test-ai", methods=["POST", "GET"])
-def test_ai():
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        question = data.get("question", "")
-    else:
-        question = request.args.get(
-            "q",
-            "Xin chào"
-        )
+# =========================
+# HÀM KIỂM TRA KẾT NỐI
+# =========================
 
-    answer = build_answer(
-        user_id="test-web",
-        question=question
-    )
-
-    return jsonify({
-        "question": question,
-        "answer": answer
-    })
-
-
-@app.route("/webhook", methods=["GET", "POST"])
-def webhook():
-    if request.method == "GET":
-        return jsonify({
-            "status": "ok",
-            "message": "Webhook OK"
-        })
-
-    data = request.get_json(silent=True) or {}
-
+def test_connection():
     try:
-        print("WEBHOOK DATA:", data)
+        spreadsheet = get_spreadsheet()
+        print("✅ Kết nối Google Sheet thành công.")
+        print("Tên file:", spreadsheet.title)
 
-        event_name = data.get("event_name", "")
+        for name in SHEET_NAMES.values():
+            try:
+                ws = spreadsheet.worksheet(name)
+                print(f"✅ {name}: {ws.row_count} dòng")
+            except Exception:
+                print(f"❌ Không tìm thấy sheet: {name}")
 
-        # Sticker / ảnh / gif / link / vị trí...
-        if event_name != "user_send_text":
-            user_id = data.get("sender", {}).get("id", "")
-
-            if user_id and event_name in [
-                "user_send_sticker",
-                "user_send_image",
-                "user_send_gif",
-                "user_send_link",
-                "user_send_location"
-            ]:
-                answer = answer_greeting("menu")
-
-                zalo_service.send_text(
-                    user_id=user_id,
-                    text=answer
-                )
-
-                return jsonify({
-                    "success": True,
-                    "message": "Menu sent for non-text event"
-                })
-
-            return jsonify({
-                "success": True,
-                "message": "Ignored event"
-            })
-
-        message_data = data.get("message", {}) or {}
-
-        user_id = data.get("sender", {}).get("id", "")
-
-        if not user_id:
-            return jsonify({
-                "success": False,
-                "message": "Missing user_id"
-            }), 400
-
-        if "text" not in message_data:
-            answer = answer_greeting("menu")
-
-            zalo_service.send_text(
-                user_id=user_id,
-                text=answer
-            )
-
-            return jsonify({
-                "success": True,
-                "message": "Menu sent for non-text"
-            })
-
-        message_id = (
-            message_data.get("msg_id")
-            or message_data.get("message_id")
-            or ""
-        )
-
-        if message_id:
-            if message_id in processed_messages:
-                return jsonify({
-                    "success": True,
-                    "message": "Duplicate ignored"
-                })
-
-            processed_messages.add(message_id)
-
-        message = message_data.get("text", "")
-
-        if not message:
-            answer = answer_greeting("menu")
-
-            zalo_service.send_text(
-                user_id=user_id,
-                text=answer
-            )
-
-            return jsonify({
-                "success": True,
-                "message": "Empty text menu sent"
-            })
-
-        remember(
-            user_id=user_id,
-            role="user",
-            text=message
-        )
-
-        answer = build_answer(
-            user_id=user_id,
-            question=message
-        )
-
-        remember(
-            user_id=user_id,
-            role="assistant",
-            text=answer
-        )
-
-        zalo_service.send_text(
-            user_id=user_id,
-            text=answer
-        )
-
-        return jsonify({
-            "success": True
-        })
+        return True
 
     except Exception as e:
-        print("WEBHOOK ERROR:", e)
-
-        return jsonify({
-            "success": False,
-            "message": str(e)
-        }), 500
-
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-    data = request.get_json(silent=True) or {}
-
-    user_id = data.get(
-        "user_id",
-        "web"
-    )
-
-    question = data.get(
-        "question",
-        ""
-    )
-
-    if not question:
-        return jsonify({
-            "success": False,
-            "message": "Missing question"
-        }), 400
-
-    remember(
-        user_id=user_id,
-        role="user",
-        text=question
-    )
-
-    answer = build_answer(
-        user_id=user_id,
-        question=question
-    )
-
-    remember(
-        user_id=user_id,
-        role="assistant",
-        text=answer
-    )
-
-    return jsonify({
-        "success": True,
-        "answer": answer
-    })
+        print("❌ Lỗi kết nối Google Sheet:", e)
+        return False
 
 
 if __name__ == "__main__":
-    app.run(
-        host=HOST,
-        port=PORT
-    )
+    test_connection()
