@@ -1,4 +1,4 @@
-# sheet_api.py
+# services/sheet_api.py
 # Đọc và ghi dữ liệu Google Sheets cho BOT Công an phường Phù Liễn
 
 import json
@@ -17,10 +17,6 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-
-# =========================
-# KẾT NỐI GOOGLE SHEETS
-# =========================
 
 def get_client():
     service_account_info = json.loads(GOOGLE_SERVICE_ACCOUNT_JSON)
@@ -43,10 +39,6 @@ def get_worksheet(sheet_name):
     return spreadsheet.worksheet(sheet_name)
 
 
-# =========================
-# ĐỌC DỮ LIỆU
-# =========================
-
 def read_sheet(sheet_name):
     try:
         worksheet = get_worksheet(sheet_name)
@@ -65,10 +57,6 @@ def read_active_rows(sheet_name):
     rows = read_sheet(sheet_name)
     return [row for row in rows if is_on(row)]
 
-
-# =========================
-# CÁC SHEET CẤU HÌNH
-# =========================
 
 def read_menu():
     return read_active_rows("MENU")
@@ -128,36 +116,13 @@ def read_thongtin():
     return data
 
 
-# =========================
-# SHEET TRA CỨU
-# =========================
-
 def read_lien_he():
-    """
-    Sheet TRA_CUU_LIEN_HE gồm 10 cột:
-
-    BO_PHAN
-    TDP
-    TU_KHOA
-    TEN_CO_QUAN
-    CHUC_NANG
-    SO_DIEN_THOAI
-    GOOGLE_MAP
-    GHI_CHU
-    TRANG_THAI
-    UU_TIEN
-    """
-
     return read_active_rows("TRA_CUU_LIEN_HE")
 
 
 def read_faq():
     return read_active_rows("FAQ")
 
-
-# =========================
-# SHEET THỦ TỤC
-# =========================
 
 def read_thu_tuc_sheet(sheet_name):
     return read_active_rows(sheet_name)
@@ -176,10 +141,6 @@ def read_all_thu_tuc():
     return data
 
 
-# =========================
-# GHI DỮ LIỆU
-# =========================
-
 def append_row(sheet_name, values):
     try:
         worksheet = get_worksheet(sheet_name)
@@ -191,13 +152,6 @@ def append_row(sheet_name, values):
 
 
 def log_chat(thoi_gian, user_id, user_message, bot_reply, source="BOT"):
-    """
-    Ghi vào sheet LICH_SU_CHAT.
-
-    Cột khuyến nghị:
-    THOI_GIAN | USER_ID | USER_MESSAGE | BOT_REPLY | SOURCE
-    """
-
     values = [
         thoi_gian,
         user_id,
@@ -208,10 +162,6 @@ def log_chat(thoi_gian, user_id, user_message, bot_reply, source="BOT"):
 
     return append_row("LICH_SU_CHAT", values)
 
-
-# =========================
-# KIỂM TRA KẾT NỐI
-# =========================
 
 def test_connection():
     try:
