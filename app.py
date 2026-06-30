@@ -4,10 +4,10 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from config import PORT, BOT_NAME, DEFAULT_REPLY, check_config
-from router import route_message_for_ai, get_welcome_message
-from gemini_ai import ask_gemini
-from zalo_service import send_zalo_text
-from logger import write_log, log_error
+from services.router_service import route_message_for_ai, get_welcome_message
+from services.gemini_service import ask_gemini
+from services.zalo_service import send_zalo_text
+from services.logger import write_log, log_error
 
 
 app = Flask(__name__)
@@ -28,31 +28,9 @@ def home():
 @app.route("/health", methods=["GET"])
 def health():
     ok, missing = check_config()
-
     return jsonify({
         "status": "ok" if ok else "missing_config",
         "missing": missing
-    })
-
-
-@app.route("/test-ai", methods=["GET", "POST"])
-def test_ai():
-    if request.method == "POST":
-        data = request.get_json(silent=True) or {}
-        question = data.get("question", "")
-    else:
-        question = request.args.get("q", "menu")
-
-    result = build_answer(
-        user_id="test-web",
-        question=question
-    )
-
-    return jsonify({
-        "success": True,
-        "question": question,
-        "answer": result["answer"],
-        "source": result["source"]
     })
 
 
@@ -61,9 +39,8 @@ def build_answer(user_id, question):
 
     answer = routed.get("reply", DEFAULT_REPLY)
     source = routed.get("source", "DEFAULT")
-    use_ai = routed.get("use_ai", False)
 
-    if use_ai:
+    if routed.get("use_ai", False):
         answer = ask_gemini(question)
         source = "GEMINI_AI"
 
@@ -74,10 +51,25 @@ def build_answer(user_id, question):
         source=source
     )
 
-    return {
+    return answer, source
+
+
+@app.route("/test-ai", methods=["GET", "POST"])
+def test_ai():
+    if request.method == "POST":
+        data = request.get_json(silent=True) or {}
+        question = data.get("question", "")
+    else:
+        question = request.args.get("q", "menu")
+
+    answer, source = build_answer("test-web", question)
+
+    return jsonify({
+        "success": True,
+        "question": question,
         "answer": answer,
         "source": source
-    }
+    })
 
 
 @app.route("/webhook", methods=["GET", "POST"])
@@ -91,8 +83,6 @@ def webhook():
     data = request.get_json(silent=True) or {}
 
     try:
-        print("WEBHOOK DATA:", data)
-
         event_name = data.get("event_name", "")
         user_id = data.get("sender", {}).get("id", "")
         message_data = data.get("message", {}) or {}
@@ -104,11 +94,7 @@ def webhook():
             }), 400
 
         if event_name != "user_send_text":
-            send_zalo_text(
-                user_id=user_id,
-                message=get_welcome_message()
-            )
-
+            send_zalo_text(user_id, get_welcome_message())
             return jsonify({
                 "success": True,
                 "message": "Non-text event handled"
@@ -132,29 +118,19 @@ def webhook():
         user_text = message_data.get("text", "")
 
         if not user_text:
-            send_zalo_text(
-                user_id=user_id,
-                message=get_welcome_message()
-            )
-
+            send_zalo_text(user_id, get_welcome_message())
             return jsonify({
                 "success": True,
                 "message": "Empty text handled"
             }), 200
 
-        result = build_answer(
-            user_id=user_id,
-            question=user_text
-        )
+        answer, source = build_answer(user_id, user_text)
 
-        send_zalo_text(
-            user_id=user_id,
-            message=result["answer"]
-        )
+        send_zalo_text(user_id, answer)
 
         return jsonify({
             "success": True,
-            "source": result["source"]
+            "source": source
         }), 200
 
     except Exception as e:
@@ -166,10 +142,7 @@ def webhook():
             user_text = data.get("message", {}).get("text", "")
 
             if user_id:
-                send_zalo_text(
-                    user_id=user_id,
-                    message=DEFAULT_REPLY
-                )
+                send_zalo_text(user_id, DEFAULT_REPLY)
 
             log_error(
                 user_id=user_id,
@@ -199,15 +172,12 @@ def api_chat():
             "message": "Missing question"
         }), 400
 
-    result = build_answer(
-        user_id=user_id,
-        question=question
-    )
+    answer, source = build_answer(user_id, question)
 
     return jsonify({
         "success": True,
-        "answer": result["answer"],
-        "source": result["source"]
+        "answer": answer,
+        "source": source
     })
 
 
