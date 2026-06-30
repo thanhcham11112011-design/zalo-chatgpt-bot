@@ -1,4 +1,4 @@
-# zalo_api.py
+# services/zalo_service.py
 # Gửi tin nhắn Zalo OA
 
 import requests
@@ -10,10 +10,6 @@ ZALO_SEND_MESSAGE_URL = "https://openapi.zalo.me/v3.0/oa/message/cs"
 
 
 def send_zalo_text(user_id, message):
-    """
-    Gửi tin nhắn văn bản từ Zalo OA đến người dùng.
-    """
-
     if not ZALO_ACCESS_TOKEN:
         print("[ZALO ERROR] Thiếu ZALO_ACCESS_TOKEN")
         return False
@@ -59,3 +55,8 @@ def send_zalo_text(user_id, message):
     except Exception as e:
         print(f"[ZALO ERROR] {e}")
         return False
+
+
+# Giữ tương thích nếu code cũ còn gọi zalo_service.send_text(...)
+def send_text(user_id, text):
+    return send_zalo_text(user_id, text)
