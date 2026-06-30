@@ -1,10 +1,10 @@
-# search_engine.py
+# services/search_engine.py
 # Xử lý tìm kiếm dữ liệu trong Google Sheets
 
 import re
 import unicodedata
 
-from sheet_api import (
+from services.sheet_api import (
     read_menu,
     read_lien_he,
     read_faq,
@@ -146,7 +146,9 @@ def search_thu_tuc(user_text, limit=5):
 
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(row.get("MUC_UU_TIEN", row.get("UU_TIEN", 999)))
+            row["_UU_TIEN"] = safe_int(
+                row.get("MUC_UU_TIEN", row.get("UU_TIEN", 999))
+            )
             results.append(row)
 
     results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
