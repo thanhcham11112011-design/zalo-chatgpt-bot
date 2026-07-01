@@ -1,10 +1,21 @@
 # app.py
+# Webhook Zalo OA - BOT Công an phường Phù Liễn
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from config import PORT, BOT_NAME, DEFAULT_REPLY, check_config
-from services.router_service import route_message_for_ai, get_welcome_message
+from config import (
+    PORT,
+    BOT_NAME,
+    DEFAULT_REPLY,
+    check_config,
+)
+
+from services.router_service import (
+    route_message_for_ai,
+    get_welcome_message,
+)
+
 from services.gemini_service import ask_gemini
 from services.zalo_service import send_zalo_text
 from services.logger import write_log, log_error
@@ -16,31 +27,18 @@ CORS(app)
 processed_messages = set()
 
 
-@app.route("/", methods=["GET"])
-def home():
-    return jsonify({
-        "status": "ok",
-        "bot": BOT_NAME,
-        "message": "Bot đang hoạt động"
-    })
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    ok, missing = check_config()
-    return jsonify({
-        "status": "ok" if ok else "missing_config",
-        "missing": missing
-    })
-
+# =========================
+# BUILD ANSWER
+# =========================
 
 def build_answer(user_id, question):
     routed = route_message_for_ai(question)
 
     answer = routed.get("reply", DEFAULT_REPLY)
     source = routed.get("source", "DEFAULT")
+    use_ai = routed.get("use_ai", False)
 
-    if routed.get("use_ai", False):
+    if use_ai:
         answer = ask_gemini(question)
         source = "GEMINI_AI"
 
@@ -54,6 +52,29 @@ def build_answer(user_id, question):
     return answer, source
 
 
+# =========================
+# ROUTES
+# =========================
+
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({
+        "status": "ok",
+        "bot": BOT_NAME,
+        "message": "Bot đang hoạt động"
+    })
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    ok, missing = check_config()
+
+    return jsonify({
+        "status": "ok" if ok else "missing_config",
+        "missing": missing
+    })
+
+
 @app.route("/test-ai", methods=["GET", "POST"])
 def test_ai():
     if request.method == "POST":
@@ -62,7 +83,10 @@ def test_ai():
     else:
         question = request.args.get("q", "menu")
 
-    answer, source = build_answer("test-web", question)
+    answer, source = build_answer(
+        user_id="test-web",
+        question=question
+    )
 
     return jsonify({
         "success": True,
@@ -71,6 +95,35 @@ def test_ai():
         "source": source
     })
 
+
+@app.route("/api/chat", methods=["POST"])
+def api_chat():
+    data = request.get_json(silent=True) or {}
+
+    user_id = data.get("user_id", "web")
+    question = data.get("question", "")
+
+    if not question:
+        return jsonify({
+            "success": False,
+            "message": "Missing question"
+        }), 400
+
+    answer, source = build_answer(
+        user_id=user_id,
+        question=question
+    )
+
+    return jsonify({
+        "success": True,
+        "answer": answer,
+        "source": source
+    })
+
+
+# =========================
+# ZALO WEBHOOK
+# =========================
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
@@ -83,6 +136,8 @@ def webhook():
     data = request.get_json(silent=True) or {}
 
     try:
+        print("WEBHOOK DATA:", data)
+
         event_name = data.get("event_name", "")
         user_id = data.get("sender", {}).get("id", "")
         message_data = data.get("message", {}) or {}
@@ -94,7 +149,11 @@ def webhook():
             }), 400
 
         if event_name != "user_send_text":
-            send_zalo_text(user_id, get_welcome_message())
+            send_zalo_text(
+                user_id=user_id,
+                message=get_welcome_message()
+            )
+
             return jsonify({
                 "success": True,
                 "message": "Non-text event handled"
@@ -115,18 +174,28 @@ def webhook():
 
             processed_messages.add(message_id)
 
-        user_text = message_data.get("text", "")
+        question = message_data.get("text", "")
 
-        if not user_text:
-            send_zalo_text(user_id, get_welcome_message())
+        if not question:
+            send_zalo_text(
+                user_id=user_id,
+                message=get_welcome_message()
+            )
+
             return jsonify({
                 "success": True,
                 "message": "Empty text handled"
             }), 200
 
-        answer, source = build_answer(user_id, user_text)
+        answer, source = build_answer(
+            user_id=user_id,
+            question=question
+        )
 
-        send_zalo_text(user_id, answer)
+        send_zalo_text(
+            user_id=user_id,
+            message=answer
+        )
 
         return jsonify({
             "success": True,
@@ -139,14 +208,17 @@ def webhook():
 
         try:
             user_id = data.get("sender", {}).get("id", "")
-            user_text = data.get("message", {}).get("text", "")
+            question = data.get("message", {}).get("text", "")
 
             if user_id:
-                send_zalo_text(user_id, DEFAULT_REPLY)
+                send_zalo_text(
+                    user_id=user_id,
+                    message=DEFAULT_REPLY
+                )
 
             log_error(
                 user_id=user_id,
-                user_message=user_text,
+                user_message=question,
                 error_message=error_message
             )
 
@@ -159,27 +231,9 @@ def webhook():
         }), 200
 
 
-@app.route("/api/chat", methods=["POST"])
-def api_chat():
-    data = request.get_json(silent=True) or {}
-
-    user_id = data.get("user_id", "web")
-    question = data.get("question", "")
-
-    if not question:
-        return jsonify({
-            "success": False,
-            "message": "Missing question"
-        }), 400
-
-    answer, source = build_answer(user_id, question)
-
-    return jsonify({
-        "success": True,
-        "answer": answer,
-        "source": source
-    })
-
+# =========================
+# RUN LOCAL
+# =========================
 
 if __name__ == "__main__":
     app.run(
