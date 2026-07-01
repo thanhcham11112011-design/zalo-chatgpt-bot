@@ -1,68 +1,73 @@
 # config.py
-# Cấu hình hệ thống BOT Công an phường Phù Liễn
 
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-
-# =========================
+# ==========================================
 # FLASK
-# =========================
+# ==========================================
 
 PORT = int(os.getenv("PORT", 5000))
 
+# ==========================================
+# BOT
+# ==========================================
 
-# =========================
-# ZALO OA
-# =========================
+BOT_NAME = os.getenv(
+    "BOT_NAME",
+    "Trợ lý AI Công an phường Phù Liễn"
+)
 
-ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN", "").strip()
+DEFAULT_REPLY = (
+    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. "
+    "Vui lòng liên hệ Công an phường để được hỗ trợ."
+)
 
-
-# =========================
+# ==========================================
 # GOOGLE SHEETS
-# =========================
+# ==========================================
 
-SPREADSHEET_ID = os.getenv("SPREADSHEET_ID", "").strip()
-
-GOOGLE_SERVICE_ACCOUNT_JSON = os.getenv(
-    "GOOGLE_SERVICE_ACCOUNT_JSON",
+GOOGLE_SHEET_ID = os.getenv(
+    "GOOGLE_SHEET_ID",
     ""
 ).strip()
 
+GOOGLE_CREDENTIALS_FILE = os.getenv(
+    "GOOGLE_CREDENTIALS_FILE",
+    "credentials.json"
+).strip()
 
-# =========================
-# GEMINI AI
-# =========================
+# Giữ tương thích với các module
+SPREADSHEET_ID = GOOGLE_SHEET_ID
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+# ==========================================
+# GEMINI
+# ==========================================
+
+GEMINI_API_KEY = os.getenv(
+    "GEMINI_API_KEY",
+    ""
+).strip()
 
 GEMINI_MODEL = os.getenv(
     "GEMINI_MODEL",
     "gemini-2.0-flash"
 ).strip()
 
+# ==========================================
+# ZALO OA
+# ==========================================
 
-# =========================
-# BOT SETTINGS
-# =========================
-
-BOT_NAME = os.getenv(
-    "BOT_NAME",
-    "Trợ lý ảo Công an phường Phù Liễn"
+ZALO_ACCESS_TOKEN = os.getenv(
+    "ZALO_ACCESS_TOKEN",
+    ""
 ).strip()
 
-DEFAULT_REPLY = os.getenv(
-    "DEFAULT_REPLY",
-    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. Vui lòng nhập lại nội dung cần hỏi hoặc liên hệ trực ban Công an phường để được hỗ trợ."
-).strip()
-
-
-# =========================
-# GOOGLE SHEET NAMES
-# =========================
+# ==========================================
+# GOOGLE SHEETS
+# ==========================================
 
 SHEET_MENU = "MENU"
 SHEET_SETTING_SYSTEM = "SETTING_SYSTEM"
@@ -83,7 +88,6 @@ SHEET_THU_TUC_PCCC = "THU_TUC_PCCC"
 SHEET_THU_TUC_VKVLN = "THU_TUC_VKVLN"
 SHEET_THU_TUC_ANTT = "THU_TUC_ANTT"
 
-
 THU_TUC_SHEETS = [
     SHEET_THU_TUC_CCCD,
     SHEET_THU_TUC_CUTRU,
@@ -94,7 +98,6 @@ THU_TUC_SHEETS = [
     SHEET_THU_TUC_VKVLN,
     SHEET_THU_TUC_ANTT,
 ]
-
 
 ALL_SHEETS = [
     SHEET_MENU,
@@ -109,38 +112,34 @@ ALL_SHEETS = [
     *THU_TUC_SHEETS,
 ]
 
-
-# =========================
-# VALIDATION
-# =========================
+# ==========================================
+# KIỂM TRA CẤU HÌNH
+# ==========================================
 
 def check_config():
     missing = []
 
-    if not ZALO_ACCESS_TOKEN:
-        missing.append("ZALO_ACCESS_TOKEN")
+    if not GOOGLE_SHEET_ID:
+        missing.append("GOOGLE_SHEET_ID")
 
-    if not SPREADSHEET_ID:
-        missing.append("SPREADSHEET_ID")
-
-    if not GOOGLE_SERVICE_ACCOUNT_JSON:
-        missing.append("GOOGLE_SERVICE_ACCOUNT_JSON")
+    if not GOOGLE_CREDENTIALS_FILE:
+        missing.append("GOOGLE_CREDENTIALS_FILE")
 
     if not GEMINI_API_KEY:
         missing.append("GEMINI_API_KEY")
 
-    if missing:
-        return False, missing
+    if not ZALO_ACCESS_TOKEN:
+        missing.append("ZALO_ACCESS_TOKEN")
 
-    return True, []
+    return len(missing) == 0, missing
 
 
 if __name__ == "__main__":
-    ok, missing_keys = check_config()
+    ok, missing = check_config()
 
     if ok:
-        print("✅ Cấu hình đầy đủ.")
+        print("✅ CONFIG OK")
     else:
         print("❌ Thiếu cấu hình:")
-        for key in missing_keys:
-            print("-", key)
+        for item in missing:
+            print("-", item)
