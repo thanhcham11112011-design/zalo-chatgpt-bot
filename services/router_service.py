@@ -133,6 +133,29 @@ def search_menu_strict(user_text):
 
     return None
 
+def detect_explicit_topic(user_text):
+    text = normalize_text(user_text)
+
+    topic_map = {
+        "THU_TUC_CCCD": ["can cuoc", "cccd", "the can cuoc", "lam can cuoc", "cap can cuoc"],
+        "THU_TUC_CUTRU": ["cu tru", "tam tru", "thuong tru", "tam vang", "luu tru"],
+        "THU_TUC_VNEID": ["vneid", "dinh danh", "muc 2"],
+        "THU_TUC_PTGT": ["dang ky xe", "bien so", "sang ten xe", "phuong tien"],
+        "THU_TUC_PCCC": ["pccc", "phong chay", "chua chay"],
+        "THU_TUC_VKVLN": ["vu khi", "vat lieu no", "cong cu ho tro", "phao"],
+        "THU_TUC_LLTP": ["ly lich tu phap", "phieu ly lich"],
+        "THU_TUC_ANTT": ["nganh nghe", "antt", "kinh doanh co dieu kien"],
+    }
+
+    for sheet, keywords in topic_map.items():
+        for kw in keywords:
+            if kw in text:
+                return {
+                    "sheet": sheet,
+                    "topic": sheet.replace("THU_TUC_", "")
+                }
+
+    return None
 
 def route_message(user_text, context=None):
     context = context or {}
@@ -141,11 +164,57 @@ def route_message(user_text, context=None):
         return DEFAULT_REPLY, "EMPTY", context
 
     text = str(user_text).strip()
+    text_norm = normalize_text(text)
 
+    # 1. Chào / menu
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}
 
-    menu_result = search_menu(text)
+    # 2. Nếu người dân hỏi rõ sang lĩnh vực mới thì đổi context
+    explicit_context = detect_explicit_topic(text)
+
+    if explicit_context:
+        context = explicit_context
+    else:
+        # 3. Chỉ dùng context cũ khi câu hỏi ngắn/mơ hồ
+        if context.get("sheet") == "THU_TUC_CCCD":
+            text = "căn cước " + text
+        elif context.get("sheet") == "THU_TUC_CUTRU":
+            text = "cư trú " + text
+        elif context.get("sheet") == "THU_TUC_VNEID":
+            text = "vneid " + text
+        elif context.get("sheet") == "THU_TUC_PTGT":
+            text = "đăng ký xe " + text
+        elif context.get("sheet") == "THU_TUC_PCCC":
+            text = "pccc " + text
+        elif context.get("sheet") == "THU_TUC_VKVLN":
+            text = "vũ khí công cụ hỗ trợ " + text
+        elif context.get("sheet") == "THU_TUC_LLTP":
+            text = "lý lịch tư pháp " + text
+        elif context.get("sheet") == "THU_TUC_ANTT":
+            text = "ngành nghề antt " + text
+
+    # 4. Chỉ nhận MENU khi nhập số hoặc tên nhóm rất ngắn
+    menu_result = None
+
+    menu_keywords = [
+        "can cuoc",
+        "cu tru",
+        "vneid",
+        "phuong tien giao thong",
+        "ly lich tu phap",
+        "nganh nghe dau tu kinh doanh co dieu kien ve antt",
+        "phong chay chua chay",
+        "pccc",
+        "vu khi vat lieu no cong cu ho tro",
+        "vkvln",
+        "tra cuu lien he",
+        "lien he",
+    ]
+
+    if text_norm.isdigit() or text_norm in menu_keywords:
+        menu_result = search_menu(text)
+
     if menu_result:
         sheet = (
             menu_result.get("SHEET_DU_LIEU")
@@ -155,16 +224,15 @@ def route_message(user_text, context=None):
 
         new_context = {
             "sheet": sheet,
-            "topic": menu_result.get("TEN_CHUC_NANG") or menu_result.get("TEN") or ""
+            "topic": menu_result.get("TEN_CHUC_NANG")
+            or menu_result.get("TEN")
+            or menu_result.get("CHU_DE")
+            or ""
         }
 
         return answer_from_menu(menu_result), "MENU", new_context
 
-    # Nếu đang ở trong nhóm căn cước mà người dân hỏi tiếp ngắn gọn
-    if context.get("sheet") == "THU_TUC_CCCD":
-        text = "căn cước " + text
-
-    # Ưu tiên thủ tục trước FAQ
+    # 5. Ưu tiên tìm thủ tục trước FAQ
     thu_tuc_results = search_thu_tuc(text, limit=3)
     if thu_tuc_results:
         reply = format_multiple_results(
@@ -174,6 +242,7 @@ def route_message(user_text, context=None):
         )
         return reply, "THU_TUC", context
 
+    # 6. Tra cứu liên hệ
     lien_he_results = search_lien_he(text, limit=3)
     if lien_he_results:
         reply = format_multiple_results(
@@ -183,6 +252,7 @@ def route_message(user_text, context=None):
         )
         return reply, "TRA_CUU_LIEN_HE", context
 
+    # 7. FAQ
     faq_results = search_faq(text, limit=3)
     if faq_results:
         reply = format_multiple_results(
@@ -192,8 +262,8 @@ def route_message(user_text, context=None):
         )
         return reply, "FAQ", context
 
+    # 8. Không tìm thấy
     return DEFAULT_REPLY, "DEFAULT", context
-
 
 def route_message_for_ai(user_text, context=None):
     context = context or {}
