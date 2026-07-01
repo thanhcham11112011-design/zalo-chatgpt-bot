@@ -485,44 +485,24 @@ def _need_select_procedure_message(ctx):
     )
 
 def get_contact_lookup_message():
-    """
-    Lấy nội dung hướng dẫn Tra cứu liên hệ từ sheet TRA_CUU_LIEN_HE, cột MO_TA.
-    Không hardcode nội dung trả lời trong Python.
-
-    Cách nhập dữ liệu trên Google Sheet:
-    - Sheet: TRA_CUU_LIEN_HE
-    - Cột tiêu đề: MO_TA hoặc MÔ_TẢ
-    - Dòng hướng dẫn có thể có TEN_CHUC_NANG = Tra cứu liên hệ
-      hoặc ID = MENU / HUONG_DAN / 0.
-    """
     rows = read_lien_he()
 
-    # Ưu tiên dòng hướng dẫn đúng mục Tra cứu liên hệ
+    # Ưu tiên đúng chức năng "Tra cứu liên hệ"
     for row in rows:
-        title = get_first(
-            row,
-            "TEN_CHUC_NANG", "TÊN_CHỨC_NĂNG",
-            "CHU_DE", "CHỦ_ĐỀ",
-            "TEN_CO_QUAN", "TÊN_CƠ_QUAN",
-            "HO_TEN", "HỌ_TÊN",
-            "ID",
-        )
-        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
+        ten = get_first(row, "TEN_CHUC_NANG")
+        mo_ta = get_first(row, "MO_TA")
 
-        title_norm = normalize_text(title)
-        if mo_ta and (
-            "tra cuu lien he" in title_norm
-            or title_norm in ["menu", "huong dan", "huong_dan", "0", "1"]
-        ):
+        if normalize_text(ten) == "tra cuu lien he" and mo_ta:
             return str(mo_ta).strip()
 
-    # Nếu không có dòng đánh dấu, lấy dòng đầu tiên có cột MO_TA
+    # Nếu không có thì lấy dòng đầu tiên đang ON
     for row in rows:
-        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
-        if mo_ta:
+        trang_thai = normalize_text(get_first(row, "TRANG_THAI"))
+        mo_ta = get_first(row, "MO_TA")
+
+        if trang_thai == "on" and mo_ta:
             return str(mo_ta).strip()
 
-    # Fallback kỹ thuật khi sheet chưa có dữ liệu, để BOT không bị lỗi.
     return DEFAULT_REPLY
 
 
