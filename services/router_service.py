@@ -68,16 +68,7 @@ def is_followup_detail_question(user_text):
         "dich vu cong",
     ]
 
-    return any(kw in text for kw in detail_keywords)text):
-    t = normalize_text(text)
-    keys = [
-        "ho so", "can giay to gi", "can gi", "giay to", "thu tuc gom gi",
-        "trinh tu", "cac buoc", "quy trinh", "lam o dau", "nop o dau",
-        "noi thuc hien", "noi nop", "co quan thuc hien", "co quan tiep nhan",
-        "bao lau", "thoi han", "le phi", "phi", "mat phi khong", "ket qua",
-        "co so phap ly", "luu y", "link", "dich vu cong", "chi tiet"
-    ]
-    return any(k in t for k in keys)
+    return any(kw in text for kw in detail_keywords)
 
 
 def get_welcome_message():
@@ -179,9 +170,27 @@ def answer_procedure_detail(row, user_text):
     if "ho so" in t or "giay to" in t or "can gi" in t or "chi tiet" in t:
         value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
         return f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
-    if "trinh tu" in t or "cac buoc" in t or "quy trinh" in t:
-        value = get_first(row, "TRINH_TU", "TRÌNH_TỰ")
-        return f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+   if (
+    "trinh tu" in t
+    or "quy trinh" in t
+    or "quy trinh thuc hien" in t
+    or "cac buoc" in t
+    or "buoc thuc hien" in t
+    or "thu tuc thuc hien" in t
+):
+    value = get_first(
+        row,
+        "TRINH_TU",
+        "TRÌNH_TỰ",
+        "QUY_TRINH",
+        "QUY_TRÌNH"
+    )
+
+    return (
+        f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}"
+        if value
+        else format_thu_tuc(row)
+    )
     if is_location_question(t):
         value = get_first(row, "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "LUU_Y", "LƯU_Ý")
         return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
