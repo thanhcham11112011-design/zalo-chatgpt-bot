@@ -342,10 +342,10 @@ def route_message(user_text, context=None):
             return answer_from_menu(menu_result), "MENU", build_menu_context(menu_result)
 
     # 3. Nếu đang có thủ tục cụ thể và người dân hỏi tiếp chi tiết
-    if context.get("procedure_id") and is_followup_detail_question(text):
-        procedure = find_procedure_by_id(context.get("procedure_id"))
+   if context.get("procedure_id") and is_followup_detail_question(text):
+    procedure = find_procedure_by_id(context.get("procedure_id"))
 
-        if procedure:
+    if procedure:
         if is_location_question(text):
             co_quan = (
                 procedure.get("CO_QUAN_THUC_HIEN")
@@ -367,7 +367,6 @@ def route_message(user_text, context=None):
 
         reply = answer_procedure_detail(procedure, text)
         return reply, "PROCEDURE_CONTEXT", context
-
     # 4. Nếu người dân hỏi rõ sang lĩnh vực mới thì đổi context
     explicit_context = detect_explicit_topic(text)
 
