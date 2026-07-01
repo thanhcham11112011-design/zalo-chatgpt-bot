@@ -1,495 +1,295 @@
-# services/router_service.py
-# Điều hướng câu hỏi người dân sang đúng nguồn dữ liệu
-
 from config import DEFAULT_REPLY
-from services.sheet_api import read_menu, read_all_thu_tuc
-
+from services.sheet_api import read_menu
+from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.search_engine import (
-    normalize_text,
-    search_menu,
-    search_lien_he,
-    search_faq,
-    search_thu_tuc,
-    format_lien_he,
-    format_faq,
-    format_thu_tuc,
-    format_multiple_results,
+    search_menu, search_lien_he, search_faq, search_thu_tuc,
+    list_procedures_by_sheet, find_procedure_by_id,
+    format_lien_he, format_faq, format_thu_tuc, format_multiple_results,
 )
 
 
-# =========================
-# NHẬN DIỆN LỜI CHÀO / MENU
-# =========================
+def is_greeting(text):
+    return normalize_text(text) in ["xin chao", "chao", "chao ban", "hello", "hi", "alo", "menu", "danh muc", "bat dau", "0"]
 
-def is_greeting(user_text):
-    text = normalize_text(user_text)
 
-    greetings = [
-        "xin chao",
-        "chao",
-        "chao ban",
-        "hello",
-        "hi",
-        "alo",
-        "menu",
-        "danh muc",
-        "bat dau",
-        "0",
+def is_reset_question(text):
+    return normalize_text(text) in ["huy", "thoat", "lam lai", "menu chinh", "quay lai", "xoa", "reset"]
+
+
+def is_location_question(text):
+    t = normalize_text(text)
+    keys = [
+        "o dau", "dia chi", "dia diem", "noi lam", "lam o dau", "nop o dau",
+        "co quan tiep nhan", "tiep nhan", "noi tiep nhan", "co quan thuc hien",
+        "noi thuc hien", "noi nop", "den dau", "bo phan nao"
     ]
+    return any(k in t for k in keys)
 
-    return text in greetings
+
+def is_followup_detail_question(text):
+    t = normalize_text(text)
+    keys = [
+        "ho so", "can giay to gi", "can gi", "giay to", "thu tuc gom gi",
+        "trinh tu", "cac buoc", "quy trinh", "lam o dau", "nop o dau",
+        "noi thuc hien", "noi nop", "co quan thuc hien", "co quan tiep nhan",
+        "bao lau", "thoi han", "le phi", "phi", "mat phi khong", "ket qua",
+        "co so phap ly", "luu y", "link", "dich vu cong", "chi tiet"
+    ]
+    return any(k in t for k in keys)
 
 
 def get_welcome_message():
-    menu_rows = read_menu()
+    rows = read_menu()
     lines = []
-
-    for index, row in enumerate(menu_rows, start=1):
-        title = (
-            row.get("TEN_CHUC_NANG")
-            or row.get("TEN")
-            or row.get("CHU_DE")
-            or row.get("MO_TA")
-            or ""
-        )
-        title = str(title).strip()
-
+    for i, row in enumerate(rows, start=1):
+        title = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE", "MO_TA", "MÔ_TẢ")
         if title:
-            lines.append(f"{index}. {title}")
-
+            lines.append(f"{i}. {title}")
     if not lines:
         lines = [
-            "1. Làm căn cước",
-            "2. Đăng ký cư trú",
-            "3. VNeID / định danh điện tử",
-            "4. Phản ánh ANTT",
-            "5. Số điện thoại trực ban",
-            "6. Gặp cán bộ trực",
+            "1. Căn cước", "2. Cư trú", "3. VNeID / định danh điện tử",
+            "4. Phản ánh ANTT", "5. Số điện thoại trực ban", "6. Gặp cán bộ trực"
         ]
-
-    menu_text = "\n".join(lines)
-
     return (
         "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
         "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
-        "📋 DANH MỤC HỖ TRỢ\n"
-        f"{menu_text}\n\n"
-        "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi."
+        "📋 DANH MỤC HỖ TRỢ\n" + "\n".join(lines) +
+        "\n\n💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi."
     )
 
 
-# =========================
-# MENU
-# =========================
-
-def answer_from_menu(menu_row):
-    ten = (
-        menu_row.get("TEN_CHUC_NANG")
-        or menu_row.get("TEN")
-        or menu_row.get("CHU_DE")
-        or ""
-    )
-    mo_ta = menu_row.get("MO_TA", "")
-    sheet = menu_row.get("SHEET_DU_LIEU") or menu_row.get("SHEET") or ""
-
-    parts = []
-
-    if ten:
-        parts.append(f"📌 {ten}")
-
-    if mo_ta:
-        parts.append(str(mo_ta))
-
-    if sheet:
-        parts.append(
-            f"Quý công dân vui lòng nhập nội dung cụ thể để tôi tra cứu trong nhóm: {sheet}"
-        )
-
-    return "\n\n".join(parts) if parts else get_welcome_message()
-
-
-def build_menu_context(menu_row):
+def menu_context(row):
     return {
-        "sheet": menu_row.get("SHEET_DU_LIEU") or menu_row.get("SHEET") or "",
-        "topic": (
-            menu_row.get("TEN_CHUC_NANG")
-            or menu_row.get("TEN")
-            or menu_row.get("CHU_DE")
-            or ""
-        ),
+        "sheet": get_first(row, "SHEET_DU_LIEU", "SHEET"),
+        "topic": get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE"),
+        "stage": "menu_group",
+        "procedure_id": "",
+        "procedure_name": "",
+        "last_suggestions": [],
     }
 
 
-# =========================
-# NHẬN DIỆN LĨNH VỰC RÕ RÀNG
-# =========================
+def answer_from_menu(row):
+    title = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
+    desc = get_first(row, "MO_TA", "MÔ_TẢ")
+    sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
+    parts = []
+    if title:
+        parts.append(f"📌 {title}")
+    if desc:
+        parts.append(str(desc))
+    if sheet and sheet.startswith("THU_TUC_"):
+        procedures = list_procedures_by_sheet(sheet, limit=8)
+        if procedures:
+            lines = []
+            suggestions = []
+            for i, p in enumerate(procedures, start=1):
+                name = get_first(p, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+                pid = get_first(p, "ID")
+                suggestions.append({"index": i, "id": pid, "name": name})
+                if name:
+                    lines.append(f"{i}. {name}")
+            parts.append("Quý công dân vui lòng chọn thủ tục:\n" + "\n".join(lines))
+            parts.append("Hoặc nhập trực tiếp nội dung cần hỏi.")
+            return "\n\n".join(parts), suggestions
+    if sheet:
+        parts.append(f"Quý công dân vui lòng nhập nội dung cụ thể để tôi tra cứu trong nhóm: {sheet}")
+    return ("\n\n".join(parts) if parts else get_welcome_message()), []
 
-def detect_explicit_topic(user_text):
-    text = normalize_text(user_text)
 
+def detect_explicit_topic(text):
+    t = normalize_text(text)
     topic_map = {
-        "THU_TUC_CCCD": [
-            "can cuoc",
-            "cccd",
-            "the can cuoc",
-            "lam can cuoc",
-            "cap can cuoc",
-        ],
-        "THU_TUC_CUTRU": [
-            "cu tru",
-            "tam tru",
-            "thuong tru",
-            "tam vang",
-            "luu tru",
-            "xac nhan cu tru",
-            "tach ho",
-        ],
-        "THU_TUC_VNEID": [
-            "vneid",
-            "dinh danh",
-            "muc 2",
-            "kich hoat vneid",
-        ],
-        "THU_TUC_PTGT": [
-            "dang ky xe",
-            "bien so",
-            "sang ten xe",
-            "phuong tien",
-            "xe may",
-            "o to",
-        ],
-        "THU_TUC_PCCC": [
-            "pccc",
-            "phong chay",
-            "chua chay",
-            "nghiem thu pccc",
-            "tham duyet pccc",
-        ],
-        "THU_TUC_VKVLN": [
-            "vu khi",
-            "vat lieu no",
-            "cong cu ho tro",
-            "phao",
-        ],
-        "THU_TUC_LLTP": [
-            "ly lich tu phap",
-            "phieu ly lich",
-            "lltp",
-        ],
-        "THU_TUC_ANTT": [
-            "nganh nghe",
-            "antt",
-            "kinh doanh co dieu kien",
-            "karaoke",
-            "cam do",
-            "luu tru",
-            "dich vu bao ve",
-        ],
+        "THU_TUC_CCCD": ["can cuoc", "cccd", "the can cuoc", "lam can cuoc", "cap can cuoc"],
+        "THU_TUC_CUTRU": ["cu tru", "tam tru", "thuong tru", "tam vang", "luu tru", "xac nhan cu tru", "tach ho"],
+        "THU_TUC_VNEID": ["vneid", "dinh danh", "muc 2", "kich hoat vneid"],
+        "THU_TUC_PTGT": ["dang ky xe", "bien so", "sang ten xe", "phuong tien", "xe may", "o to"],
+        "THU_TUC_PCCC": ["pccc", "phong chay", "chua chay", "nghiem thu pccc", "tham duyet pccc"],
+        "THU_TUC_VKVLN": ["vu khi", "vat lieu no", "cong cu ho tro", "phao"],
+        "THU_TUC_LLTP": ["ly lich tu phap", "phieu ly lich", "lltp"],
+        "THU_TUC_ANTT": ["nganh nghe", "antt", "kinh doanh co dieu kien", "karaoke", "cam do", "dich vu bao ve"],
     }
-
-    for sheet, keywords in topic_map.items():
-        for kw in keywords:
-            if kw in text:
-                return {
-                    "sheet": sheet,
-                    "topic": sheet.replace("THU_TUC_", ""),
-                }
-
+    for sheet, keys in topic_map.items():
+        if any(k in t for k in keys):
+            return {"sheet": sheet, "topic": sheet.replace("THU_TUC_", ""), "stage": "topic"}
     return None
 
 
-# =========================
-# PROCEDURE CONTEXT
-# =========================
-
-def is_followup_detail_question(user_text):
-    text = normalize_text(user_text)
-
-    detail_keywords = [
-        "ho so",
-        "can giay to gi",
-        "can gi",
-        "giay to",
-        "thu tuc gom gi",
-        "trinh tu",
-        "cac buoc",
-        "lam o dau",
-        "nop o dau",
-        "noi thuc hien",
-        "noi nop",
-        "co quan thuc hien",
-        "bao lau",
-        "thoi han",
-        "le phi",
-        "phi",
-        "mat phi khong",
-        "ket qua",
-        "co so phap ly",
-        "luu y",
-        "link",
-        "dich vu cong",
-    ]
-
-    return any(kw in text for kw in detail_keywords)
-
-
-def find_procedure_by_id(procedure_id):
-    if not procedure_id:
-        return None
-
-    rows = read_all_thu_tuc()
-    procedure_id = str(procedure_id).strip()
-
-    for row in rows:
-        if str(row.get("ID", "")).strip() == procedure_id:
-            return row
-
-    return None
+def context_prefix(ctx):
+    sheet = ctx.get("sheet", "")
+    mapping = {
+        "THU_TUC_CCCD": "căn cước ",
+        "THU_TUC_CUTRU": "cư trú ",
+        "THU_TUC_VNEID": "vneid ",
+        "THU_TUC_PTGT": "đăng ký xe ",
+        "THU_TUC_PCCC": "pccc ",
+        "THU_TUC_VKVLN": "vũ khí vật liệu nổ công cụ hỗ trợ ",
+        "THU_TUC_LLTP": "lý lịch tư pháp ",
+        "THU_TUC_ANTT": "ngành nghề antt ",
+    }
+    return mapping.get(sheet, "")
 
 
 def answer_procedure_detail(row, user_text):
-    text = normalize_text(user_text)
+    t = normalize_text(user_text)
+    ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
 
-    ten = row.get("TEN_THU_TUC", "")
-
-    if "ho so" in text or "giay to" in text or "can gi" in text:
-        value = row.get("HO_SO") or row.get("TRA_LOI_DAY_DU") or ""
-        return f"📄 Hồ sơ - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "trinh tu" in text or "cac buoc" in text:
-        value = row.get("TRINH_TU") or ""
-        return f"📝 Trình tự thực hiện - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if (
-        "lam o dau" in text
-        or "nop o dau" in text
-        or "noi thuc hien" in text
-        or "noi nop" in text
-        or "co quan thuc hien" in text
-    ):
-        value = (
-            row.get("CO_QUAN_THUC_HIEN")
-            or row.get("NOI_NOP")
-            or row.get("LUU_Y")
-            or ""
-        )
-        return f"📍 Nơi thực hiện - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "bao lau" in text or "thoi han" in text:
-        value = row.get("THOI_HAN") or ""
+    if "ho so" in t or "giay to" in t or "can gi" in t or "chi tiet" in t:
+        value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
+        return f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+    if "trinh tu" in t or "cac buoc" in t or "quy trinh" in t:
+        value = get_first(row, "TRINH_TU", "TRÌNH_TỰ")
+        return f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+    if is_location_question(t):
+        value = get_first(row, "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "LUU_Y", "LƯU_Ý")
+        return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+    if "bao lau" in t or "thoi han" in t:
+        value = get_first(row, "THOI_HAN", "THỜI_HẠN")
         return f"⏱ Thời hạn - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "le phi" in text or "mat phi" in text or text == "phi":
-        value = row.get("LE_PHI") or row.get("PHI") or ""
+    if "le phi" in t or "mat phi" in t or t == "phi":
+        value = get_first(row, "LE_PHI", "LỆ_PHÍ", "PHI")
         return f"💰 Lệ phí - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "ket qua" in text:
-        value = row.get("KET_QUA") or ""
-        return f"✅ Kết quả - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "co so phap ly" in text:
-        value = row.get("CO_SO_PHAP_LY") or ""
-        return f"⚖️ Cơ sở pháp lý - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "luu y" in text:
-        value = row.get("LUU_Y") or ""
-        return f"ℹ️ Lưu ý - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
-    if "link" in text or "dich vu cong" in text:
-        value = row.get("LINK_DVC") or ""
+    if "ket qua" in t:
+        value = get_first(row, "KET_QUA", "KẾT_QUẢ")
+        return f"✅ Kết quả - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+    if "co so phap ly" in t:
+        value = get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
+        return f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+    if "luu y" in t:
+        value = get_first(row, "LUU_Y", "LƯU_Ý")
+        return f"ℹ️ Lưu ý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+    if "link" in t or "dich vu cong" in t:
+        value = get_first(row, "LINK_DVC", "LINK")
         return f"🔗 Link dịch vụ công - {ten}\n\n{value}" if value else format_thu_tuc(row)
-
     return format_thu_tuc(row)
 
 
-# =========================
-# ROUTER CHÍNH
-# =========================
+def build_ai_context(ctx):
+    parts = []
+    if ctx.get("procedure_id"):
+        p = find_procedure_by_id(ctx.get("procedure_id"))
+        if p:
+            parts.append(format_thu_tuc(p))
+    elif ctx.get("sheet"):
+        rows = list_procedures_by_sheet(ctx.get("sheet"), limit=5)
+        if rows:
+            parts.append("Các thủ tục liên quan:\n" + "\n".join([get_first(r, "TEN_THU_TUC", "TÊN_THỦ_TỤC") for r in rows]))
+    return "\n\n".join(parts)
+
+
+def _select_from_suggestions(text, ctx):
+    t = normalize_text(text)
+    if not t.isdigit():
+        return None
+    idx = safe_int(t, default=-1)
+    for item in ctx.get("last_suggestions", []) or []:
+        if int(item.get("index", -99)) == idx:
+            return find_procedure_by_id(item.get("id"))
+    return None
+
 
 def route_message(user_text, context=None):
-    context = context or {}
-
-    if not user_text or not str(user_text).strip():
-        return DEFAULT_REPLY, "EMPTY", context
-
-    text = str(user_text).strip()
+    ctx = dict(context or {})
+    text = str(user_text or "").strip()
     text_norm = normalize_text(text)
 
-    # 1. Chào / menu
+    if not text:
+        return DEFAULT_REPLY, "EMPTY", ctx, ""
+
+    if is_reset_question(text):
+        return get_welcome_message(), "RESET", {}, ""
+
     if is_greeting(text):
-        return get_welcome_message(), "WELCOME", {}
+        return get_welcome_message(), "WELCOME", {}, ""
 
-    # 2. Ưu tiên tuyệt đối nếu người dân nhập số menu
+    selected = _select_from_suggestions(text, ctx)
+    if selected:
+        new_ctx = {
+            "sheet": selected.get("_SHEET", ctx.get("sheet", "")),
+            "topic": get_first(selected, "CHU_DE", "CHỦ_ĐỀ"),
+            "procedure_id": get_first(selected, "ID"),
+            "procedure_name": get_first(selected, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+            "stage": "procedure",
+            "last_suggestions": [],
+        }
+        return format_thu_tuc(selected), "THU_TUC_SELECT", new_ctx, ""
+
     if text_norm.isdigit():
-        menu_result = search_menu(text)
+        menu = search_menu(text)
+        if menu:
+            reply, suggestions = answer_from_menu(menu)
+            new_ctx = menu_context(menu)
+            new_ctx["last_suggestions"] = suggestions
+            return reply, "MENU", new_ctx, ""
 
-        if menu_result:
-            sheet = menu_result.get("SHEET_DU_LIEU") or menu_result.get("SHEET") or ""
-            new_context = {
-                "sheet": sheet,
-                "topic": menu_result.get("TEN_CHUC_NANG")
-                or menu_result.get("TEN")
-                or menu_result.get("CHU_DE")
-                or ""
-            }
-            return answer_from_menu(menu_result), "MENU", new_context
-
-    # 3. Nếu đang có thủ tục cụ thể và người dân hỏi tiếp chi tiết
-    if context.get("procedure_id") and is_followup_detail_question(text):
-        procedure = find_procedure_by_id(context.get("procedure_id"))
-
+    if ctx.get("procedure_id") and is_followup_detail_question(text):
+        procedure = find_procedure_by_id(ctx.get("procedure_id"))
         if procedure:
-            # 3.1. Câu hỏi về nơi thực hiện/cơ quan thực hiện phải tra TRA_CUU_LIEN_HE
-            if is_location_question(text):
-                co_quan = (
-                    procedure.get("CO_QUAN_THUC_HIEN")
-                    or procedure.get("NOI_NOP")
-                    or procedure.get("NOI_THUC_HIEN")
-                    or ""
-                )
+            return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-                search_text = (
-                    f"{co_quan} "
-                    f"{procedure.get('CHU_DE', '')} "
-                    f"{procedure.get('TEN_THU_TUC', '')}"
-                )
+    explicit = detect_explicit_topic(text)
+    if explicit:
+        ctx.update(explicit)
 
-                lien_he_results = search_lien_he(search_text, limit=1)
+    search_text = text
+    if not explicit and ctx.get("sheet"):
+        search_text = context_prefix(ctx) + text
 
-                if lien_he_results:
-                    reply = format_multiple_results(
-                        lien_he_results,
-                        format_lien_he,
-                        limit=1
-                    )
-                    return reply, "TRA_CUU_LIEN_HE_CONTEXT", context
+    menu_keys = ["can cuoc", "cu tru", "vneid", "phuong tien giao thong", "dang ky xe", "ly lich tu phap", "pccc", "vkvln", "lien he", "tra cuu lien he"]
+    if text_norm in menu_keys:
+        menu = search_menu(text)
+        if menu:
+            reply, suggestions = answer_from_menu(menu)
+            new_ctx = menu_context(menu)
+            new_ctx["last_suggestions"] = suggestions
+            return reply, "MENU", new_ctx, ""
 
-            # 3.2. Các câu hỏi chi tiết khác: hồ sơ, lệ phí, thời hạn, trình tự...
-            reply = answer_procedure_detail(procedure, text)
-            return reply, "PROCEDURE_CONTEXT", context
-
-    # 4. Nếu người dân hỏi rõ sang lĩnh vực mới thì đổi context
-    explicit_context = detect_explicit_topic(text)
-
-    if explicit_context:
-        context = explicit_context
-    else:
-        # 5. Chỉ dùng context cũ khi câu hỏi ngắn/mơ hồ
-        if context.get("sheet") == "THU_TUC_CCCD":
-            text = "căn cước " + text
-        elif context.get("sheet") == "THU_TUC_CUTRU":
-            text = "cư trú " + text
-        elif context.get("sheet") == "THU_TUC_VNEID":
-            text = "vneid " + text
-        elif context.get("sheet") == "THU_TUC_PTGT":
-            text = "đăng ký xe " + text
-        elif context.get("sheet") == "THU_TUC_PCCC":
-            text = "pccc " + text
-        elif context.get("sheet") == "THU_TUC_VKVLN":
-            text = "vũ khí công cụ hỗ trợ " + text
-        elif context.get("sheet") == "THU_TUC_LLTP":
-            text = "lý lịch tư pháp " + text
-        elif context.get("sheet") == "THU_TUC_ANTT":
-            text = "ngành nghề antt " + text
-
-    # 6. Menu tên nhóm ngắn
-    menu_keywords = [
-        "can cuoc",
-        "cu tru",
-        "vneid",
-        "phuong tien giao thong",
-        "ly lich tu phap",
-        "nganh nghe dau tu kinh doanh co dieu kien ve antt",
-        "phong chay chua chay",
-        "pccc",
-        "vu khi vat lieu no cong cu ho tro",
-        "vkvln",
-        "tra cuu lien he",
-        "lien he",
-    ]
-
-    if text_norm in menu_keywords:
-        menu_result = search_menu(text)
-
-        if menu_result:
-            sheet = menu_result.get("SHEET_DU_LIEU") or menu_result.get("SHEET") or ""
-            new_context = {
-                "sheet": sheet,
-                "topic": menu_result.get("TEN_CHUC_NANG")
-                or menu_result.get("TEN")
-                or menu_result.get("CHU_DE")
-                or ""
-            }
-            return answer_from_menu(menu_result), "MENU", new_context
-
-    # 7. Tìm thủ tục: một câu hỏi -> một thủ tục
-    thu_tuc_results = search_thu_tuc(text, limit=3)
+    sheet_filter = ctx.get("sheet") if ctx.get("sheet", "").startswith("THU_TUC_") else None
+    thu_tuc_results = search_thu_tuc(search_text, limit=5, sheet=sheet_filter)
+    if not thu_tuc_results and sheet_filter:
+        thu_tuc_results = search_thu_tuc(text, limit=5)
 
     if thu_tuc_results:
         best = thu_tuc_results[0]
         best_score = best.get("_SCORE", 0)
         second_score = thu_tuc_results[1].get("_SCORE", 0) if len(thu_tuc_results) > 1 else 0
-
         if best_score >= 20 and best_score >= second_score + 8:
-            reply = format_thu_tuc(best)
-
-            new_context = {
-                "sheet": best.get("_SHEET", context.get("sheet", "")),
-                "topic": best.get("CHU_DE", context.get("topic", "")),
-                "procedure_id": best.get("ID", ""),
-                "procedure_name": best.get("TEN_THU_TUC", ""),
+            new_ctx = {
+                "sheet": best.get("_SHEET", ctx.get("sheet", "")),
+                "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
+                "procedure_id": get_first(best, "ID"),
+                "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                "stage": "procedure",
+                "last_suggestions": [],
             }
-
-            return reply, "THU_TUC", new_context
-
+            return format_thu_tuc(best), "THU_TUC", new_ctx, ""
         suggestions = []
-        for index, row in enumerate(thu_tuc_results[:3], start=1):
-            ten = row.get("TEN_THU_TUC", "")
-            if ten:
-                suggestions.append(f"{index}. {ten}")
+        lines = []
+        for i, row in enumerate(thu_tuc_results[:5], start=1):
+            name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+            pid = get_first(row, "ID")
+            suggestions.append({"index": i, "id": pid, "name": name})
+            lines.append(f"{i}. {name}")
+        ctx["last_suggestions"] = suggestions
+        return "Tôi tìm thấy một số thủ tục gần giống nhau. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC", ctx, ""
 
-        if suggestions:
-            reply = (
-                "Tôi tìm thấy một số thủ tục gần giống nhau. "
-                "Quý công dân vui lòng nói rõ hơn cần thực hiện thủ tục nào:\n\n"
-                + "\n".join(suggestions)
-            )
-            return reply, "CLARIFY_THU_TUC", context
+    lien_he = search_lien_he(search_text, limit=3)
+    if lien_he:
+        return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", ctx, ""
 
-    # 8. Tra cứu liên hệ độc lập
-    lien_he_results = search_lien_he(text, limit=3)
+    faq = search_faq(search_text, limit=3)
+    if faq:
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
-    if lien_he_results:
-        reply = format_multiple_results(
-            lien_he_results,
-            format_lien_he,
-            limit=3
-        )
-        return reply, "TRA_CUU_LIEN_HE", context
+    return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
 
-    # 9. FAQ
-    faq_results = search_faq(text, limit=3)
-
-    if faq_results:
-        reply = format_multiple_results(
-            faq_results,
-            format_faq,
-            limit=3
-        )
-        return reply, "FAQ", context
-
-    # 10. Không tìm thấy
-    return DEFAULT_REPLY, "DEFAULT", context
 
 def route_message_for_ai(user_text, context=None):
-    context = context or {}
-
-    reply, source, new_context = route_message(user_text, context=context)
-    use_ai = source in ["DEFAULT", "EMPTY"]
-
+    reply, source, new_context, ai_context = route_message(user_text, context=context)
     return {
         "reply": reply,
         "source": source,
-        "use_ai": use_ai,
+        "use_ai": source in ["DEFAULT", "EMPTY"],
         "context": new_context,
+        "ai_context": ai_context,
     }
