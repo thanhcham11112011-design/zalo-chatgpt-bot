@@ -21,18 +21,24 @@ def normalize_text(text):
         return ""
 
     text = str(text).strip().lower()
-
     text = unicodedata.normalize("NFD", text)
     text = "".join(
         char for char in text
         if unicodedata.category(char) != "Mn"
     )
-
     text = text.replace("đ", "d")
-    text = re.sub(r"[^a-z0-9\s,./:-]", " ", text)
+    text = re.sub(r"[^a-z0-9\s,./:;_-]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
+
+
+def get_first(row, *keys, default=""):
+    for key in keys:
+        value = row.get(key)
+        if value not in (None, ""):
+            return value
+    return default
 
 
 def safe_int(value, default=999):
@@ -55,15 +61,16 @@ def keyword_score(user_text, keywords):
 
     score = 0
 
+    # Hỗ trợ cả dấu phẩy, chấm phẩy, xuống dòng
     keyword_list = [
         item.strip()
-        for item in keywords_norm.split(",")
+        for item in re.split(r"[,;\n]+", keywords_norm)
         if item.strip()
     ]
 
     for kw in keyword_list:
         if kw in user_text_norm:
-            score += len(kw)
+            score += max(len(kw), 1)
 
     return score
 
@@ -90,15 +97,18 @@ def search_menu(user_text):
     for row in rows:
         menu_id = str(row.get("ID", "")).strip()
 
-        ten_chuc_nang = (
-            row.get("TEN_CHUC_NANG")
-            or row.get("TEN")
-            or row.get("CHU_DE")
-            or ""
+        ten_chuc_nang = get_first(
+            row,
+            "TEN_CHUC_NANG",
+            "TÊN_CHỨC_NĂNG",
+            "TEN",
+            "CHU_DE",
+            "MÔ_TẢ",
+            "MO_TA",
         )
 
-        tu_khoa = row.get("TU_KHOA", "")
-        mo_ta = row.get("MO_TA", "")
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA", "TU KHOA")
+        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ")
 
         score = 0
 
@@ -114,7 +124,7 @@ def search_menu(user_text):
 
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(row.get("UU_TIEN", 999))
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             results.append(row)
 
     results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
@@ -133,16 +143,17 @@ def search_lien_he(user_text, limit=3):
     for row in rows:
         score = field_score(
             user_text,
-            row.get("TU_KHOA", ""),
-            row.get("TDP", ""),
-            row.get("TEN_CO_QUAN", ""),
-            row.get("CHUC_NANG", ""),
-            row.get("GHI_CHU", "")
+            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+            get_first(row, "TDP"),
+            get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+            get_first(row, "HỌ_TÊN", "HO_TEN", "TEN_CO_QUAN", "TÊN_CƠ_QUAN"),
+            get_first(row, "CHỨC_VỤ", "CHUC_VU", "CHUC_NANG", "CHỨC_NĂNG"),
+            get_first(row, "GHI_CHÚ", "GHI_CHU")
         )
 
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(row.get("UU_TIEN", 999))
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             results.append(row)
 
     results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
@@ -161,14 +172,14 @@ def search_faq(user_text, limit=3):
     for row in rows:
         score = field_score(
             user_text,
-            row.get("TU_KHOA", ""),
-            row.get("CAU_HOI", ""),
-            row.get("TRA_LOI", "")
+            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+            get_first(row, "CAU_HOI", "CÂU_HỎI"),
+            get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRA_LOI_DAY_DU")
         )
 
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(row.get("UU_TIEN", 999))
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             results.append(row)
 
     results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
@@ -187,18 +198,18 @@ def search_thu_tuc(user_text, limit=5):
     for row in rows:
         score = field_score(
             user_text,
-            row.get("TU_KHOA", ""),
-            row.get("CHU_DE", ""),
-            row.get("TEN_THU_TUC", ""),
-            row.get("MO_TA", ""),
-            row.get("GOI_Y_CAU_HOI", ""),
-            row.get("TRA_LOI_NGAN", "")
+            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+            get_first(row, "CHU_DE", "CHỦ_ĐỀ"),
+            get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+            get_first(row, "MO_TA", "MÔ_TẢ"),
+            get_first(row, "GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI"),
+            get_first(row, "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN")
         )
 
         if score > 0:
             row["_SCORE"] = score
             row["_UU_TIEN"] = safe_int(
-                row.get("MUC_UU_TIEN", row.get("UU_TIEN", 999))
+                get_first(row, "MUC_UU_TIEN", "UU_TIEN", default=999)
             )
             results.append(row)
 
@@ -212,11 +223,14 @@ def search_thu_tuc(user_text, limit=5):
 # =========================
 
 def format_lien_he(row):
-    ten = row.get("TEN_CO_QUAN", "")
-    chuc_nang = row.get("CHUC_NANG", "")
-    phone = row.get("SO_DIEN_THOAI", "")
-    map_link = row.get("GOOGLE_MAP", "")
-    note = row.get("GHI_CHU", "")
+    ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HỌ_TÊN", "HO_TEN")
+    bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
+    tdp = get_first(row, "TDP")
+    chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHỨC_VỤ", "CHUC_VU")
+    phone = get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI")
+    email = get_first(row, "EMAIL")
+    map_link = get_first(row, "GOOGLE_MAP", "MAP")
+    note = get_first(row, "GHI_CHU", "GHI_CHÚ")
 
     parts = []
 
@@ -224,10 +238,19 @@ def format_lien_he(row):
         parts.append(f"📌 {ten}")
 
     if chuc_nang:
-        parts.append(f"Chức năng: {chuc_nang}")
+        parts.append(f"Chức vụ/chức năng: {chuc_nang}")
+
+    if bo_phan:
+        parts.append(f"Bộ phận: {bo_phan}")
+
+    if tdp:
+        parts.append(f"Địa bàn/TDP: {tdp}")
 
     if phone:
         parts.append(f"Điện thoại: {phone}")
+
+    if email:
+        parts.append(f"Email: {email}")
 
     if note:
         parts.append(f"Ghi chú: {note}")
@@ -239,8 +262,8 @@ def format_lien_he(row):
 
 
 def format_faq(row):
-    cau_hoi = row.get("CAU_HOI", "")
-    tra_loi = row.get("TRA_LOI", "")
+    cau_hoi = get_first(row, "CAU_HOI", "CÂU_HỎI")
+    tra_loi = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
 
     if cau_hoi and tra_loi:
         return f"❓ {cau_hoi}\n\n{tra_loi}"
@@ -249,18 +272,18 @@ def format_faq(row):
 
 
 def format_thu_tuc(row):
-    ten = row.get("TEN_THU_TUC", "")
-    mo_ta = row.get("MO_TA", "")
-    doi_tuong = row.get("DOI_TUONG_AP_DUNG", "")
-    dieu_kien = row.get("DIEU_KIEN", "")
-    ho_so = row.get("HO_SO", "")
-    trinh_tu = row.get("TRINH_TU", "")
-    noi_nop = row.get("NOI_NOP", "")
-    thoi_han = row.get("THOI_HAN", "")
-    le_phi = row.get("LE_PHI", "")
-    ket_qua = row.get("KET_QUA", "")
-    luu_y = row.get("LUU_Y", "")
-    link = row.get("LINK_DVC", "")
+    ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+    mo_ta = get_first(row, "MO_TA", "MÔ_TẢ")
+    doi_tuong = get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG")
+    dieu_kien = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
+    ho_so = get_first(row, "HO_SO", "HỒ_SƠ")
+    trinh_tu = get_first(row, "TRINH_TU", "TRÌNH_TỰ")
+    noi_nop = get_first(row, "NOI_NOP", "NƠI_NỘP", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
+    thoi_han = get_first(row, "THOI_HAN", "THỜI_HẠN")
+    le_phi = get_first(row, "LE_PHI", "LỆ_PHÍ")
+    ket_qua = get_first(row, "KET_QUA", "KẾT_QUẢ")
+    luu_y = get_first(row, "LUU_Y", "LƯU_Ý")
+    link = get_first(row, "LINK_DVC")
 
     parts = []
 
@@ -283,7 +306,7 @@ def format_thu_tuc(row):
         parts.append(f"Trình tự: {trinh_tu}")
 
     if noi_nop:
-        parts.append(f"Nơi nộp: {noi_nop}")
+        parts.append(f"Nơi nộp/cơ quan thực hiện: {noi_nop}")
 
     if thoi_han:
         parts.append(f"Thời hạn: {thoi_han}")
@@ -308,6 +331,8 @@ def format_multiple_results(results, formatter, limit=3):
     texts = []
 
     for index, row in enumerate(selected, start=1):
-        texts.append(f"{index}. {formatter(row)}")
+        formatted = formatter(row)
+        if formatted:
+            texts.append(f"{index}. {formatted}")
 
     return "\n\n".join(texts)
