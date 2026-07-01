@@ -588,10 +588,22 @@ def route_message(user_text, context=None):
             ""
         )
 
-    lien_he = search_lien_he(search_text, limit=3)
+    # Chỉ tra cứu liên hệ khi câu hỏi có ý định liên hệ/địa điểm rõ ràng
+    if is_location_question(text) or text_norm in [
+        "lien he",
+        "so dien thoai",
+        "truc ban",
+        "google map",
+        "ban do",
+    ]:
+        lien_he = search_lien_he(search_text, limit=3)
 
-    if lien_he:
-        return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", ctx, ""
+        if lien_he:
+            return format_multiple_results(
+                lien_he,
+                format_lien_he,
+                limit=3
+            ), "TRA_CUU_LIEN_HE", ctx, ""
 
     faq = search_faq(search_text, limit=3)
 
