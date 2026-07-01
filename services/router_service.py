@@ -21,7 +21,37 @@ def is_greeting(text):
 
 
 def is_reset_question(text):
-    return normalize_text(text) in ["huy", "thoat", "lam lai", "menu chinh", "quay lai", "xoa", "reset"]
+    t = normalize_text(text)
+
+    keys = [
+        "huy",
+        "thoat",
+        "lam lai",
+        "menu chinh",
+        "quay lai",
+        "xoa",
+        "reset",
+        "xong",
+        "xong roi",
+        "da ro",
+        "toi hieu roi",
+        "cam on",
+        "cam on ban",
+        "ok cam on",
+        "cam on nhe",
+        "cam on nhieu",
+        "thank",
+        "thanks",
+        "thank you",
+    ]
+
+    return t in keys
+
+def get_end_message():
+    return (
+        "Cảm ơn Quý công dân đã sử dụng Trợ lý AI Công an phường Phù Liễn.\n\n"
+        "Khi cần hỗ trợ thêm, Quý công dân vui lòng nhắn 'menu' hoặc nhập trực tiếp nội dung cần hỏi."
+    )
 
 
 def is_location_question(text):
@@ -77,7 +107,15 @@ def is_followup_detail_question(user_text):
     ]
 
     return any(kw in text for kw in detail_keywords)
-
+def get_end_message():
+    return (
+        "🙏 Cảm ơn Quý công dân đã sử dụng Trợ lý AI Công an phường Phù Liễn.\n\n"
+        "Rất hân hạnh được hỗ trợ Quý công dân.\n\n"
+        "Khi cần hỗ trợ thêm, Quý công dân chỉ cần nhắn:\n"
+        "• menu\n"
+        "hoặc nhập trực tiếp nội dung cần hỏi.\n\n"
+        "Kính chúc Quý công dân sức khỏe và nhiều điều tốt đẹp!"
+    )
 
 def get_welcome_message():
     rows = read_menu()
@@ -314,7 +352,7 @@ def route_message(user_text, context=None):
         return DEFAULT_REPLY, "EMPTY", ctx, ""
 
     if is_reset_question(text):
-        return get_welcome_message(), "RESET", {}, ""
+        return get_end_message(), "RESET", {}, ""
 
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
