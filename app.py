@@ -25,18 +25,27 @@ app = Flask(__name__)
 CORS(app)
 
 processed_messages = set()
-
+user_context = {}
 
 # =========================
 # BUILD ANSWER
 # =========================
 
 def build_answer(user_id, question):
-    routed = route_message_for_ai(question)
+    context = user_context.get(user_id, {})
+
+    routed = route_message_for_ai(
+        question,
+        context=context
+    )
 
     answer = routed.get("reply", DEFAULT_REPLY)
     source = routed.get("source", "DEFAULT")
     use_ai = routed.get("use_ai", False)
+
+    selected_context = routed.get("context")
+    if selected_context:
+        user_context[user_id] = selected_context
 
     if use_ai:
         answer = ask_gemini(question)
@@ -50,7 +59,6 @@ def build_answer(user_id, question):
     )
 
     return answer, source
-
 
 # =========================
 # ROUTES
