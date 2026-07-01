@@ -133,32 +133,37 @@ def search_menu_strict(user_text):
     return None
 
 
-def route_message(user_text):
+def route_message(user_text, context=None):
+    context = context or {}
+
     if not user_text or not str(user_text).strip():
-        return DEFAULT_REPLY, "EMPTY"
+        return DEFAULT_REPLY, "EMPTY", context
 
     text = str(user_text).strip()
 
-    # 1. Chào / menu
     if is_greeting(text):
-        return get_welcome_message(), "WELCOME"
+        return get_welcome_message(), "WELCOME", {}
 
-    # 2. MENU chỉ bắt số hoặc đúng tên chức năng
-    menu_result = search_menu_strict(text)
+    menu_result = search_menu(text)
     if menu_result:
-        return answer_from_menu(menu_result), "MENU"
-
-    # 3. FAQ
-    faq_results = search_faq(text, limit=3)
-    if faq_results:
-        reply = format_multiple_results(
-            faq_results,
-            format_faq,
-            limit=3
+        sheet = (
+            menu_result.get("SHEET_DU_LIEU")
+            or menu_result.get("SHEET")
+            or ""
         )
-        return reply, "FAQ"
 
-    # 4. Thủ tục hành chính
+        new_context = {
+            "sheet": sheet,
+            "topic": menu_result.get("TEN_CHUC_NANG") or menu_result.get("TEN") or ""
+        }
+
+        return answer_from_menu(menu_result), "MENU", new_context
+
+    # Nếu đang ở trong nhóm căn cước mà người dân hỏi tiếp ngắn gọn
+    if context.get("sheet") == "THU_TUC_CCCD":
+        text = "căn cước " + text
+
+    # Ưu tiên thủ tục trước FAQ
     thu_tuc_results = search_thu_tuc(text, limit=3)
     if thu_tuc_results:
         reply = format_multiple_results(
@@ -166,9 +171,8 @@ def route_message(user_text):
             format_thu_tuc,
             limit=3
         )
-        return reply, "THU_TUC"
+        return reply, "THU_TUC", context
 
-    # 5. Tra cứu liên hệ
     lien_he_results = search_lien_he(text, limit=3)
     if lien_he_results:
         reply = format_multiple_results(
@@ -176,14 +180,27 @@ def route_message(user_text):
             format_lien_he,
             limit=3
         )
-        return reply, "TRA_CUU_LIEN_HE"
+        return reply, "TRA_CUU_LIEN_HE", context
 
-    # 6. Không tìm thấy
-    return DEFAULT_REPLY, "DEFAULT"
+    faq_results = search_faq(text, limit=3)
+    if faq_results:
+        reply = format_multiple_results(
+            faq_results,
+            format_faq,
+            limit=3
+        )
+        return reply, "FAQ", context
+
+    return DEFAULT_REPLY, "DEFAULT", context
 
 
-def route_message_for_ai(user_text):
-    reply, source = route_message(user_text)
+def route_message_for_ai(user_text, context=None):
+    context = context or {}
+
+    reply, source, new_context = route_message(
+        user_text,
+        context=context
+    )
 
     use_ai = source in ["DEFAULT", "EMPTY"]
 
@@ -191,4 +208,5 @@ def route_message_for_ai(user_text):
         "reply": reply,
         "source": source,
         "use_ai": use_ai,
+        "context": new_context,
     }
