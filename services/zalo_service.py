@@ -11,7 +11,7 @@ from config import (
 )
 
 
-ZALO_SEND_MESSAGE_URL = "https://openapi.zalo.me/v3.0/oa/message/cs"
+ZALO_SEND_MESSAGE_URL = "https://openapi.zalo.me/v2.0/oa/message"
 ZALO_REFRESH_TOKEN_URL = "https://oauth.zaloapp.com/v4/oa/access_token"
 
 _current_access_token = ZALO_ACCESS_TOKEN
