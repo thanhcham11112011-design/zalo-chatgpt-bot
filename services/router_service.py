@@ -6,7 +6,6 @@ from services.sheet_api import read_menu
 
 from services.search_engine import (
     normalize_text,
-    search_menu,
     search_lien_he,
     search_faq,
     search_thu_tuc,
@@ -16,10 +15,6 @@ from services.search_engine import (
     format_multiple_results,
 )
 
-
-# =========================
-# NHẬN DIỆN LỜI CHÀO / MENU
-# =========================
 
 def is_greeting(user_text):
     text = normalize_text(user_text)
@@ -42,7 +37,6 @@ def is_greeting(user_text):
 
 def get_welcome_message():
     menu_rows = read_menu()
-
     lines = []
 
     for index, row in enumerate(menu_rows, start=1):
@@ -69,20 +63,14 @@ def get_welcome_message():
             "6. Gặp cán bộ trực",
         ]
 
-    menu_text = "\n".join(lines)
-
     return (
         "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
         "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
         "📋 DANH MỤC HỖ TRỢ\n"
-        f"{menu_text}\n\n"
+        f"{chr(10).join(lines)}\n\n"
         "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi."
     )
 
-
-# =========================
-# TRẢ LỜI TỪ MENU
-# =========================
 
 def answer_from_menu(menu_row):
     ten = (
@@ -116,9 +104,34 @@ def answer_from_menu(menu_row):
     return "\n\n".join(parts) if parts else get_welcome_message()
 
 
-# =========================
-# ROUTER CHÍNH
-# =========================
+def search_menu_strict(user_text):
+    """
+    MENU chỉ bắt khi:
+    - Người dân nhập đúng ID menu, ví dụ: 1, 2, 3
+    - Hoặc nhập đúng tên chức năng, ví dụ: căn cước, cư trú, vneid
+    Không bắt theo TU_KHOA để tránh đè lên THU_TUC.
+    """
+    text_norm = normalize_text(user_text)
+    menu_rows = read_menu()
+
+    for row in menu_rows:
+        menu_id = str(row.get("ID", "")).strip()
+
+        ten_chuc_nang = (
+            row.get("TEN_CHUC_NANG")
+            or row.get("TEN")
+            or row.get("CHU_DE")
+            or ""
+        )
+
+        if text_norm == normalize_text(menu_id):
+            return row
+
+        if text_norm == normalize_text(ten_chuc_nang):
+            return row
+
+    return None
+
 
 def route_message(user_text):
     if not user_text or not str(user_text).strip():
@@ -130,22 +143,12 @@ def route_message(user_text):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME"
 
-    # 2. Menu số hoặc từ khóa menu
-    menu_result = search_menu(text)
+    # 2. MENU chỉ bắt số hoặc đúng tên chức năng
+    menu_result = search_menu_strict(text)
     if menu_result:
         return answer_from_menu(menu_result), "MENU"
 
-    # 3. Tra cứu liên hệ
-    lien_he_results = search_lien_he(text, limit=3)
-    if lien_he_results:
-        reply = format_multiple_results(
-            lien_he_results,
-            format_lien_he,
-            limit=3
-        )
-        return reply, "TRA_CUU_LIEN_HE"
-
-    # 4. FAQ
+    # 3. FAQ
     faq_results = search_faq(text, limit=3)
     if faq_results:
         reply = format_multiple_results(
@@ -155,7 +158,7 @@ def route_message(user_text):
         )
         return reply, "FAQ"
 
-    # 5. Thủ tục hành chính
+    # 4. Thủ tục hành chính
     thu_tuc_results = search_thu_tuc(text, limit=3)
     if thu_tuc_results:
         reply = format_multiple_results(
@@ -164,6 +167,16 @@ def route_message(user_text):
             limit=3
         )
         return reply, "THU_TUC"
+
+    # 5. Tra cứu liên hệ
+    lien_he_results = search_lien_he(text, limit=3)
+    if lien_he_results:
+        reply = format_multiple_results(
+            lien_he_results,
+            format_lien_he,
+            limit=3
+        )
+        return reply, "TRA_CUU_LIEN_HE"
 
     # 6. Không tìm thấy
     return DEFAULT_REPLY, "DEFAULT"
