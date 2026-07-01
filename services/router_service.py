@@ -2,6 +2,7 @@
 # Điều hướng câu hỏi người dân sang đúng nguồn dữ liệu
 
 from config import DEFAULT_REPLY
+
 from services.search_engine import (
     normalize_text,
     search_menu,
@@ -15,18 +16,23 @@ from services.search_engine import (
 )
 
 
+# =========================
+# NHẬN DIỆN LỜI CHÀO / MENU
+# =========================
+
 def is_greeting(user_text):
     text = normalize_text(user_text)
 
     greetings = [
         "xin chao",
         "chao",
+        "chao ban",
         "hello",
         "hi",
         "alo",
         "menu",
-        "bat dau",
         "danh muc",
+        "bat dau",
         "0",
     ]
 
@@ -54,6 +60,10 @@ def get_welcome_message():
     )
 
 
+# =========================
+# TRẢ LỜI TỪ MENU
+# =========================
+
 def answer_from_menu(menu_row):
     ten = (
         menu_row.get("TEN_CHUC_NANG")
@@ -63,6 +73,7 @@ def answer_from_menu(menu_row):
     )
 
     mo_ta = menu_row.get("MO_TA", "")
+
     sheet = (
         menu_row.get("SHEET_DU_LIEU")
         or menu_row.get("SHEET")
@@ -85,19 +96,26 @@ def answer_from_menu(menu_row):
     return "\n\n".join(parts) if parts else get_welcome_message()
 
 
+# =========================
+# ROUTER CHÍNH
+# =========================
+
 def route_message(user_text):
     if not user_text or not str(user_text).strip():
         return DEFAULT_REPLY, "EMPTY"
 
     text = str(user_text).strip()
 
+    # 1. Chào / menu
     if is_greeting(text):
         return get_welcome_message(), "WELCOME"
 
+    # 2. Menu số hoặc từ khóa menu
     menu_result = search_menu(text)
     if menu_result:
         return answer_from_menu(menu_result), "MENU"
 
+    # 3. Tra cứu liên hệ
     lien_he_results = search_lien_he(text, limit=3)
     if lien_he_results:
         reply = format_multiple_results(
@@ -107,6 +125,7 @@ def route_message(user_text):
         )
         return reply, "TRA_CUU_LIEN_HE"
 
+    # 4. FAQ
     faq_results = search_faq(text, limit=3)
     if faq_results:
         reply = format_multiple_results(
@@ -116,6 +135,7 @@ def route_message(user_text):
         )
         return reply, "FAQ"
 
+    # 5. Thủ tục hành chính
     thu_tuc_results = search_thu_tuc(text, limit=3)
     if thu_tuc_results:
         reply = format_multiple_results(
@@ -125,6 +145,7 @@ def route_message(user_text):
         )
         return reply, "THU_TUC"
 
+    # 6. Không tìm thấy
     return DEFAULT_REPLY, "DEFAULT"
 
 
