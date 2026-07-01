@@ -26,14 +26,8 @@ def remember_message(message_id):
 
 
 def build_answer(user_id, question):
-    """
-    Xử lý toàn bộ luồng hội thoại BOT V2.2
-    """
-
-    # Lấy context hiện tại của người dùng
     context = get_context(user_id)
 
-    # Router xử lý
     routed = route_message_for_ai(
         question,
         context=context
@@ -43,9 +37,6 @@ def build_answer(user_id, question):
     source = routed.get("source", "DEFAULT")
     use_ai = routed.get("use_ai", False)
 
-    # Quan trọng:
-    # Nếu router trả {} thì vẫn phải ghi đè để xóa context cũ.
-    # Chỉ khi key context không tồn tại mới giữ context hiện tại.
     if "context" in routed:
         new_context = routed["context"]
     else:
@@ -53,72 +44,40 @@ def build_answer(user_id, question):
 
     ai_context = routed.get("ai_context", "")
 
-    # ===========================
-    # Quản lý Context
-    # ===========================
-
     if source == "RESET":
         clear_context(user_id)
-
     elif source == "WELCOME":
         save_context(user_id, {})
-
     else:
-        # Luôn lưu context mới kể cả {}
         save_context(user_id, new_context)
 
-    # ===========================
-    # AI fallback
-    # ===========================
+    if use_ai:
+        ai_answer = ask_gemini(question, context=ai_context)
 
-if use_ai:
-
-    ai_answer = ask_gemini(
-        question,
-        context=ai_context
-    )
-
-    if ai_answer:
-
-        answer = (
-            ai_answer.strip()
-            + "\n\n"
-            + "────────────────\n"
-            + "🤖 Trợ lý AI Công an phường Phù Liễn chủ yếu hỗ trợ:\n"
-            + "• Thủ tục hành chính\n"
-            + "• Căn cước\n"
-            + "• Cư trú\n"
-            + "• VNeID\n"
-            + "• Phản ánh ANTT\n"
-            + "• Tra cứu cơ quan thực hiện\n\n"
-            + "💬 Quý công dân có thể nhập 'menu' để xem đầy đủ danh mục hỗ trợ."
-        )
-
-        source = "GEMINI_AI"
-
-    else:
-
-        answer = (
-            "Xin lỗi, hiện tôi chưa hiểu rõ ý định câu hỏi hoặc hệ thống AI đang tạm thời không khả dụng.\n\n"
-            "Quý công dân vui lòng nhập rõ nội dung cần hỗ trợ.\n\n"
-            "Ví dụ:\n"
-            "• Làm căn cước ở đâu\n"
-            "• Đăng ký tạm trú\n"
-            "• Số điện thoại Công an phường\n"
-            "• menu"
-        )
-
-        source = "AI_FALLBACK"
-
-    # ===========================
-    # Ghi log
-    # ===========================
+        if ai_answer and ai_answer.strip() != DEFAULT_REPLY:
+            answer = (
+                ai_answer.strip()
+                + "\n\n────────────────\n"
+                + "🤖 Lưu ý: Trợ lý AI Công an phường Phù Liễn chủ yếu hỗ trợ thủ tục hành chính, căn cước, cư trú, VNeID, phản ánh ANTT và tra cứu cơ quan thực hiện.\n"
+                + "Quý công dân có thể nhắn 'menu' để xem danh mục hỗ trợ."
+            )
+            source = "GEMINI_AI"
+        else:
+            answer = (
+                "Xin lỗi, hiện tôi chưa hiểu rõ ý định câu hỏi hoặc hệ thống AI đang tạm thời không khả dụng.\n\n"
+                "Quý công dân vui lòng nhập rõ nội dung cần hỗ trợ, ví dụ:\n"
+                "• Làm căn cước ở đâu\n"
+                "• Đăng ký tạm trú cần giấy tờ gì\n"
+                "• Số điện thoại Công an phường\n"
+                "• menu"
+            )
+            source = "AI_FALLBACK"
 
     write_log(
         user_id=user_id,
         user_message=question,
         bot_reply=answer,
-        source=source,
+        source=source
     )
 
     return answer, source
