@@ -136,11 +136,8 @@ def check_config():
     if not GOOGLE_CREDENTIALS_FILE:
         missing.append("GOOGLE_CREDENTIALS_FILE")
 
-    if not GEMINI_API_KEY:
-        missing.append("GEMINI_API_KEY")
-
-    if not ZALO_ACCESS_TOKEN:
-        missing.append("ZALO_ACCESS_TOKEN")
+    # GEMINI_API_KEY, ZALO_ACCESS_TOKEN, ZALO_REFRESH_TOKEN có thể được đọc từ Google Sheet SETTING_SYSTEM.
+    # Không bắt buộc khai báo trong Render Environment nữa.
 
     return len(missing) == 0, missing
 
