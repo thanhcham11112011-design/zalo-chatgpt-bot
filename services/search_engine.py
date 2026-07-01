@@ -168,6 +168,22 @@ def search_lien_he(user_text, limit=3):
 
     return fallback_results[:limit]
 
+
+def search_faq(user_text, limit=3):
+    results = []
+    for row in read_faq():
+        score = 0
+        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
+        score += phrase_score(user_text, get_first(row, "CAU_HOI", "CÂU_HỎI"), 4)
+        score += phrase_score(user_text, get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRA_LOI_DAY_DU"), 1)
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            results.append(row)
+    results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+    return results[:limit]
+
+
 def search_thu_tuc(user_text, limit=5, sheet=None):
     results = []
     for row in read_all_thu_tuc():
