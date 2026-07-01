@@ -1,6 +1,8 @@
 # services/sheet_api.py
 # Đọc và ghi dữ liệu Google Sheets cho BOT Công an phường Phù Liễn
 
+import os
+import json
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -16,23 +18,54 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive",
 ]
 
+_client_cache = None
+_spreadsheet_cache = None
+
 
 # =========================
 # KẾT NỐI GOOGLE SHEETS
 # =========================
 
-def get_client():
-    credentials = Credentials.from_service_account_file(
+def _build_credentials():
+    """
+    Ưu tiên 1: GOOGLE_CREDENTIALS_JSON nếu có JSON service account.
+    Ưu tiên 2: GOOGLE_CREDENTIALS_FILE nếu là đường dẫn file credentials.json / Render Secret File.
+    """
+    credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
+
+    if credentials_json:
+        creds_dict = json.loads(credentials_json)
+        return Credentials.from_service_account_info(
+            creds_dict,
+            scopes=SCOPES
+        )
+
+    return Credentials.from_service_account_file(
         GOOGLE_CREDENTIALS_FILE,
         scopes=SCOPES
     )
 
-    return gspread.authorize(credentials)
+
+def get_client():
+    global _client_cache
+
+    if _client_cache:
+        return _client_cache
+
+    credentials = _build_credentials()
+    _client_cache = gspread.authorize(credentials)
+    return _client_cache
 
 
 def get_spreadsheet():
+    global _spreadsheet_cache
+
+    if _spreadsheet_cache:
+        return _spreadsheet_cache
+
     client = get_client()
-    return client.open_by_key(GOOGLE_SHEET_ID)
+    _spreadsheet_cache = client.open_by_key(GOOGLE_SHEET_ID)
+    return _spreadsheet_cache
 
 
 def get_worksheet(sheet_name):
@@ -54,8 +87,13 @@ def read_sheet(sheet_name):
 
 
 def is_on(row):
-    status = str(row.get("TRANG_THAI", "ON")).strip().upper()
-    return status == "ON"
+    status = (
+        row.get("TRANG_THAI")
+        or row.get("STATUS")
+        or row.get("TRẠNG_THÁI")
+        or "ON"
+    )
+    return str(status).strip().upper() in ("ON", "ACTIVE", "HOẠT ĐỘNG", "HOAT DONG", "1", "TRUE")
 
 
 def read_active_rows(sheet_name):
@@ -169,6 +207,36 @@ def append_row(sheet_name, values):
         return True
     except Exception as e:
         print(f"[SHEET ERROR] Không ghi được sheet {sheet_name}: {e}")
+        return False
+
+
+def update_setting_system(key, value):
+    """
+    Cập nhật KEY/VALUE trong SETTING_SYSTEM.
+    Nếu KEY chưa có thì append dòng mới: KEY | VALUE | DESCRIPTION | STATUS
+    """
+    try:
+        worksheet = get_worksheet("SETTING_SYSTEM")
+        values = worksheet.get_all_values()
+
+        if not values:
+            worksheet.append_row(["KEY", "VALUE", "DESCRIPTION", "STATUS"])
+            values = worksheet.get_all_values()
+
+        header = [h.strip() for h in values[0]]
+        key_col = header.index("KEY") + 1 if "KEY" in header else 1
+        value_col = header.index("VALUE") + 1 if "VALUE" in header else 2
+
+        for idx, row in enumerate(values[1:], start=2):
+            if len(row) >= key_col and row[key_col - 1].strip() == key:
+                worksheet.update_cell(idx, value_col, value)
+                return True
+
+        worksheet.append_row([key, value, "", "ON"])
+        return True
+
+    except Exception as e:
+        print(f"[SHEET ERROR] Không cập nhật SETTING_SYSTEM {key}: {e}")
         return False
 
 
