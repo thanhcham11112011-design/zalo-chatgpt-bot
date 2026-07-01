@@ -9,13 +9,10 @@ from config import (
     DEFAULT_REPLY,
 )
 
-# ==========================================
-# KHỞI TẠO GEMINI
-# ==========================================
+from services.sheet_api import read_setting_system
 
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
+_client = None
+
 
 SYSTEM_PROMPT = """
 Bạn là Trợ lý AI của Công an phường Phù Liễn, thành phố Hải Phòng.
@@ -27,23 +24,34 @@ Nhiệm vụ:
 - Không tự bịa thông tin.
 
 Nguyên tắc:
-
 1. Nếu dữ liệu Google Sheet đã có câu trả lời thì ưu tiên dữ liệu đó.
-
 2. Chỉ sử dụng AI khi Router không tìm thấy dữ liệu.
-
-3. Nếu không chắc chắn:
-- Không suy diễn.
-- Không bịa.
-- Hướng dẫn người dân liên hệ Công an phường.
-
+3. Nếu không chắc chắn: không suy diễn, không bịa; hướng dẫn người dân liên hệ Công an phường.
 4. Không trả lời các nội dung ngoài phạm vi pháp luật, thủ tục hành chính và hỗ trợ người dân.
 """
 
 
-# ==========================================
-# TẠO PROMPT
-# ==========================================
+def _get_ai_config():
+    settings = read_setting_system()
+    api_key = str(settings.get("GEMINI_API_KEY") or GEMINI_API_KEY or "").strip()
+    model = str(settings.get("GEMINI_MODEL") or GEMINI_MODEL or "gemini-2.0-flash").strip()
+    return api_key, model
+
+
+def _get_client():
+    global _client
+
+    if _client:
+        return _client
+
+    api_key, _ = _get_ai_config()
+
+    if not api_key:
+        return None
+
+    _client = genai.Client(api_key=api_key)
+    return _client
+
 
 def build_prompt(question, context=""):
     if context:
@@ -85,27 +93,24 @@ YÊU CẦU
 ====================
 
 Nếu không có đủ thông tin thì trả lời theo hướng dẫn chung.
-
 Không được tự bịa thông tin.
-
 Không quá 1500 ký tự.
 """
 
 
-# ==========================================
-# GỌI GEMINI
-# ==========================================
-
 def ask_gemini(question, context=""):
     try:
+        client = _get_client()
+        _, model = _get_ai_config()
 
-        prompt = build_prompt(
-            question,
-            context
-        )
+        if not client:
+            print("[GEMINI ERROR] Thiếu GEMINI_API_KEY")
+            return DEFAULT_REPLY
+
+        prompt = build_prompt(question, context)
 
         response = client.models.generate_content(
-            model=GEMINI_MODEL,
+            model=model,
             contents=prompt
         )
 
@@ -115,20 +120,9 @@ def ask_gemini(question, context=""):
         return DEFAULT_REPLY
 
     except Exception as e:
-
         print(f"[GEMINI ERROR] {e}")
-
         return DEFAULT_REPLY
 
 
-# ==========================================
-# TEST
-# ==========================================
-
 if __name__ == "__main__":
-
-    print(
-        ask_gemini(
-            "Thủ tục cấp lại căn cước?"
-        )
-    )
+    print(ask_gemini("Thủ tục cấp lại căn cước?"))
