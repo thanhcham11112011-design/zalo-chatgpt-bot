@@ -12,16 +12,22 @@ from services.sheet_api import (
 )
 
 
+# =========================
+# CHUẨN HÓA TEXT
+# =========================
+
 def normalize_text(text):
     if text is None:
         return ""
 
     text = str(text).strip().lower()
+
     text = unicodedata.normalize("NFD", text)
     text = "".join(
         char for char in text
         if unicodedata.category(char) != "Mn"
     )
+
     text = text.replace("đ", "d")
     text = re.sub(r"[^a-z0-9\s,./:-]", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
@@ -36,6 +42,10 @@ def safe_int(value, default=999):
         return default
 
 
+# =========================
+# CHẤM ĐIỂM TỪ KHÓA
+# =========================
+
 def keyword_score(user_text, keywords):
     user_text_norm = normalize_text(user_text)
     keywords_norm = normalize_text(keywords)
@@ -44,6 +54,7 @@ def keyword_score(user_text, keywords):
         return 0
 
     score = 0
+
     keyword_list = [
         item.strip()
         for item in keywords_norm.split(",")
@@ -57,6 +68,19 @@ def keyword_score(user_text, keywords):
     return score
 
 
+def field_score(user_text, *fields):
+    score = 0
+
+    for field in fields:
+        score += keyword_score(user_text, field)
+
+    return score
+
+
+# =========================
+# TÌM MENU
+# =========================
+
 def search_menu(user_text):
     rows = read_menu()
     user_norm = normalize_text(user_text)
@@ -65,16 +89,28 @@ def search_menu(user_text):
 
     for row in rows:
         menu_id = str(row.get("ID", "")).strip()
+
+        ten_chuc_nang = (
+            row.get("TEN_CHUC_NANG")
+            or row.get("TEN")
+            or row.get("CHU_DE")
+            or ""
+        )
+
         tu_khoa = row.get("TU_KHOA", "")
+        mo_ta = row.get("MO_TA", "")
 
         score = 0
 
         if user_norm == normalize_text(menu_id):
             score += 1000
 
-        score += keyword_score(user_text, tu_khoa)
-        score += keyword_score(user_text, row.get("TEN_CHUC_NANG", ""))
-        score += keyword_score(user_text, row.get("MO_TA", ""))
+        score += field_score(
+            user_text,
+            tu_khoa,
+            ten_chuc_nang,
+            mo_ta
+        )
 
         if score > 0:
             row["_SCORE"] = score
@@ -86,18 +122,23 @@ def search_menu(user_text):
     return results[0] if results else None
 
 
+# =========================
+# TÌM LIÊN HỆ
+# =========================
+
 def search_lien_he(user_text, limit=3):
     rows = read_lien_he()
     results = []
 
     for row in rows:
-        score = 0
-
-        score += keyword_score(user_text, row.get("TU_KHOA", ""))
-        score += keyword_score(user_text, row.get("TDP", ""))
-        score += keyword_score(user_text, row.get("TEN_CO_QUAN", ""))
-        score += keyword_score(user_text, row.get("CHUC_NANG", ""))
-        score += keyword_score(user_text, row.get("GHI_CHU", ""))
+        score = field_score(
+            user_text,
+            row.get("TU_KHOA", ""),
+            row.get("TDP", ""),
+            row.get("TEN_CO_QUAN", ""),
+            row.get("CHUC_NANG", ""),
+            row.get("GHI_CHU", "")
+        )
 
         if score > 0:
             row["_SCORE"] = score
@@ -108,17 +149,22 @@ def search_lien_he(user_text, limit=3):
 
     return results[:limit]
 
+
+# =========================
+# TÌM FAQ
+# =========================
 
 def search_faq(user_text, limit=3):
     rows = read_faq()
     results = []
 
     for row in rows:
-        score = 0
-
-        score += keyword_score(user_text, row.get("TU_KHOA", ""))
-        score += keyword_score(user_text, row.get("CAU_HOI", ""))
-        score += keyword_score(user_text, row.get("TRA_LOI", ""))
+        score = field_score(
+            user_text,
+            row.get("TU_KHOA", ""),
+            row.get("CAU_HOI", ""),
+            row.get("TRA_LOI", "")
+        )
 
         if score > 0:
             row["_SCORE"] = score
@@ -130,19 +176,24 @@ def search_faq(user_text, limit=3):
     return results[:limit]
 
 
+# =========================
+# TÌM THỦ TỤC
+# =========================
+
 def search_thu_tuc(user_text, limit=5):
     rows = read_all_thu_tuc()
     results = []
 
     for row in rows:
-        score = 0
-
-        score += keyword_score(user_text, row.get("TU_KHOA", ""))
-        score += keyword_score(user_text, row.get("CHU_DE", ""))
-        score += keyword_score(user_text, row.get("TEN_THU_TUC", ""))
-        score += keyword_score(user_text, row.get("MO_TA", ""))
-        score += keyword_score(user_text, row.get("GOI_Y_CAU_HOI", ""))
-        score += keyword_score(user_text, row.get("TRA_LOI_NGAN", ""))
+        score = field_score(
+            user_text,
+            row.get("TU_KHOA", ""),
+            row.get("CHU_DE", ""),
+            row.get("TEN_THU_TUC", ""),
+            row.get("MO_TA", ""),
+            row.get("GOI_Y_CAU_HOI", ""),
+            row.get("TRA_LOI_NGAN", "")
+        )
 
         if score > 0:
             row["_SCORE"] = score
@@ -156,6 +207,10 @@ def search_thu_tuc(user_text, limit=5):
     return results[:limit]
 
 
+# =========================
+# FORMAT TRẢ LỜI
+# =========================
+
 def format_lien_he(row):
     ten = row.get("TEN_CO_QUAN", "")
     chuc_nang = row.get("CHUC_NANG", "")
@@ -167,12 +222,16 @@ def format_lien_he(row):
 
     if ten:
         parts.append(f"📌 {ten}")
+
     if chuc_nang:
         parts.append(f"Chức năng: {chuc_nang}")
+
     if phone:
         parts.append(f"Điện thoại: {phone}")
+
     if note:
         parts.append(f"Ghi chú: {note}")
+
     if map_link:
         parts.append(f"Bản đồ: {map_link}")
 
@@ -207,26 +266,37 @@ def format_thu_tuc(row):
 
     if ten:
         parts.append(f"📄 {ten}")
+
     if mo_ta:
         parts.append(f"Mô tả: {mo_ta}")
+
     if doi_tuong:
         parts.append(f"Đối tượng: {doi_tuong}")
+
     if dieu_kien:
         parts.append(f"Điều kiện: {dieu_kien}")
+
     if ho_so:
         parts.append(f"Hồ sơ: {ho_so}")
+
     if trinh_tu:
         parts.append(f"Trình tự: {trinh_tu}")
+
     if noi_nop:
         parts.append(f"Nơi nộp: {noi_nop}")
+
     if thoi_han:
         parts.append(f"Thời hạn: {thoi_han}")
+
     if le_phi:
         parts.append(f"Lệ phí: {le_phi}")
+
     if ket_qua:
         parts.append(f"Kết quả: {ket_qua}")
+
     if luu_y:
         parts.append(f"Lưu ý: {luu_y}")
+
     if link:
         parts.append(f"Link DVC: {link}")
 
