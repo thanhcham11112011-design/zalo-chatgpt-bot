@@ -166,21 +166,13 @@ def route_message(user_text, context=None):
     text = str(user_text).strip()
     text_norm = normalize_text(text)
 
-    # 1. Chào / menu
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}
 
-    # 2. Ưu tiên tuyệt đối nếu người dân nhập số menu
     if text_norm.isdigit():
         menu_result = search_menu(text)
-
         if menu_result:
-            sheet = (
-                menu_result.get("SHEET_DU_LIEU")
-                or menu_result.get("SHEET")
-                or ""
-            )
-
+            sheet = menu_result.get("SHEET_DU_LIEU") or menu_result.get("SHEET") or ""
             new_context = {
                 "sheet": sheet,
                 "topic": menu_result.get("TEN_CHUC_NANG")
@@ -188,16 +180,19 @@ def route_message(user_text, context=None):
                 or menu_result.get("CHU_DE")
                 or ""
             }
-
             return answer_from_menu(menu_result), "MENU", new_context
 
-    # 3. Nếu người dân hỏi rõ sang lĩnh vực mới thì đổi context
+    if context.get("procedure_id") and is_followup_detail_question(text):
+        procedure = find_procedure_by_id(context.get("procedure_id"))
+        if procedure:
+            reply = answer_procedure_detail(procedure, text)
+            return reply, "PROCEDURE_CONTEXT", context
+
     explicit_context = detect_explicit_topic(text)
 
     if explicit_context:
         context = explicit_context
     else:
-        # 4. Chỉ dùng context cũ khi câu hỏi ngắn/mơ hồ
         if context.get("sheet") == "THU_TUC_CCCD":
             text = "căn cước " + text
         elif context.get("sheet") == "THU_TUC_CUTRU":
@@ -215,7 +210,6 @@ def route_message(user_text, context=None):
         elif context.get("sheet") == "THU_TUC_ANTT":
             text = "ngành nghề antt " + text
 
-    # 5. Menu tên nhóm ngắn
     menu_keywords = [
         "can cuoc",
         "cu tru",
@@ -233,14 +227,8 @@ def route_message(user_text, context=None):
 
     if text_norm in menu_keywords:
         menu_result = search_menu(text)
-
         if menu_result:
-            sheet = (
-                menu_result.get("SHEET_DU_LIEU")
-                or menu_result.get("SHEET")
-                or ""
-            )
-
+            sheet = menu_result.get("SHEET_DU_LIEU") or menu_result.get("SHEET") or ""
             new_context = {
                 "sheet": sheet,
                 "topic": menu_result.get("TEN_CHUC_NANG")
@@ -248,62 +236,49 @@ def route_message(user_text, context=None):
                 or menu_result.get("CHU_DE")
                 or ""
             }
-
             return answer_from_menu(menu_result), "MENU", new_context
 
-    # 6. Ưu tiên tìm thủ tục trước FAQ
-   thu_tuc_results = search_thu_tuc(text, limit=3)
+    thu_tuc_results = search_thu_tuc(text, limit=3)
 
     if thu_tuc_results:
         best = thu_tuc_results[0]
         best_score = best.get("_SCORE", 0)
+        second_score = thu_tuc_results[1].get("_SCORE", 0) if len(thu_tuc_results) > 1 else 0
 
-        second_score = 0
-    if len(thu_tuc_results) > 1:
-        second_score = thu_tuc_results[1].get("_SCORE", 0)
+        if best_score >= 20 and best_score >= second_score + 8:
+            reply = format_thu_tuc(best)
+            new_context = {
+                "sheet": best.get("_SHEET", context.get("sheet", "")),
+                "topic": best.get("CHU_DE", context.get("topic", "")),
+                "procedure_id": best.get("ID", ""),
+                "procedure_name": best.get("TEN_THU_TUC", ""),
+            }
+            return reply, "THU_TUC", new_context
 
-    # Nếu kết quả đầu đủ rõ ràng thì trả 01 thủ tục duy nhất
-    if best_score >= 20 and best_score >= second_score + 8:
-        reply = format_thu_tuc(best)
-        return reply, "THU_TUC", context
+        suggestions = []
+        for index, row in enumerate(thu_tuc_results[:3], start=1):
+            ten = row.get("TEN_THU_TUC", "")
+            if ten:
+                suggestions.append(f"{index}. {ten}")
 
-    # Nếu câu hỏi còn mơ hồ thì hỏi lại, không trả Top 3 thủ tục
-    suggestions = []
+        if suggestions:
+            reply = (
+                "Tôi tìm thấy một số thủ tục gần giống nhau. "
+                "Quý công dân vui lòng nói rõ hơn cần thực hiện thủ tục nào:\n\n"
+                + "\n".join(suggestions)
+            )
+            return reply, "CLARIFY_THU_TUC", context
 
-    for index, row in enumerate(thu_tuc_results[:3], start=1):
-        ten = row.get("TEN_THU_TUC", "")
-        if ten:
-            suggestions.append(f"{index}. {ten}")
-
-    if suggestions:
-        reply = (
-            "Tôi tìm thấy một số thủ tục gần giống nhau. "
-            "Quý công dân vui lòng nói rõ hơn cần thực hiện thủ tục nào:\n\n"
-            + "\n".join(suggestions)
-        )
-        return reply, "CLARIFY_THU_TUC", context
-
-    # 7. Tra cứu liên hệ
     lien_he_results = search_lien_he(text, limit=3)
     if lien_he_results:
-        reply = format_multiple_results(
-            lien_he_results,
-            format_lien_he,
-            limit=3
-        )
+        reply = format_multiple_results(lien_he_results, format_lien_he, limit=3)
         return reply, "TRA_CUU_LIEN_HE", context
 
-    # 8. FAQ
     faq_results = search_faq(text, limit=3)
     if faq_results:
-        reply = format_multiple_results(
-            faq_results,
-            format_faq,
-            limit=3
-        )
+        reply = format_multiple_results(faq_results, format_faq, limit=3)
         return reply, "FAQ", context
 
-    # 9. Không tìm thấy
     return DEFAULT_REPLY, "DEFAULT", context
 
 def route_message_for_ai(user_text, context=None):
