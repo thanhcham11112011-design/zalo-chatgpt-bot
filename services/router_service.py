@@ -2,9 +2,17 @@ from config import DEFAULT_REPLY
 from services.sheet_api import read_menu
 from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.search_engine import (
-    search_menu, search_lien_he, search_faq, search_thu_tuc,
-    list_procedures_by_sheet, find_procedure_by_id,
-    format_lien_he, format_faq, format_thu_tuc, format_multiple_results,
+    search_menu,
+    search_lien_he,
+    search_faq,
+    search_thu_tuc,
+    list_procedures_by_sheet,
+    find_procedure_by_id,
+    find_lien_he_by_ten_co_quan,
+    format_lien_he,
+    format_faq,
+    format_thu_tuc,
+    format_multiple_results,
 )
 
 
@@ -192,8 +200,36 @@ def answer_procedure_detail(row, user_text):
             else format_thu_tuc(row)
         )
     if is_location_question(t):
-        value = get_first(row, "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "LUU_Y", "LƯU_Ý")
-        return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        co_quan = get_first(
+            row,
+            "CO_QUAN_THUC_HIEN",
+            "CƠ_QUAN_THỰC_HIỆN",
+            "CO_QUAN_TIEP_NHAN",
+            "CƠ_QUAN_TIẾP_NHẬN",
+            "NOI_NOP",
+            "NƠI_NỘP",
+            "NOI_THUC_HIEN",
+            "NƠI_THỰC_HIỆN"
+        )
+
+        lien_he = find_lien_he_by_ten_co_quan(co_quan)
+
+        if lien_he:
+            reply = format_lien_he(lien_he)
+
+            luu_y = get_first(row, "LUU_Y", "LƯU_Ý")
+            if luu_y:
+                reply += f"\n\n📌 Lưu ý:\n{compact(luu_y, 1200)}"
+
+            return reply
+
+        if co_quan:
+            return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}"
+
+        return (
+            f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n"
+            "Quý công dân vui lòng liên hệ Công an phường để được hướng dẫn cụ thể."
+        )
     if "bao lau" in t or "thoi han" in t:
         value = get_first(row, "THOI_HAN", "THỜI_HẠN")
         return f"⏱ Thời hạn - {ten}\n\n{value}" if value else format_thu_tuc(row)
@@ -393,3 +429,39 @@ def route_message_for_ai(user_text, context=None):
         "context": new_context,
         "ai_context": ai_context,
     }
+    def find_lien_he_by_ten_co_quan(name):
+    if not name:
+        return None
+
+    name_norm = normalize_text(name)
+    rows = read_lien_he()
+
+    # Ưu tiên khớp chính xác TEN_CO_QUAN
+    for row in rows:
+        ten = get_first(
+            row,
+            "TEN_CO_QUAN",
+            "TÊN_CƠ_QUAN",
+            "HO_TEN",
+            "HỌ_TÊN"
+        )
+
+        if normalize_text(ten) == name_norm:
+            return row
+
+    # Nếu không khớp tuyệt đối thì khớp chứa nhau
+    for row in rows:
+        ten = get_first(
+            row,
+            "TEN_CO_QUAN",
+            "TÊN_CƠ_QUAN",
+            "HO_TEN",
+            "HỌ_TÊN"
+        )
+
+        ten_norm = normalize_text(ten)
+
+        if name_norm in ten_norm or ten_norm in name_norm:
+            return row
+
+    return None
