@@ -61,6 +61,20 @@ ZALO_ACCESS_TOKEN = os.getenv(
     "ZALO_ACCESS_TOKEN",
     ""
 ).strip()
+ZALO_APP_ID = os.getenv(
+    "ZALO_APP_ID",
+    ""
+).strip()
+
+ZALO_APP_SECRET = os.getenv(
+    "ZALO_APP_SECRET",
+    ""
+).strip()
+
+ZALO_REFRESH_TOKEN = os.getenv(
+    "ZALO_REFRESH_TOKEN",
+    ""
+).strip()
 
 # =========================
 # GOOGLE SHEET NAMES
