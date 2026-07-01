@@ -1,5 +1,5 @@
 # services/gemini_service.py
-# Xử lý trả lời AI bằng Gemini
+# Xử lý AI Gemini
 
 from google import genai
 
@@ -9,60 +9,104 @@ from config import (
     DEFAULT_REPLY,
 )
 
+# ==========================================
+# KHỞI TẠO GEMINI
+# ==========================================
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+client = genai.Client(
+    api_key=GEMINI_API_KEY
+)
 
-
-SYSTEM_INSTRUCTION = """
+SYSTEM_PROMPT = """
 Bạn là Trợ lý AI của Công an phường Phù Liễn, thành phố Hải Phòng.
 
 Nhiệm vụ:
 - Hỗ trợ người dân tra cứu thủ tục hành chính.
-- Hướng dẫn hồ sơ, nơi nộp, thời hạn, lệ phí, kết quả thực hiện.
-- Hỗ trợ tra cứu thông tin liên hệ khi có dữ liệu.
-- Trả lời ngắn gọn, rõ ràng, dễ hiểu trên Zalo.
+- Hướng dẫn hồ sơ, điều kiện, trình tự, nơi nộp.
+- Trả lời ngắn gọn, rõ ràng, dễ hiểu.
+- Không tự bịa thông tin.
 
 Nguyên tắc:
-- Ưu tiên dữ liệu từ Google Sheets.
-- Không tự bịa số điện thoại, địa chỉ, lệ phí, thời hạn hoặc căn cứ pháp lý.
-- Nếu không chắc chắn, hướng dẫn người dân liên hệ trực ban Công an phường để được hỗ trợ.
+
+1. Nếu dữ liệu Google Sheet đã có câu trả lời thì ưu tiên dữ liệu đó.
+
+2. Chỉ sử dụng AI khi Router không tìm thấy dữ liệu.
+
+3. Nếu không chắc chắn:
+- Không suy diễn.
+- Không bịa.
+- Hướng dẫn người dân liên hệ Công an phường.
+
+4. Không trả lời các nội dung ngoài phạm vi pháp luật, thủ tục hành chính và hỗ trợ người dân.
 """
 
 
-def build_prompt(user_message, context=""):
+# ==========================================
+# TẠO PROMPT
+# ==========================================
+
+def build_prompt(question, context=""):
     if context:
         return f"""
-{SYSTEM_INSTRUCTION}
+{SYSTEM_PROMPT}
 
-Dữ liệu tham khảo:
+====================
+DỮ LIỆU THAM KHẢO
+====================
+
 {context}
 
-Câu hỏi của người dân:
-{user_message}
+====================
+CÂU HỎI
+====================
 
-Yêu cầu:
-Trả lời ngắn gọn, dễ hiểu, không vượt quá 1.500 ký tự.
+{question}
+
+====================
+YÊU CẦU
+====================
+
+- Trả lời ngắn gọn.
+- Dễ hiểu.
+- Không quá 1500 ký tự.
 """
+
     return f"""
-{SYSTEM_INSTRUCTION}
+{SYSTEM_PROMPT}
 
-Câu hỏi của người dân:
-{user_message}
+====================
+CÂU HỎI
+====================
 
-Yêu cầu:
-Nếu không có đủ dữ liệu chắc chắn, hãy trả lời theo hướng dẫn chung.
-Không tự bịa thông tin.
-Trả lời không vượt quá 1.500 ký tự.
+{question}
+
+====================
+YÊU CẦU
+====================
+
+Nếu không có đủ thông tin thì trả lời theo hướng dẫn chung.
+
+Không được tự bịa thông tin.
+
+Không quá 1500 ký tự.
 """
 
 
-def ask_gemini(user_message, context=""):
+# ==========================================
+# GỌI GEMINI
+# ==========================================
+
+def ask_gemini(question, context=""):
     try:
-        prompt = build_prompt(user_message, context)
+
+        prompt = build_prompt(
+            question,
+            context
+        )
 
         response = client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=prompt,
+            contents=prompt
         )
 
         if response and response.text:
@@ -71,5 +115,20 @@ def ask_gemini(user_message, context=""):
         return DEFAULT_REPLY
 
     except Exception as e:
+
         print(f"[GEMINI ERROR] {e}")
+
         return DEFAULT_REPLY
+
+
+# ==========================================
+# TEST
+# ==========================================
+
+if __name__ == "__main__":
+
+    print(
+        ask_gemini(
+            "Thủ tục cấp lại căn cước?"
+        )
+    )
