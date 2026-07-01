@@ -133,7 +133,7 @@ def search_lien_he(user_text, limit=3):
             fallback_results.append(row)
 
     fallback_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
-    return fallback_results[:limit]]
+    return fallback_results[:limit]
 
 
 def search_faq(user_text, limit=3):
