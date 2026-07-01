@@ -1,73 +1,156 @@
 # services/zalo_service.py
-# Gửi tin nhắn Zalo OA + tự động refresh Access Token khi hết hạn
+
+import os
+import json
+import threading
+from datetime import datetime, timedelta, timezone
 
 import requests
-
-from config import (
-    ZALO_ACCESS_TOKEN,
-    ZALO_REFRESH_TOKEN,
-    ZALO_APP_ID,
-    ZALO_APP_SECRET,
-)
-
+import gspread
+from google.oauth2.service_account import Credentials
 
 ZALO_SEND_MESSAGE_URL = "https://openapi.zalo.me/v2.0/oa/message"
 ZALO_REFRESH_TOKEN_URL = "https://oauth.zaloapp.com/v4/oa/access_token"
 
-_current_access_token = ZALO_ACCESS_TOKEN
-_current_refresh_token = ZALO_REFRESH_TOKEN
+SETTING_SHEET_NAME = "SETTING_SYSTEM"
+
+ZALO_APP_ID = os.getenv("ZALO_APP_ID", "")
+ZALO_APP_SECRET = os.getenv("ZALO_APP_SECRET", "")
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "")
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON", "")
+
+_token_lock = threading.Lock()
+_current_access_token = None
+_current_refresh_token = None
+
+
+def _now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _get_setting_ws():
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+    creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON)
+    creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+    client = gspread.authorize(creds)
+    sh = client.open_by_key(GOOGLE_SHEET_ID)
+    return sh.worksheet(SETTING_SHEET_NAME)
+
+
+def _load_settings():
+    ws = _get_setting_ws()
+    rows = ws.get_all_records()
+    data = {}
+
+    for row in rows:
+        key = str(row.get("KEY", "")).strip()
+        value = str(row.get("VALUE", "")).strip()
+        status = str(row.get("STATUS", "ON")).strip().upper()
+
+        if key and status == "ON":
+            data[key] = value
+
+    return data
+
+
+def _update_setting(key, value):
+    ws = _get_setting_ws()
+    values = ws.get_all_values()
+
+    if not values:
+        return False
+
+    header = values[0]
+    key_col = header.index("KEY") + 1
+    value_col = header.index("VALUE") + 1
+
+    for i, row in enumerate(values[1:], start=2):
+        if len(row) >= key_col and row[key_col - 1].strip() == key:
+            ws.update_cell(i, value_col, value)
+            return True
+
+    ws.append_row([key, value, "", "ON"])
+    return True
+
+
+def _load_tokens_from_sheet():
+    global _current_access_token, _current_refresh_token
+
+    settings = _load_settings()
+    _current_access_token = settings.get("ZALO_ACCESS_TOKEN")
+    _current_refresh_token = settings.get("ZALO_REFRESH_TOKEN")
+
+    return bool(_current_access_token and _current_refresh_token)
 
 
 def refresh_zalo_access_token():
-    global _current_access_token
-    global _current_refresh_token
+    global _current_access_token, _current_refresh_token
 
-    if not ZALO_APP_ID or not ZALO_APP_SECRET or not _current_refresh_token:
-        print("[ZALO REFRESH ERROR] Thiếu ZALO_APP_ID / ZALO_APP_SECRET / ZALO_REFRESH_TOKEN")
-        return False
+    with _token_lock:
+        if not _current_refresh_token:
+            _load_tokens_from_sheet()
 
-    headers = {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "secret_key": ZALO_APP_SECRET,
-    }
+        if not ZALO_APP_ID or not ZALO_APP_SECRET or not _current_refresh_token:
+            print("[ZALO REFRESH ERROR] Thiếu APP_ID / APP_SECRET / REFRESH_TOKEN")
+            return False
 
-    data = {
-        "app_id": ZALO_APP_ID,
-        "grant_type": "refresh_token",
-        "refresh_token": _current_refresh_token,
-    }
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "secret_key": ZALO_APP_SECRET,
+        }
 
-    try:
-        response = requests.post(
-            ZALO_REFRESH_TOKEN_URL,
-            headers=headers,
-            data=data,
-            timeout=15
-        )
+        data = {
+            "app_id": ZALO_APP_ID,
+            "grant_type": "refresh_token",
+            "refresh_token": _current_refresh_token,
+        }
 
-        result = response.json()
+        try:
+            response = requests.post(
+                ZALO_REFRESH_TOKEN_URL,
+                headers=headers,
+                data=data,
+                timeout=15,
+            )
 
-        if response.status_code == 200 and result.get("access_token"):
-            _current_access_token = result.get("access_token")
-            new_refresh_token = result.get("refresh_token")
+            result = response.json()
 
-            if new_refresh_token:
+            if response.status_code == 200 and result.get("access_token"):
+                new_access_token = result.get("access_token")
+                new_refresh_token = result.get("refresh_token") or _current_refresh_token
+                expires_in = int(result.get("expires_in", 86400))
+
+                _current_access_token = new_access_token
                 _current_refresh_token = new_refresh_token
 
-            print("[ZALO REFRESH] Lấy Access Token mới thành công")
-            return True
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
 
-        print("[ZALO REFRESH ERROR]", result)
-        return False
+                _update_setting("ZALO_ACCESS_TOKEN", new_access_token)
+                _update_setting("ZALO_REFRESH_TOKEN", new_refresh_token)
+                _update_setting("ZALO_TOKEN_STATUS", "OK")
+                _update_setting("ZALO_TOKEN_UPDATED_AT", _now_iso())
+                _update_setting("ZALO_TOKEN_EXPIRES_AT", expires_at.isoformat())
 
-    except Exception as e:
-        print(f"[ZALO REFRESH ERROR] {e}")
-        return False
+                print("[ZALO REFRESH] Thành công, đã lưu token mới vào SETTING_SYSTEM")
+                return True
+
+            _update_setting("ZALO_TOKEN_STATUS", f"ERROR: {result}")
+            print("[ZALO REFRESH ERROR]", result)
+            return False
+
+        except Exception as e:
+            _update_setting("ZALO_TOKEN_STATUS", f"EXCEPTION: {e}")
+            print("[ZALO REFRESH EXCEPTION]", e)
+            return False
 
 
 def _send_text_once(user_id, message):
+    global _current_access_token
+
     if not _current_access_token:
-        print("[ZALO ERROR] Thiếu ZALO_ACCESS_TOKEN")
+        _load_tokens_from_sheet()
+
+    if not _current_access_token:
         return False, {"error": "missing_access_token"}
 
     headers = {
@@ -76,12 +159,8 @@ def _send_text_once(user_id, message):
     }
 
     payload = {
-        "recipient": {
-            "user_id": str(user_id)
-        },
-        "message": {
-            "text": str(message)[:2000]
-        }
+        "recipient": {"user_id": str(user_id)},
+        "message": {"text": str(message)[:2000]},
     }
 
     try:
@@ -89,16 +168,13 @@ def _send_text_once(user_id, message):
             ZALO_SEND_MESSAGE_URL,
             headers=headers,
             json=payload,
-            timeout=15
+            timeout=15,
         )
 
         try:
             data = response.json()
         except Exception:
-            data = {
-                "error": "invalid_json",
-                "text": response.text
-            }
+            data = {"error": "invalid_json", "text": response.text}
 
         if response.status_code == 200 and data.get("error") == 0:
             return True, data
@@ -106,10 +182,7 @@ def _send_text_once(user_id, message):
         return False, data
 
     except Exception as e:
-        return False, {
-            "error": "request_exception",
-            "message": str(e)
-        }
+        return False, {"error": "request_exception", "message": str(e)}
 
 
 def send_zalo_text(user_id, message):
@@ -118,21 +191,21 @@ def send_zalo_text(user_id, message):
         return False
 
     if not message:
-        print("[ZALO ERROR] Nội dung tin nhắn rỗng")
+        print("[ZALO ERROR] Nội dung rỗng")
         return False
+
+    if not _current_access_token or not _current_refresh_token:
+        _load_tokens_from_sheet()
 
     ok, data = _send_text_once(user_id, message)
 
     if ok:
         return True
 
-    # -216 = Access token expired
     if data.get("error") == -216:
         print("[ZALO TOKEN] Access Token hết hạn, đang refresh...")
 
-        refreshed = refresh_zalo_access_token()
-
-        if refreshed:
+        if refresh_zalo_access_token():
             ok_retry, data_retry = _send_text_once(user_id, message)
 
             if ok_retry:
