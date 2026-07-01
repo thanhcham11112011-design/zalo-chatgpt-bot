@@ -1,84 +1,26 @@
-# config.py
-
 import os
 from dotenv import load_dotenv
 
 load_dotenv()
 
-# =========================
-# FLASK
-# =========================
-
 PORT = int(os.getenv("PORT", 5000))
-
-# =========================
-# BOT
-# =========================
-
-BOT_NAME = os.getenv(
-    "BOT_NAME",
-    "Trợ lý AI Công an phường Phù Liễn"
-).strip()
-
+BOT_NAME = os.getenv("BOT_NAME", "Trợ lý AI Công an phường Phù Liễn").strip()
 DEFAULT_REPLY = os.getenv(
     "DEFAULT_REPLY",
-    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. Vui lòng liên hệ Công an phường để được hỗ trợ."
+    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. Quý công dân vui lòng nhập 'menu' hoặc liên hệ Công an phường để được hỗ trợ."
 ).strip()
 
-# =========================
-# GOOGLE SHEETS
-# =========================
+GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "").strip()
+GOOGLE_CREDENTIALS_FILE = os.getenv("GOOGLE_CREDENTIALS_FILE", "credentials.json").strip()
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
 
-GOOGLE_SHEET_ID = os.getenv(
-    "GOOGLE_SHEET_ID",
-    ""
-).strip()
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
 
-GOOGLE_CREDENTIALS_FILE = os.getenv(
-    "GOOGLE_CREDENTIALS_FILE",
-    "credentials.json"
-).strip()
-
-# =========================
-# GEMINI
-# =========================
-
-GEMINI_API_KEY = os.getenv(
-    "GEMINI_API_KEY",
-    ""
-).strip()
-
-GEMINI_MODEL = os.getenv(
-    "GEMINI_MODEL",
-    "gemini-2.0-flash"
-).strip()
-
-# =========================
-# ZALO OA
-# =========================
-
-ZALO_ACCESS_TOKEN = os.getenv(
-    "ZALO_ACCESS_TOKEN",
-    ""
-).strip()
-ZALO_APP_ID = os.getenv(
-    "ZALO_APP_ID",
-    ""
-).strip()
-
-ZALO_APP_SECRET = os.getenv(
-    "ZALO_APP_SECRET",
-    ""
-).strip()
-
-ZALO_REFRESH_TOKEN = os.getenv(
-    "ZALO_REFRESH_TOKEN",
-    ""
-).strip()
-
-# =========================
-# GOOGLE SHEET NAMES
-# =========================
+ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN", "").strip()
+ZALO_APP_ID = os.getenv("ZALO_APP_ID", "").strip()
+ZALO_APP_SECRET = os.getenv("ZALO_APP_SECRET", "").strip()
+ZALO_REFRESH_TOKEN = os.getenv("ZALO_REFRESH_TOKEN", "").strip()
 
 SHEET_MENU = "MENU"
 SHEET_SETTING_SYSTEM = "SETTING_SYSTEM"
@@ -89,25 +31,17 @@ SHEET_THONGTIN = "THONGTIN"
 SHEET_TRA_CUU_LIEN_HE = "TRA_CUU_LIEN_HE"
 SHEET_FAQ = "FAQ"
 SHEET_LICH_SU_CHAT = "LICH_SU_CHAT"
-
-SHEET_THU_TUC_CCCD = "THU_TUC_CCCD"
-SHEET_THU_TUC_CUTRU = "THU_TUC_CUTRU"
-SHEET_THU_TUC_VNEID = "THU_TUC_VNEID"
-SHEET_THU_TUC_LLTP = "THU_TUC_LLTP"
-SHEET_THU_TUC_PTGT = "THU_TUC_PTGT"
-SHEET_THU_TUC_PCCC = "THU_TUC_PCCC"
-SHEET_THU_TUC_VKVLN = "THU_TUC_VKVLN"
-SHEET_THU_TUC_ANTT = "THU_TUC_ANTT"
+SHEET_SESSION = "BOT_SESSION"
 
 THU_TUC_SHEETS = [
-    SHEET_THU_TUC_CCCD,
-    SHEET_THU_TUC_CUTRU,
-    SHEET_THU_TUC_VNEID,
-    SHEET_THU_TUC_LLTP,
-    SHEET_THU_TUC_PTGT,
-    SHEET_THU_TUC_PCCC,
-    SHEET_THU_TUC_VKVLN,
-    SHEET_THU_TUC_ANTT,
+    "THU_TUC_CCCD",
+    "THU_TUC_CUTRU",
+    "THU_TUC_VNEID",
+    "THU_TUC_LLTP",
+    "THU_TUC_PTGT",
+    "THU_TUC_PCCC",
+    "THU_TUC_VKVLN",
+    "THU_TUC_ANTT",
 ]
 
 ALL_SHEETS = [
@@ -120,34 +54,18 @@ ALL_SHEETS = [
     SHEET_TRA_CUU_LIEN_HE,
     SHEET_FAQ,
     SHEET_LICH_SU_CHAT,
+    SHEET_SESSION,
     *THU_TUC_SHEETS,
 ]
 
-# =========================
-# CHECK CONFIG
-# =========================
+SESSION_TTL_MINUTES = int(os.getenv("SESSION_TTL_MINUTES", 60))
+MAX_ZALO_TEXT_LENGTH = int(os.getenv("MAX_ZALO_TEXT_LENGTH", 1900))
+
 
 def check_config():
     missing = []
-
     if not GOOGLE_SHEET_ID:
         missing.append("GOOGLE_SHEET_ID")
-
-    if not GOOGLE_CREDENTIALS_FILE:
-        missing.append("GOOGLE_CREDENTIALS_FILE")
-
-    # GEMINI_API_KEY, ZALO_ACCESS_TOKEN, ZALO_REFRESH_TOKEN có thể được đọc từ Google Sheet SETTING_SYSTEM.
-    # Không bắt buộc khai báo trong Render Environment nữa.
-
+    if not GOOGLE_CREDENTIALS_JSON and not GOOGLE_CREDENTIALS_FILE:
+        missing.append("GOOGLE_CREDENTIALS_JSON hoặc GOOGLE_CREDENTIALS_FILE")
     return len(missing) == 0, missing
-
-
-if __name__ == "__main__":
-    ok, missing = check_config()
-
-    if ok:
-        print("✅ CONFIG OK")
-    else:
-        print("❌ Thiếu cấu hình:")
-        for item in missing:
-            print("-", item)
