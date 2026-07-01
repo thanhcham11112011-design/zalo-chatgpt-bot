@@ -188,6 +188,36 @@ def _select_from_suggestions(text, ctx):
     return None
 
 
+
+
+def _procedure_list_reply_for_context(ctx):
+    """Khi người dân đã vào một nhóm thủ tục nhưng chưa chọn thủ tục cụ thể."""
+    sheet = ctx.get("sheet", "")
+    if not sheet or not sheet.startswith("THU_TUC_"):
+        return None
+
+    rows = list_procedures_by_sheet(sheet, limit=10)
+    if not rows:
+        return None
+
+    suggestions = []
+    lines = []
+    for i, row in enumerate(rows, start=1):
+        name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+        pid = get_first(row, "ID")
+        suggestions.append({"index": i, "id": pid, "name": name})
+        if name:
+            lines.append(f"{i}. {name}")
+
+    ctx["last_suggestions"] = suggestions
+    title = ctx.get("topic") or sheet.replace("THU_TUC_", "")
+    reply = (
+        f"📌 {title}\n\n"
+        "Quý công dân vui lòng chọn thủ tục cụ thể trước, sau đó tôi sẽ hướng dẫn hồ sơ, quy trình, cơ quan tiếp nhận, thời hạn, lệ phí.\n\n"
+        + "\n".join(lines)
+    )
+    return reply, ctx
+
 def route_message(user_text, context=None):
     ctx = dict(context or {})
     text = str(user_text or "").strip()
@@ -227,9 +257,28 @@ def route_message(user_text, context=None):
         if procedure:
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
+    # Nếu đang ở nhóm thủ tục nhưng chưa chọn thủ tục cụ thể mà hỏi: hồ sơ/nơi thực hiện/lệ phí...
+    # thì không tìm toàn bộ hệ thống nữa, yêu cầu chọn đúng thủ tục trong nhóm hiện tại.
+    if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id") and is_followup_detail_question(text):
+        grouped = _procedure_list_reply_for_context(ctx)
+        if grouped:
+            reply, new_ctx = grouped
+            return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
+
     explicit = detect_explicit_topic(text)
     if explicit:
         ctx.update(explicit)
+        # Câu hỏi chỉ nêu nhóm/lĩnh vực như "đăng ký xe", "căn cước", "PCCC" thì hiển thị danh sách thủ tục trong nhóm.
+        topic_words = [
+            "can cuoc", "cccd", "cu tru", "tam tru", "thuong tru", "vneid", "dinh danh",
+            "dang ky xe", "bien so", "phuong tien", "pccc", "phong chay", "ly lich tu phap",
+            "vkvln", "vu khi", "vat lieu no", "cong cu ho tro", "antt", "nganh nghe"
+        ]
+        if text_norm in topic_words:
+            grouped = _procedure_list_reply_for_context(ctx)
+            if grouped:
+                reply, new_ctx = grouped
+                return reply, "MENU_GROUP", new_ctx, ""
 
     search_text = text
     if not explicit and ctx.get("sheet"):

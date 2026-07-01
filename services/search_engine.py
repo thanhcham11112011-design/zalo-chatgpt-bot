@@ -147,22 +147,63 @@ def format_faq(row):
     return f"❓ {q}\n\n{a}" if q and a else (a or q)
 
 
+def _short_steps(value, max_len=700):
+    """Rút gọn quy trình/trình tự ở phần trả lời đầu."""
+    text = compact(value, max_len)
+    if not text:
+        return ""
+
+    # Nếu nội dung có nhiều bước, chỉ giữ gọn để tin nhắn không quá dài.
+    lower = normalize_text(text)
+    if "buoc" in lower:
+        return text
+
+    return text
+
+
 def format_thu_tuc(row):
+    """
+    BOT V2.1 - Mẫu trả lời thủ tục thống nhất:
+    1. Đối tượng
+    2. Hồ sơ
+    3. Quy trình thực hiện
+    4. Link DVC
+    5. Lời nhắc hỏi tiếp
+    """
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
     doi_tuong = get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG")
     ho_so = get_first(row, "HO_SO", "HỒ_SƠ")
-    noi_nop = get_first(row, "NOI_NOP", "NƠI_NỘP", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
-    thoi_han = get_first(row, "THOI_HAN", "THỜI_HẠN")
-    le_phi = get_first(row, "LE_PHI", "LỆ_PHÍ", "PHI")
-    parts = [f"📌 {ten}" if ten else "📌 Thông tin thủ tục"]
-    if doi_tuong: parts.append(f"👤 Đối tượng:\n{compact(doi_tuong, 500)}")
-    if ho_so: parts.append(f"📄 Hồ sơ:\n{compact(ho_so, 800)}")
-    if noi_nop: parts.append(f"📍 Cơ quan/nơi tiếp nhận:\n{compact(noi_nop, 500)}")
-    if thoi_han: parts.append(f"⏱ Thời hạn: {thoi_han}")
-    if le_phi: parts.append(f"💰 Lệ phí: {le_phi}")
-    parts.append("————————————\nBạn có thể hỏi tiếp: hồ sơ chi tiết, trình tự, cơ quan tiếp nhận, thời hạn, lệ phí, cơ sở pháp lý, link dịch vụ công.")
-    return "\n\n".join(parts)
+    quy_trinh = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
+    link_dvc = get_first(row, "LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG")
 
+    parts = [f"📌 {ten}" if ten else "📌 Thông tin thủ tục"]
+
+    if doi_tuong:
+        parts.append(f"👤 Đối tượng:\n{compact(doi_tuong, 500)}")
+    else:
+        parts.append("👤 Đối tượng:\nTheo quy định đối với từng trường hợp cụ thể.")
+
+    if ho_so:
+        parts.append(f"📄 Hồ sơ:\n{compact(ho_so, 700)}")
+    else:
+        parts.append("📄 Hồ sơ:\nCông dân chuẩn bị hồ sơ theo hướng dẫn của cơ quan tiếp nhận.")
+
+    if quy_trinh:
+        parts.append(f"📝 Quy trình thực hiện:\n{_short_steps(quy_trinh, 700)}")
+    else:
+        parts.append("📝 Quy trình thực hiện:\nCông dân nộp hồ sơ, cơ quan có thẩm quyền tiếp nhận, kiểm tra, xử lý và trả kết quả theo quy định.")
+
+    if link_dvc:
+        parts.append(f"🔗 LINK DVC:\n{link_dvc}")
+    else:
+        parts.append("🔗 LINK DVC:\nChưa có link dịch vụ công trong dữ liệu. Công dân có thể tra cứu trên Cổng Dịch vụ công hoặc liên hệ cơ quan tiếp nhận để được hướng dẫn.")
+
+    parts.append(
+        "————————————\n"
+        "💬 Bạn có thể hỏi tiếp: hồ sơ chi tiết, trình tự, cơ quan tiếp nhận, thời hạn, lệ phí, cơ sở pháp lý."
+    )
+
+    return "\n\n".join(parts)
 
 def format_multiple_results(results, formatter, limit=3):
     texts = []
