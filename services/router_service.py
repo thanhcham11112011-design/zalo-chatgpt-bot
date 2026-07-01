@@ -301,11 +301,7 @@ def answer_procedure_detail(row, user_text):
 
         if lien_he:
             reply = format_lien_he(lien_he)
-
-            luu_y = get_first(row, "LUU_Y", "LƯU_Ý")
-            if luu_y:
-                reply += f"\n\n📌 Lưu ý:\n{compact(luu_y, 1200)}"
-
+            
             return reply
 
         if co_quan:
