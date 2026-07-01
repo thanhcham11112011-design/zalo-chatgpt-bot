@@ -521,42 +521,7 @@ def route_message(user_text, context=None):
         if procedure:
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    # Đang ở nhóm thủ tục: xử lý xem tiếp / nhập từ khóa trong đúng sheet hiện tại
-    if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
-        if is_next_page_question(text):
-            next_ctx = dict(ctx)
-            next_ctx["page"] = safe_int(ctx.get("page", 1), default=1) + 1
-            grouped = _procedure_list_reply_for_context(next_ctx)
-            if grouped:
-                reply, new_ctx = grouped
-                if new_ctx.get("page") == ctx.get("page"):
-                    return (
-                        "Đã hiển thị hết danh sách thủ tục trong nhóm này.\n"
-                        "Quý công dân vui lòng nhắn số thứ tự hoặc nhập từ khóa gần đúng để chọn thủ tục.",
-                        "END_PROCEDURE_LIST",
-                        new_ctx,
-                        ""
-                    )
-                return reply, "NEXT_PROCEDURE_PAGE", new_ctx, ""
-
-        found = _find_procedure_in_current_sheet(text, ctx)
-        if found:
-            new_ctx = {
-                "sheet": found.get("_SHEET", ctx.get("sheet", "")),
-                "topic": get_first(found, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                "procedure_id": get_first(found, "ID"),
-                "procedure_name": get_first(found, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                "stage": "procedure",
-                "page": ctx.get("page", 1),
-                "last_suggestions": [],
-            }
-            return format_thu_tuc(found), "THU_TUC_IN_GROUP", new_ctx, ""
-
-        # Nếu đang ở nhóm mà hỏi chi tiết khi chưa chọn thủ tục, phải yêu cầu chọn thủ tục.
-        # Không được rơi sang FAQ / liên hệ / toàn bộ hệ thống.
-        reply, new_ctx = _need_select_procedure_message(ctx)
-        return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
-
+    # Nếu người dân nhập chủ đề mới rõ ràng thì thoát context cũ
     explicit = detect_explicit_topic(text)
 
     if explicit:
@@ -569,6 +534,9 @@ def route_message(user_text, context=None):
             reply, new_ctx = grouped
             return reply, "MENU_GROUP", new_ctx, ""
 
+    # Đang ở nhóm thủ tục: xử lý xem tiếp / nhập từ khóa trong đúng sheet hiện tại
+    if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
+        ...
     # Không có ngữ cảnh + câu hỏi địa điểm quá mơ hồ
     if (
         not ctx.get("procedure_id")
