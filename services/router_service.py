@@ -343,9 +343,9 @@ def route_message(user_text, context=None):
 
     # 3. Nếu đang có thủ tục cụ thể và người dân hỏi tiếp chi tiết
     if context.get("procedure_id") and is_followup_detail_question(text):
-    procedure = find_procedure_by_id(context.get("procedure_id"))
+        procedure = find_procedure_by_id(context.get("procedure_id"))
 
-    if procedure:
+        if procedure:
         if is_location_question(text):
             co_quan = (
                 procedure.get("CO_QUAN_THUC_HIEN")
