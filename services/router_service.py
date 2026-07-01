@@ -605,27 +605,26 @@ def route_message(user_text, context=None):
                 limit=3
             ), "TRA_CUU_LIEN_HE", ctx, ""
 
-# Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ
-if (
-    explicit
-    or ctx.get("procedure_id")
-    or ctx.get("sheet")
-    or is_location_question(text)
-    or text_norm in [
-        "lien he",
-        "so dien thoai",
-        "truc ban",
-        "google map",
-        "ban do",
-        "menu",
-    ]
-):
-    faq = search_faq(search_text, limit=3)
+    # Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ
+    if (
+        explicit
+        or ctx.get("procedure_id")
+        or ctx.get("sheet")
+        or is_location_question(text)
+        or text_norm in [
+            "lien he",
+            "so dien thoai",
+            "truc ban",
+            "google map",
+            "ban do",
+            "menu",
+        ]
+    ):
+        faq = search_faq(search_text, limit=3)
 
-    if faq:
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+        if faq:
+            return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
-    return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
 
 def route_message_for_ai(user_text, context=None):
     reply, source, new_context, ai_context = route_message(user_text, context=context)
