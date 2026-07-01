@@ -252,14 +252,36 @@ def route_message(user_text, context=None):
             return answer_from_menu(menu_result), "MENU", new_context
 
     # 6. Ưu tiên tìm thủ tục trước FAQ
-    thu_tuc_results = search_thu_tuc(text, limit=3)
+   thu_tuc_results = search_thu_tuc(text, limit=3)
+
     if thu_tuc_results:
-        reply = format_multiple_results(
-            thu_tuc_results,
-            format_thu_tuc,
-            limit=3
-        )
+        best = thu_tuc_results[0]
+        best_score = best.get("_SCORE", 0)
+
+        second_score = 0
+    if len(thu_tuc_results) > 1:
+        second_score = thu_tuc_results[1].get("_SCORE", 0)
+
+    # Nếu kết quả đầu đủ rõ ràng thì trả 01 thủ tục duy nhất
+    if best_score >= 20 and best_score >= second_score + 8:
+        reply = format_thu_tuc(best)
         return reply, "THU_TUC", context
+
+    # Nếu câu hỏi còn mơ hồ thì hỏi lại, không trả Top 3 thủ tục
+    suggestions = []
+
+    for index, row in enumerate(thu_tuc_results[:3], start=1):
+        ten = row.get("TEN_THU_TUC", "")
+        if ten:
+            suggestions.append(f"{index}. {ten}")
+
+    if suggestions:
+        reply = (
+            "Tôi tìm thấy một số thủ tục gần giống nhau. "
+            "Quý công dân vui lòng nói rõ hơn cần thực hiện thủ tục nào:\n\n"
+            + "\n".join(suggestions)
+        )
+        return reply, "CLARIFY_THU_TUC", context
 
     # 7. Tra cứu liên hệ
     lien_he_results = search_lien_he(text, limit=3)
