@@ -5,29 +5,29 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ==========================================
+# =========================
 # FLASK
-# ==========================================
+# =========================
 
 PORT = int(os.getenv("PORT", 5000))
 
-# ==========================================
+# =========================
 # BOT
-# ==========================================
+# =========================
 
 BOT_NAME = os.getenv(
     "BOT_NAME",
     "Trợ lý AI Công an phường Phù Liễn"
-)
+).strip()
 
-DEFAULT_REPLY = (
-    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. "
-    "Vui lòng liên hệ Công an phường để được hỗ trợ."
-)
+DEFAULT_REPLY = os.getenv(
+    "DEFAULT_REPLY",
+    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. Vui lòng liên hệ Công an phường để được hỗ trợ."
+).strip()
 
-# ==========================================
+# =========================
 # GOOGLE SHEETS
-# ==========================================
+# =========================
 
 GOOGLE_SHEET_ID = os.getenv(
     "GOOGLE_SHEET_ID",
@@ -39,12 +39,9 @@ GOOGLE_CREDENTIALS_FILE = os.getenv(
     "credentials.json"
 ).strip()
 
-# Giữ tương thích với các module
-SPREADSHEET_ID = GOOGLE_SHEET_ID
-
-# ==========================================
+# =========================
 # GEMINI
-# ==========================================
+# =========================
 
 GEMINI_API_KEY = os.getenv(
     "GEMINI_API_KEY",
@@ -56,18 +53,18 @@ GEMINI_MODEL = os.getenv(
     "gemini-2.0-flash"
 ).strip()
 
-# ==========================================
+# =========================
 # ZALO OA
-# ==========================================
+# =========================
 
 ZALO_ACCESS_TOKEN = os.getenv(
     "ZALO_ACCESS_TOKEN",
     ""
 ).strip()
 
-# ==========================================
-# GOOGLE SHEETS
-# ==========================================
+# =========================
+# GOOGLE SHEET NAMES
+# =========================
 
 SHEET_MENU = "MENU"
 SHEET_SETTING_SYSTEM = "SETTING_SYSTEM"
@@ -112,9 +109,9 @@ ALL_SHEETS = [
     *THU_TUC_SHEETS,
 ]
 
-# ==========================================
-# KIỂM TRA CẤU HÌNH
-# ==========================================
+# =========================
+# CHECK CONFIG
+# =========================
 
 def check_config():
     missing = []
