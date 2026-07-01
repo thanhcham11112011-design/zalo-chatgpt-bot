@@ -212,3 +212,21 @@ def format_multiple_results(results, formatter, limit=3):
         if val:
             texts.append(f"{i}. {val}")
     return "\n\n".join(texts)
+def find_lien_he_by_ten_co_quan(name):
+    if not name:
+        return None
+
+    name_norm = normalize_text(name)
+    rows = read_lien_he()
+
+    for row in rows:
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        if normalize_text(ten) == name_norm:
+            return row
+
+    for row in rows:
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        if name_norm in normalize_text(ten) or normalize_text(ten) in name_norm:
+            return row
+
+    return None
