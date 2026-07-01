@@ -606,10 +606,19 @@ def route_message(user_text, context=None):
             ), "TRA_CUU_LIEN_HE", ctx, ""
 
     # Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ
+    # Nếu đang ở nhóm thủ tục nhưng chưa chọn được thủ tục cụ thể
+    # thì không được rơi xuống FAQ.
+    if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
+        grouped = _procedure_list_reply_for_context(ctx)
+
+        if grouped:
+            reply, new_ctx = grouped
+            return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
+
+    # Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ
     if (
         explicit
         or ctx.get("procedure_id")
-        or ctx.get("sheet")
         or is_location_question(text)
         or text_norm in [
             "lien he",
@@ -624,6 +633,7 @@ def route_message(user_text, context=None):
 
         if faq:
             return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+    return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
 
 
 def route_message_for_ai(user_text, context=None):
