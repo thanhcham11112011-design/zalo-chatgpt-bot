@@ -192,7 +192,9 @@ def _make_procedure_list_reply(sheet, topic="", page=1):
 
     suggestions = []
     lines = []
-    for i, row in enumerate(page_rows, start=1):
+    start_index = page * page_size + 1
+
+    for i, row in enumerate(page_rows, start=start_index):
         name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
         pid = get_first(row, "ID")
         suggestions.append({"index": i, "id": pid, "name": name})
