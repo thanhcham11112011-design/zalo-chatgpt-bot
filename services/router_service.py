@@ -170,7 +170,7 @@ def answer_procedure_detail(row, user_text):
     if "ho so" in t or "giay to" in t or "can gi" in t or "chi tiet" in t:
         value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
         return f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
-   if (
+    if (
         "trinh tu" in t
         or "quy trinh" in t
         or "quy trinh thuc hien" in t
