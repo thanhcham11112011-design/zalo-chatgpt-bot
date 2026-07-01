@@ -26,28 +26,69 @@ def remember_message(message_id):
 
 
 def build_answer(user_id, question):
+    """
+    Xử lý toàn bộ luồng hội thoại BOT V2.2
+    """
+
+    # Lấy context hiện tại của người dùng
     context = get_context(user_id)
-    routed = route_message_for_ai(question, context=context)
+
+    # Router xử lý
+    routed = route_message_for_ai(
+        question,
+        context=context
+    )
 
     answer = routed.get("reply", DEFAULT_REPLY)
     source = routed.get("source", "DEFAULT")
     use_ai = routed.get("use_ai", False)
-    new_context = routed.get("context", context)
+
+    # Quan trọng:
+    # Nếu router trả {} thì vẫn phải ghi đè để xóa context cũ.
+    # Chỉ khi key context không tồn tại mới giữ context hiện tại.
+    if "context" in routed:
+        new_context = routed["context"]
+    else:
+        new_context = context
+
     ai_context = routed.get("ai_context", "")
 
-    if source in ["WELCOME", "RESET"]:
-        if source == "RESET":
-            clear_context(user_id)
-        else:
-            save_context(user_id, {})
+    # ===========================
+    # Quản lý Context
+    # ===========================
+
+    if source == "RESET":
+        clear_context(user_id)
+
+    elif source == "WELCOME":
+        save_context(user_id, {})
+
     else:
-        save_context(user_id, new_context or {})
+        # Luôn lưu context mới kể cả {}
+        save_context(user_id, new_context)
+
+    # ===========================
+    # AI fallback
+    # ===========================
 
     if use_ai:
-        answer = ask_gemini(question, context=ai_context)
+        answer = ask_gemini(
+            question,
+            context=ai_context
+        )
         source = "GEMINI_AI"
 
-    write_log(user_id=user_id, user_message=question, bot_reply=answer, source=source)
+    # ===========================
+    # Ghi log
+    # ===========================
+
+    write_log(
+        user_id=user_id,
+        user_message=question,
+        bot_reply=answer,
+        source=source,
+    )
+
     return answer, source
 
 
