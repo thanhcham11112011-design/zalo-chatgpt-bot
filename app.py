@@ -71,12 +71,44 @@ def build_answer(user_id, question):
     # AI fallback
     # ===========================
 
-    if use_ai:
-        answer = ask_gemini(
-            question,
-            context=ai_context
+if use_ai:
+
+    ai_answer = ask_gemini(
+        question,
+        context=ai_context
+    )
+
+    if ai_answer:
+
+        answer = (
+            ai_answer.strip()
+            + "\n\n"
+            + "────────────────\n"
+            + "🤖 Trợ lý AI Công an phường Phù Liễn chủ yếu hỗ trợ:\n"
+            + "• Thủ tục hành chính\n"
+            + "• Căn cước\n"
+            + "• Cư trú\n"
+            + "• VNeID\n"
+            + "• Phản ánh ANTT\n"
+            + "• Tra cứu cơ quan thực hiện\n\n"
+            + "💬 Quý công dân có thể nhập 'menu' để xem đầy đủ danh mục hỗ trợ."
         )
+
         source = "GEMINI_AI"
+
+    else:
+
+        answer = (
+            "Xin lỗi, hiện tôi chưa hiểu rõ ý định câu hỏi hoặc hệ thống AI đang tạm thời không khả dụng.\n\n"
+            "Quý công dân vui lòng nhập rõ nội dung cần hỗ trợ.\n\n"
+            "Ví dụ:\n"
+            "• Làm căn cước ở đâu\n"
+            "• Đăng ký tạm trú\n"
+            "• Số điện thoại Công an phường\n"
+            "• menu"
+        )
+
+        source = "AI_FALLBACK"
 
     # ===========================
     # Ghi log
