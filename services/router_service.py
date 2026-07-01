@@ -485,16 +485,57 @@ def _need_select_procedure_message(ctx):
     )
 
 def get_contact_lookup_message():
-    return (
-        "📌 Tra cứu liên hệ\n\n"
-        "Bạn đang truy cập hệ thống thông tin liên lạc của Công an phường Phù Liễn.\n\n"
-        "Quý công dân vui lòng nhập đúng một trong các từ khóa chuẩn:\n"
-        "1. liên hệ chỉ huy CAP\n"
-        "2. liên hệ bộ phận CSKV\n"
-        "3. liên hệ bộ phận AN NINH\n"
-        "4. liên hệ bộ phận PCTP\n"
-        "5. liên hệ bộ phận CSTT"
-    )
+    """
+    Lấy nội dung hướng dẫn Tra cứu liên hệ từ sheet TRA_CUU_LIEN_HE, cột MO_TA.
+    Không hardcode nội dung trả lời trong Python.
+
+    Cách nhập dữ liệu trên Google Sheet:
+    - Sheet: TRA_CUU_LIEN_HE
+    - Cột tiêu đề: MO_TA hoặc MÔ_TẢ
+    - Dòng hướng dẫn có thể có TEN_CHUC_NANG = Tra cứu liên hệ
+      hoặc ID = MENU / HUONG_DAN / 0.
+    """
+    rows = read_lien_he()
+
+    # Ưu tiên dòng hướng dẫn đúng mục Tra cứu liên hệ
+    for row in rows:
+        title = get_first(
+            row,
+            "TEN_CHUC_NANG", "TÊN_CHỨC_NĂNG",
+            "CHU_DE", "CHỦ_ĐỀ",
+            "TEN_CO_QUAN", "TÊN_CƠ_QUAN",
+            "HO_TEN", "HỌ_TÊN",
+            "ID",
+        )
+        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
+
+        title_norm = normalize_text(title)
+        if mo_ta and (
+            "tra cuu lien he" in title_norm
+            or title_norm in ["menu", "huong dan", "huong_dan", "0", "1"]
+        ):
+            return str(mo_ta).strip()
+
+    # Nếu không có dòng đánh dấu, lấy dòng đầu tiên có cột MO_TA
+    for row in rows:
+        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
+        if mo_ta:
+            return str(mo_ta).strip()
+
+    # Fallback kỹ thuật khi sheet chưa có dữ liệu, để BOT không bị lỗi.
+    return DEFAULT_REPLY
+
+
+def is_contact_lookup_keyword(text):
+    t = normalize_text(text)
+    keys = [
+        "lien he chi huy cap",
+        "lien he bo phan cskv",
+        "lien he bo phan an ninh",
+        "lien he bo phan pctp",
+        "lien he bo phan cstt",
+    ]
+    return t in keys
 
 
 def is_contact_hint_question(text):
@@ -535,6 +576,15 @@ def route_message(user_text, context=None):
     if ctx.get("stage") != "contact_lookup" and is_contact_hint_question(text):
         return get_contact_hint_message(), "CONTACT_HINT", {}, ""
 
+    # Khi đã vào mục Tra cứu liên hệ: chỉ tra cứu trong sheet TRA_CUU_LIEN_HE.
+    # Nếu nhập sai từ khóa chuẩn thì trả lại nội dung hướng dẫn từ cột MO_TA.
+    if ctx.get("stage") == "contact_lookup" or ctx.get("sheet") == "TRA_CUU_LIEN_HE":
+        lien_he = search_lien_he(text, limit=5)
+        if lien_he and (is_contact_lookup_keyword(text) or "lien he" in text_norm):
+            return format_multiple_results(lien_he, format_lien_he, limit=5), "TRA_CUU_LIEN_HE", ctx, ""
+
+        return get_contact_lookup_message(), "CONTACT_LOOKUP_GUIDE", ctx, ""
+
     # Câu hỏi rõ tên cơ quan: bỏ ngữ cảnh thủ tục cũ
     if is_specific_contact_question(text):
         lien_he = search_lien_he(text, limit=3)
@@ -568,7 +618,9 @@ def route_message(user_text, context=None):
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
-            new_ctx["stage"] = "procedure_list"
+            # Không ghi đè stage contact_lookup của menu Tra cứu liên hệ
+            if new_ctx.get("sheet") != "TRA_CUU_LIEN_HE":
+                new_ctx["stage"] = "procedure_list"
             new_ctx["page"] = 1
             return reply, "MENU", new_ctx, ""
 
@@ -633,7 +685,9 @@ def route_message(user_text, context=None):
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
-            new_ctx["stage"] = "procedure_list"
+            # Không ghi đè stage contact_lookup của menu Tra cứu liên hệ
+            if new_ctx.get("sheet") != "TRA_CUU_LIEN_HE":
+                new_ctx["stage"] = "procedure_list"
             new_ctx["page"] = 1
             return reply, "MENU", new_ctx, ""
 
