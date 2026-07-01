@@ -305,6 +305,22 @@ def answer_procedure_detail(row, user_text):
 # =========================
 # ROUTER CHÍNH
 # =========================
+def is_location_question(user_text):
+    text = normalize_text(user_text)
+
+    keywords = [
+        "noi thuc hien",
+        "lam o dau",
+        "nop o dau",
+        "o dau",
+        "co quan thuc hien",
+        "dia chi",
+        "lien he",
+        "google map",
+        "ban do",
+    ]
+
+    return any(kw in text for kw in keywords)
 
 def route_message(user_text, context=None):
     context = context or {}
@@ -327,10 +343,30 @@ def route_message(user_text, context=None):
 
     # 3. Nếu đang có thủ tục cụ thể và người dân hỏi tiếp chi tiết
     if context.get("procedure_id") and is_followup_detail_question(text):
-        procedure = find_procedure_by_id(context.get("procedure_id"))
-        if procedure:
-            reply = answer_procedure_detail(procedure, text)
-            return reply, "PROCEDURE_CONTEXT", context
+    procedure = find_procedure_by_id(context.get("procedure_id"))
+
+    if procedure:
+        if is_location_question(text):
+            co_quan = (
+                procedure.get("CO_QUAN_THUC_HIEN")
+                or procedure.get("NOI_NOP")
+                or procedure.get("NOI_THUC_HIEN")
+                or ""
+            )
+
+            search_text = f"{co_quan} {procedure.get('CHU_DE', '')} {procedure.get('TEN_THU_TUC', '')}"
+            lien_he_results = search_lien_he(search_text, limit=1)
+
+            if lien_he_results:
+                reply = format_multiple_results(
+                    lien_he_results,
+                    format_lien_he,
+                    limit=1
+                )
+                return reply, "TRA_CUU_LIEN_HE_CONTEXT", context
+
+        reply = answer_procedure_detail(procedure, text)
+        return reply, "PROCEDURE_CONTEXT", context
 
     # 4. Nếu người dân hỏi rõ sang lĩnh vực mới thì đổi context
     explicit_context = detect_explicit_topic(text)
