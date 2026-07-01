@@ -322,13 +322,49 @@ def route_message(user_text, context=None):
     # 2. Ưu tiên tuyệt đối nếu người dân nhập số menu
     if text_norm.isdigit():
         menu_result = search_menu(text)
+
         if menu_result:
-            return answer_from_menu(menu_result), "MENU", build_menu_context(menu_result)
+            sheet = menu_result.get("SHEET_DU_LIEU") or menu_result.get("SHEET") or ""
+            new_context = {
+                "sheet": sheet,
+                "topic": menu_result.get("TEN_CHUC_NANG")
+                or menu_result.get("TEN")
+                or menu_result.get("CHU_DE")
+                or ""
+            }
+            return answer_from_menu(menu_result), "MENU", new_context
 
     # 3. Nếu đang có thủ tục cụ thể và người dân hỏi tiếp chi tiết
     if context.get("procedure_id") and is_followup_detail_question(text):
         procedure = find_procedure_by_id(context.get("procedure_id"))
+
         if procedure:
+            # 3.1. Câu hỏi về nơi thực hiện/cơ quan thực hiện phải tra TRA_CUU_LIEN_HE
+            if is_location_question(text):
+                co_quan = (
+                    procedure.get("CO_QUAN_THUC_HIEN")
+                    or procedure.get("NOI_NOP")
+                    or procedure.get("NOI_THUC_HIEN")
+                    or ""
+                )
+
+                search_text = (
+                    f"{co_quan} "
+                    f"{procedure.get('CHU_DE', '')} "
+                    f"{procedure.get('TEN_THU_TUC', '')}"
+                )
+
+                lien_he_results = search_lien_he(search_text, limit=1)
+
+                if lien_he_results:
+                    reply = format_multiple_results(
+                        lien_he_results,
+                        format_lien_he,
+                        limit=1
+                    )
+                    return reply, "TRA_CUU_LIEN_HE_CONTEXT", context
+
+            # 3.2. Các câu hỏi chi tiết khác: hồ sơ, lệ phí, thời hạn, trình tự...
             reply = answer_procedure_detail(procedure, text)
             return reply, "PROCEDURE_CONTEXT", context
 
@@ -374,10 +410,19 @@ def route_message(user_text, context=None):
 
     if text_norm in menu_keywords:
         menu_result = search_menu(text)
-        if menu_result:
-            return answer_from_menu(menu_result), "MENU", build_menu_context(menu_result)
 
-    # 7. Ưu tiên tìm thủ tục trước FAQ
+        if menu_result:
+            sheet = menu_result.get("SHEET_DU_LIEU") or menu_result.get("SHEET") or ""
+            new_context = {
+                "sheet": sheet,
+                "topic": menu_result.get("TEN_CHUC_NANG")
+                or menu_result.get("TEN")
+                or menu_result.get("CHU_DE")
+                or ""
+            }
+            return answer_from_menu(menu_result), "MENU", new_context
+
+    # 7. Tìm thủ tục: một câu hỏi -> một thủ tục
     thu_tuc_results = search_thu_tuc(text, limit=3)
 
     if thu_tuc_results:
@@ -385,7 +430,6 @@ def route_message(user_text, context=None):
         best_score = best.get("_SCORE", 0)
         second_score = thu_tuc_results[1].get("_SCORE", 0) if len(thu_tuc_results) > 1 else 0
 
-        # Nếu kết quả đầu đủ rõ ràng thì trả 01 thủ tục duy nhất
         if best_score >= 20 and best_score >= second_score + 8:
             reply = format_thu_tuc(best)
 
@@ -398,7 +442,6 @@ def route_message(user_text, context=None):
 
             return reply, "THU_TUC", new_context
 
-        # Nếu chưa rõ thì hỏi lại, không trả Top 3 thủ tục đầy đủ
         suggestions = []
         for index, row in enumerate(thu_tuc_results[:3], start=1):
             ten = row.get("TEN_THU_TUC", "")
@@ -413,21 +456,30 @@ def route_message(user_text, context=None):
             )
             return reply, "CLARIFY_THU_TUC", context
 
-    # 8. Tra cứu liên hệ
+    # 8. Tra cứu liên hệ độc lập
     lien_he_results = search_lien_he(text, limit=3)
+
     if lien_he_results:
-        reply = format_multiple_results(lien_he_results, format_lien_he, limit=3)
+        reply = format_multiple_results(
+            lien_he_results,
+            format_lien_he,
+            limit=3
+        )
         return reply, "TRA_CUU_LIEN_HE", context
 
     # 9. FAQ
     faq_results = search_faq(text, limit=3)
+
     if faq_results:
-        reply = format_multiple_results(faq_results, format_faq, limit=3)
+        reply = format_multiple_results(
+            faq_results,
+            format_faq,
+            limit=3
+        )
         return reply, "FAQ", context
 
     # 10. Không tìm thấy
     return DEFAULT_REPLY, "DEFAULT", context
-
 
 def route_message_for_ai(user_text, context=None):
     context = context or {}
