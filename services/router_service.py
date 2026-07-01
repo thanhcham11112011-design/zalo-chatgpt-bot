@@ -95,7 +95,8 @@ def is_followup_detail_question(user_text):
         "le phi", "phi", "mat phi", "co mat phi khong",
         "co so phap ly", "can cu phap ly",
         "link", "link dvc", "dich vu cong",
-        "ket qua", "luu y", "chi tiet"
+        "ket qua", "luu y", "chi tiet",
+        "o dau", "o cho nao", "den dau", "den dau lam", "di dau lam", "toi dau lam", "vi tri",  "google map", "ban do", "map",
     ]
 
     return any(kw in text for kw in detail_keywords)
