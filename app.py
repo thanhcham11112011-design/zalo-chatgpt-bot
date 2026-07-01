@@ -203,8 +203,10 @@ def webhook():
         }), 200
 
     except Exception as e:
+        import traceback
         error_message = f"Lỗi xử lý webhook: {e}"
         print("[WEBHOOK ERROR]", error_message)
+        print(traceback.format_exc())
 
         try:
             user_id = data.get("sender", {}).get("id", "")
