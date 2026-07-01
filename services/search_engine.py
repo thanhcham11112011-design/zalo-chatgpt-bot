@@ -58,121 +58,82 @@ def search_menu(user_text):
     return results[0] if results else None
 
 
+def _agency_base_name(name):
+    text = normalize_text(name)
+    text = re.sub(r"\(.*?\)", "", text)
+    text = re.sub(r"\bco so\s*\d+\b", "", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
+def _keyword_exact_match(user_text, keywords):
+    user_norm = normalize_text(user_text)
+    for kw in split_keywords(keywords):
+        kw_norm = normalize_text(kw)
+        if kw_norm and kw_norm in user_norm:
+            return True
+    return False
+
+
 def search_lien_he(user_text, limit=3):
-    """
-    BOT V2.2 - Tra cứu liên hệ theo 3 tầng ưu tiên:
-
-    1. Ưu tiên khớp TEN_CO_QUAN nếu người dân nêu rõ tên cơ quan.
-    2. Nếu không có, khớp TU_KHOA.
-    3. Nếu không có, khớp CHUC_NANG / GHI_CHU / BO_PHAN / TDP.
-
-    Mục tiêu:
-    - "Công an phường Phù Liễn ở đâu" chỉ trả Công an phường Phù Liễn.
-    - Không trả lẫn Công an phường Kiến An.
-    """
-
     rows = read_lien_he()
     text_norm = normalize_text(user_text)
 
     if not text_norm:
         return []
 
-    # =========================
-    # TẦNG 1: KHỚP TÊN CƠ QUAN
-    # =========================
-
-    exact_name_results = []
-    partial_name_results = []
+    # TẦNG 1: nếu câu hỏi nêu rõ tên cơ quan
+    name_results = []
 
     for row in rows:
-        ten_co_quan = get_first(
-            row,
-            "TEN_CO_QUAN",
-            "TÊN_CƠ_QUAN",
-            "HO_TEN",
-            "HỌ_TÊN"
-        )
-
-        ten_norm = normalize_text(ten_co_quan)
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        ten_norm = normalize_text(ten)
+        base_norm = _agency_base_name(ten)
 
         if not ten_norm:
             continue
 
-        # Khớp chính xác toàn bộ tên cơ quan
-        if ten_norm == text_norm:
-            row["_SCORE"] = 10000
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            exact_name_results.append(row)
-            continue
+        if ten_norm in text_norm or base_norm in text_norm:
+            row["_SCORE"] = 10000 + len(base_norm)
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            name_results.append(row)
 
-        # Người dân hỏi: "Công an phường Phù Liễn ở đâu"
-        # ten_norm = "cong an phuong phu lien"
-        # text_norm chứa ten_norm => trả đúng cơ quan này
-        if ten_norm in text_norm:
-            row["_SCORE"] = 9000 + len(ten_norm)
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            partial_name_results.append(row)
+    if name_results:
+        name_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+        return name_results[:limit]
 
-    if exact_name_results:
-        exact_name_results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
-        return exact_name_results[:limit]
-
-    if partial_name_results:
-        partial_name_results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
-        return partial_name_results[:limit]
-
-    # =========================
-    # TẦNG 2: KHỚP TỪ KHÓA
-    # =========================
-
+    # TẦNG 2: khớp từ khóa rõ ràng trong TU_KHOA
     keyword_results = []
 
     for row in rows:
-        score = field_score(
-            user_text,
-            get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        )
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
 
-        if score > 0:
-            row["_SCORE"] = 5000 + score
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
+        if _keyword_exact_match(user_text, tu_khoa):
+            row["_SCORE"] = 8000 + keyword_score(user_text, tu_khoa, 5)
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             keyword_results.append(row)
 
     if keyword_results:
-        keyword_results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
+        keyword_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
         return keyword_results[:limit]
 
-    # =========================
-    # TẦNG 3: KHỚP CHỨC NĂNG / GHI CHÚ
-    # =========================
-
+    # TẦNG 3: tìm rộng khi không có tên cơ quan/từ khóa rõ
     fallback_results = []
 
     for row in rows:
-        score = field_score(
-            user_text,
-            get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
-            get_first(row, "GHI_CHU", "GHI_CHÚ"),
-            get_first(row, "BO_PHAN", "BỘ_PHẬN"),
-            get_first(row, "TDP")
-        )
+        score = 0
+        score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 3)
+        score += phrase_score(user_text, get_first(row, "GHI_CHU", "GHI_CHÚ"), 1)
+        score += phrase_score(user_text, get_first(row, "BO_PHAN", "BỘ_PHẬN"), 1)
+        score += phrase_score(user_text, get_first(row, "TDP"), 1)
 
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             fallback_results.append(row)
 
-    fallback_results.sort(key=lambda x: (x["_UU_TIEN"], -x["_SCORE"]))
-
-    return fallback_results[:limit]
+    fallback_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+    return fallback_results[:limit]]
 
 
 def search_faq(user_text, limit=3):
