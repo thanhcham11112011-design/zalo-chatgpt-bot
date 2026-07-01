@@ -57,6 +57,5 @@ def send_zalo_text(user_id, message):
         return False
 
 
-# Giữ tương thích nếu code cũ còn gọi zalo_service.send_text(...)
 def send_text(user_id, text):
     return send_zalo_text(user_id, text)
