@@ -431,6 +431,7 @@ def route_message(user_text, context=None):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
 
+    # Câu hỏi rõ tên cơ quan: bỏ ngữ cảnh thủ tục cũ
     if is_specific_contact_question(text):
         lien_he = search_lien_he(text, limit=3)
         if lien_he:
@@ -450,26 +451,25 @@ def route_message(user_text, context=None):
 
     if text_norm.isdigit():
         menu = search_menu(text)
-
         if menu:
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
             return reply, "MENU", new_ctx, ""
 
+    # Có thủ tục hiện tại: ưu tiên hỏi tiếp theo ngữ cảnh
     if ctx.get("procedure_id") and is_followup_detail_question(text):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
-
         if procedure:
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
+    # Đang ở nhóm nhưng chưa chọn thủ tục
     if (
         ctx.get("sheet", "").startswith("THU_TUC_")
         and not ctx.get("procedure_id")
         and is_followup_detail_question(text)
     ):
         grouped = _procedure_list_reply_for_context(ctx)
-
         if grouped:
             reply, new_ctx = grouped
             return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
@@ -488,10 +488,36 @@ def route_message(user_text, context=None):
 
         if text_norm in topic_words:
             grouped = _procedure_list_reply_for_context(ctx)
-
             if grouped:
                 reply, new_ctx = grouped
                 return reply, "MENU_GROUP", new_ctx, ""
+
+    # Không có ngữ cảnh + câu hỏi địa điểm quá mơ hồ
+    # Không được search thủ tục toàn hệ thống.
+    if (
+        not ctx.get("procedure_id")
+        and not explicit
+        and is_location_question(text)
+        and not is_specific_contact_question(text)
+    ):
+        lien_he = search_lien_he(text, limit=3)
+
+        # Chỉ trả liên hệ nếu tìm được kết quả rõ theo cơ quan/từ khóa.
+        # Nếu không, yêu cầu người dân nói rõ.
+        if lien_he and text_norm not in ["o dau", "lam o dau", "den dau", "den dau lam", "di dau lam", "toi dau lam", "vi tri", "map", "google map"]:
+            return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", {}, ""
+
+        return (
+            "Quý công dân vui lòng nêu rõ nội dung cần hỗ trợ.\n\n"
+            "Ví dụ:\n"
+            "• Làm căn cước ở đâu\n"
+            "• Đăng ký tạm trú ở đâu\n"
+            "• Công an phường Phù Liễn ở đâu\n\n"
+            "Hoặc nhập 'menu' để xem danh mục hỗ trợ.",
+            "ASK_TOPIC",
+            {},
+            ""
+        )
 
     search_text = text
 
@@ -506,7 +532,6 @@ def route_message(user_text, context=None):
 
     if text_norm in menu_keys:
         menu = search_menu(text)
-
         if menu:
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
@@ -574,7 +599,6 @@ def route_message(user_text, context=None):
         return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
     return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
-
 
 def route_message_for_ai(user_text, context=None):
     reply, source, new_context, ai_context = route_message(user_text, context=context)
