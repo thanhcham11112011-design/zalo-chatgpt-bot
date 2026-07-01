@@ -271,60 +271,42 @@ def format_faq(row):
     return tra_loi or cau_hoi
 
 
-def format_thu_tuc(row):
-    ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-    mo_ta = get_first(row, "MO_TA", "MÔ_TẢ")
-    doi_tuong = get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG")
-    dieu_kien = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
-    ho_so = get_first(row, "HO_SO", "HỒ_SƠ")
-    trinh_tu = get_first(row, "TRINH_TU", "TRÌNH_TỰ")
-    noi_nop = get_first(row, "NOI_NOP", "NƠI_NỘP", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
-    thoi_han = get_first(row, "THOI_HAN", "THỜI_HẠN")
-    le_phi = get_first(row, "LE_PHI", "LỆ_PHÍ")
-    ket_qua = get_first(row, "KET_QUA", "KẾT_QUẢ")
-    luu_y = get_first(row, "LUU_Y", "LƯU_Ý")
-    link = get_first(row, "LINK_DVC")
+def format_thu_tuc(item):
+    """
+    Hiển thị ngắn gọn thủ tục cho người dân.
+    Chỉ hiển thị thông tin quan trọng, không đọc toàn bộ 27 cột.
+    """
 
-    parts = []
+    ten = item.get("TEN_THU_TUC", "").strip()
+    doi_tuong = item.get("DOI_TUONG_AP_DUNG", "").strip()
+    ho_so = item.get("HO_SO", "").strip()
+    thoi_han = item.get("THOI_HAN", "").strip()
+    le_phi = item.get("LE_PHI", "").strip()
 
-    if ten:
-        parts.append(f"📄 {ten}")
-
-    if mo_ta:
-        parts.append(f"Mô tả: {mo_ta}")
+    msg = f"📌 {ten}\n"
 
     if doi_tuong:
-        parts.append(f"Đối tượng: {doi_tuong}")
-
-    if dieu_kien:
-        parts.append(f"Điều kiện: {dieu_kien}")
+        msg += f"\n👤 Đối tượng\n{doi_tuong}"
 
     if ho_so:
-        parts.append(f"Hồ sơ: {ho_so}")
-
-    if trinh_tu:
-        parts.append(f"Trình tự: {trinh_tu}")
-
-    if noi_nop:
-        parts.append(f"Nơi nộp/cơ quan thực hiện: {noi_nop}")
+        msg += f"\n\n📄 Hồ sơ\n{ho_so}"
 
     if thoi_han:
-        parts.append(f"Thời hạn: {thoi_han}")
+        msg += f"\n\n⏱ Thời hạn\n{thoi_han}"
 
     if le_phi:
-        parts.append(f"Lệ phí: {le_phi}")
+        msg += f"\n\n💰 Lệ phí\n{le_phi}"
 
-    if ket_qua:
-        parts.append(f"Kết quả: {ket_qua}")
+    msg += (
+        "\n\n————————————"
+        "\nBạn cần xem thêm?"
+        "\n• Hồ sơ chi tiết"
+        "\n• Trình tự thực hiện"
+        "\n• Nơi thực hiện"
+        "\n• Cơ sở pháp lý"
+    )
 
-    if luu_y:
-        parts.append(f"Lưu ý: {luu_y}")
-
-    if link:
-        parts.append(f"Link DVC: {link}")
-
-    return "\n".join(parts)
-
+    return msg
 
 def format_multiple_results(results, formatter, limit=3):
     selected = results[:limit]
