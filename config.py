@@ -7,7 +7,12 @@ PORT = int(os.getenv("PORT", 5000))
 BOT_NAME = os.getenv("BOT_NAME", "Trợ lý AI Công an phường Phù Liễn").strip()
 DEFAULT_REPLY = os.getenv(
     "DEFAULT_REPLY",
-    "Xin lỗi, tôi chưa tìm thấy thông tin phù hợp. Quý công dân vui lòng nhập 'menu' hoặc liên hệ Công an phường để được hỗ trợ."
+    "Xin lỗi, hiện tôi chưa hiểu rõ ý định câu hỏi hoặc hệ thống AI đang tạm thời không khả dụng.\n\n"
+                "Quý công dân vui lòng nhập rõ nội dung cần hỗ trợ, ví dụ:\n"
+                "• Làm căn cước ở đâu\n"
+                "• Đăng ký tạm trú cần giấy tờ gì\n"
+                "• Số điện thoại Công an phường\n"
+                "• menu"
 ).strip()
 
 GOOGLE_SHEET_ID = os.getenv("GOOGLE_SHEET_ID", "").strip()
