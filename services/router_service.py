@@ -159,9 +159,25 @@ def get_welcome_message():
 
 
 def menu_context(row):
+    sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
+    topic = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
+
+    # Riêng menu 9 - Tra cứu liên hệ
+    if sheet == "TRA_CUU_LIEN_HE":
+        return {
+            "sheet": sheet,
+            "topic": topic,
+            "stage": "contact_lookup",
+            "procedure_id": "",
+            "procedure_name": "",
+            "page": 1,
+            "last_suggestions": [],
+        }
+
+    # Mặc định cho tất cả các nhóm THU_TUC_*
     return {
-        "sheet": get_first(row, "SHEET_DU_LIEU", "SHEET"),
-        "topic": get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE"),
+        "sheet": sheet,
+        "topic": topic,
         "stage": "procedure_list",
         "procedure_id": "",
         "procedure_name": "",
@@ -236,6 +252,11 @@ def answer_from_menu(row):
     desc = get_first(row, "MO_TA", "MÔ_TẢ")
     sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
 
+    # Riêng mục 9 - Tra cứu liên hệ
+    if sheet == "TRA_CUU_LIEN_HE":
+        return get_contact_lookup_message(), []
+
+    # Các nhóm thủ tục THU_TUC_*
     if sheet and sheet.startswith("THU_TUC_"):
         grouped = _make_procedure_list_reply(sheet, topic=title, page=1)
         if grouped:
@@ -463,6 +484,38 @@ def _need_select_procedure_message(ctx):
         ctx
     )
 
+def get_contact_lookup_message():
+    return (
+        "📌 Tra cứu liên hệ\n\n"
+        "Bạn đang truy cập hệ thống thông tin liên lạc của Công an phường Phù Liễn.\n\n"
+        "Quý công dân vui lòng nhập đúng một trong các từ khóa chuẩn:\n"
+        "1. liên hệ chỉ huy CAP\n"
+        "2. liên hệ bộ phận CSKV\n"
+        "3. liên hệ bộ phận AN NINH\n"
+        "4. liên hệ bộ phận PCTP\n"
+        "5. liên hệ bộ phận CSTT"
+    )
+
+
+def is_contact_hint_question(text):
+    t = normalize_text(text)
+    keys = [
+        "gap cskv", "can gap cskv", "so dien thoai cskv",
+        "gap chi huy", "gap chi huy phuong", "chi huy",
+        "lanh dao", "gap lanh dao", "so dien thoai chi huy",
+        "gap can bo", "gap to", "lien he can bo"
+    ]
+    return any(k in t for k in keys)
+
+
+def get_contact_hint_message():
+    return (
+        "Để bảo đảm tra cứu đúng thông tin liên hệ, Quý công dân vui lòng truy cập mục “Tra cứu liên hệ”.\n\n"
+        "Cách thực hiện:\n"
+        "• Nhắn “menu”\n"
+        "• Chọn số 9 - Tra cứu liên hệ\n\n"
+        "Sau đó nhập đúng từ khóa chuẩn theo danh sách hướng dẫn."
+    )
 
 def route_message(user_text, context=None):
     ctx = dict(context or {})
@@ -477,6 +530,10 @@ def route_message(user_text, context=None):
 
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
+
+    # Gợi ý truy cập hệ thống Tra cứu liên hệ khi chưa vào menu 9
+    if ctx.get("stage") != "contact_lookup" and is_contact_hint_question(text):
+        return get_contact_hint_message(), "CONTACT_HINT", {}, ""
 
     # Câu hỏi rõ tên cơ quan: bỏ ngữ cảnh thủ tục cũ
     if is_specific_contact_question(text):
