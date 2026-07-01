@@ -158,37 +158,12 @@ def get_welcome_message():
     )
 
 
-def find_menu_by_number(number_text):
-    """
-    Chọn menu theo số thứ tự đang hiển thị trong get_welcome_message().
-    Không phụ thuộc ID trong sheet MENU, vì danh mục đang hiển thị bằng enumerate 1..n.
-    """
-    if not str(number_text or "").strip().isdigit():
-        return None
-
-    idx = safe_int(number_text, default=-1)
-    if idx <= 0:
-        return None
-
-    rows = read_menu()
-    if 1 <= idx <= len(rows):
-        return rows[idx - 1]
-
-    # Dự phòng: nếu sheet MENU có cột ID đúng bằng số người dùng nhập
-    for row in rows:
-        rid = get_first(row, "ID", "STT", "SO_THU_TU", "SỐ_THỨ_TỰ")
-        if normalize_text(rid) == normalize_text(number_text):
-            return row
-
-    return None
-
-
 def menu_context(row):
     sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
     topic = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
 
     # Riêng menu 9 - Tra cứu liên hệ
-    if normalize_text(sheet) == "tra_cuu_lien_he":
+    if sheet == "TRA_CUU_LIEN_HE":
         return {
             "sheet": sheet,
             "topic": topic,
@@ -278,7 +253,7 @@ def answer_from_menu(row):
     sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
 
     # Riêng mục 9 - Tra cứu liên hệ
-    if normalize_text(sheet) == "tra_cuu_lien_he":
+    if sheet == "TRA_CUU_LIEN_HE":
         return get_contact_lookup_message(), []
 
     # Các nhóm thủ tục THU_TUC_*
@@ -510,50 +485,16 @@ def _need_select_procedure_message(ctx):
     )
 
 def get_contact_lookup_message():
-    """
-    Lấy nội dung hướng dẫn Tra cứu liên hệ từ sheet TRA_CUU_LIEN_HE, cột MO_TA.
-    Trạng thái sử dụng ON/OFF. Không hardcode nội dung trả lời trong Python.
-    """
-    rows = read_lien_he()
-
-    # Ưu tiên dòng đúng TEN_CHUC_NANG = Tra cứu liên hệ và đang ON
-    for row in rows:
-        ten = get_first(row, "TEN_CHUC_NANG", "TÊN_CHỨC_NĂNG")
-        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
-
-        if normalize_text(ten) == "tra cuu lien he" and trang_thai != "off" and mo_ta:
-            return str(mo_ta).strip()
-
-    # Nếu chưa đúng tên chức năng, lấy dòng đầu tiên đang ON có MO_TA
-    for row in rows:
-        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
-
-        if trang_thai == "on" and mo_ta:
-            return str(mo_ta).strip()
-
-    # Dự phòng cuối: lấy dòng đầu tiên có MO_TA và không bị OFF
-    for row in rows:
-        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        mo_ta = get_first(row, "MO_TA", "MÔ_TẢ", "MO TA", "MOTA")
-
-        if trang_thai != "off" and mo_ta:
-            return str(mo_ta).strip()
-
-    return DEFAULT_REPLY
-
-
-def is_contact_lookup_keyword(text):
-    t = normalize_text(text)
-    keys = [
-        "lien he chi huy cap",
-        "lien he bo phan cskv",
-        "lien he bo phan an ninh",
-        "lien he bo phan pctp",
-        "lien he bo phan cstt",
-    ]
-    return t in keys
+    return (
+        "📌 Tra cứu liên hệ\n\n"
+        "Bạn đang truy cập hệ thống thông tin liên lạc của Công an phường Phù Liễn.\n\n"
+        "Quý công dân vui lòng nhập đúng một trong các từ khóa chuẩn:\n"
+        "1. liên hệ chỉ huy CAP\n"
+        "2. liên hệ bộ phận CSKV\n"
+        "3. liên hệ bộ phận AN NINH\n"
+        "4. liên hệ bộ phận PCTP\n"
+        "5. liên hệ bộ phận CSTT"
+    )
 
 
 def is_contact_hint_question(text):
@@ -594,15 +535,6 @@ def route_message(user_text, context=None):
     if ctx.get("stage") != "contact_lookup" and is_contact_hint_question(text):
         return get_contact_hint_message(), "CONTACT_HINT", {}, ""
 
-    # Khi đã vào mục Tra cứu liên hệ: chỉ tra cứu trong sheet TRA_CUU_LIEN_HE.
-    # Nếu nhập sai từ khóa chuẩn thì trả lại nội dung hướng dẫn từ cột MO_TA.
-    if ctx.get("stage") == "contact_lookup" or normalize_text(ctx.get("sheet", "")) == "tra_cuu_lien_he":
-        lien_he = search_lien_he(text, limit=5)
-        if lien_he and (is_contact_lookup_keyword(text) or "lien he" in text_norm):
-            return format_multiple_results(lien_he, format_lien_he, limit=5), "TRA_CUU_LIEN_HE", ctx, ""
-
-        return get_contact_lookup_message(), "CONTACT_LOOKUP_GUIDE", ctx, ""
-
     # Câu hỏi rõ tên cơ quan: bỏ ngữ cảnh thủ tục cũ
     if is_specific_contact_question(text):
         lien_he = search_lien_he(text, limit=3)
@@ -629,31 +561,14 @@ def route_message(user_text, context=None):
         reply, new_ctx = _need_select_procedure_message(ctx)
         return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
 
-    # Chọn menu chính bằng số: ưu tiên số thứ tự đang hiển thị trên MENU
+    # Chọn menu chính bằng số
     if text_norm.isdigit():
-        menu = find_menu_by_number(text_norm) or search_menu(text)
-
-        # Chốt cứng an toàn: nếu người dân nhập 9 mà search_menu không bắt được,
-        # vẫn gọi trực tiếp sheet TRA_CUU_LIEN_HE theo đúng menu đang hiển thị.
-        if not menu and text_norm == "9":
-            new_ctx = {
-                "sheet": "TRA_CUU_LIEN_HE",
-                "topic": "Tra cứu liên hệ",
-                "stage": "contact_lookup",
-                "procedure_id": "",
-                "procedure_name": "",
-                "page": 1,
-                "last_suggestions": [],
-            }
-            return get_contact_lookup_message(), "MENU_TRA_CUU_LIEN_HE", new_ctx, ""
-
+        menu = search_menu(text)
         if menu:
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
-            # Không ghi đè stage contact_lookup của menu Tra cứu liên hệ
-            if normalize_text(new_ctx.get("sheet", "")) != "tra_cuu_lien_he":
-                new_ctx["stage"] = "procedure_list"
+            new_ctx["stage"] = "procedure_list"
             new_ctx["page"] = 1
             return reply, "MENU", new_ctx, ""
 
@@ -718,9 +633,7 @@ def route_message(user_text, context=None):
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
-            # Không ghi đè stage contact_lookup của menu Tra cứu liên hệ
-            if normalize_text(new_ctx.get("sheet", "")) != "tra_cuu_lien_he":
-                new_ctx["stage"] = "procedure_list"
+            new_ctx["stage"] = "procedure_list"
             new_ctx["page"] = 1
             return reply, "MENU", new_ctx, ""
 
