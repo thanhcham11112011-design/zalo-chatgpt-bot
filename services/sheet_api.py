@@ -1,13 +1,13 @@
 # services/sheet_api.py
 # Đọc và ghi dữ liệu Google Sheets cho BOT Công an phường Phù Liễn
 
-import json
+
 import gspread
 from google.oauth2.service_account import Credentials
 
 from config import (
     SPREADSHEET_ID,
-    GOOGLE_SERVICE_ACCOUNT_JSON,
+    GOOGLE_CREDENTIALS_FILE,
     ALL_SHEETS,
     THU_TUC_SHEETS,
 )
