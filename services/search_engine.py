@@ -152,20 +152,43 @@ def search_faq(user_text, limit=3):
 
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
+    """
+    BOT V2.2:
+    Chỉ tìm thủ tục khi câu hỏi khớp rõ TU_KHOA hoặc TEN_THU_TUC.
+    Câu ngoài luồng sẽ không bị bắt nhầm, để chuyển Gemini xử lý.
+    """
     results = []
+    user_norm = normalize_text(user_text)
+
+    if not user_norm:
+        return []
+
     for row in read_all_thu_tuc():
         if sheet and row.get("_SHEET") != sheet:
             continue
+
         score = 0
-        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 6)
-        score += phrase_score(user_text, get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC"), 5)
-        score += phrase_score(user_text, get_first(row, "CHU_DE", "CHỦ_ĐỀ"), 3)
-        score += phrase_score(user_text, get_first(row, "MO_TA", "MÔ_TẢ", "GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI"), 2)
-        score += phrase_score(user_text, get_first(row, "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN"), 1)
+
+        keyword = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+        ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+
+        keyword_match = keyword_score(user_text, keyword, 8)
+        title_match = phrase_score(user_text, ten, 6)
+
+        score += keyword_match
+        score += title_match
+
+        # Không cộng điểm lan man nếu không khớp từ khóa hoặc tên thủ tục
+        if keyword_match <= 0 and title_match < 30:
+            continue
+
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", default=999))
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "MUC_UU_TIEN", "UU_TIEN", default=999)
+            )
             results.append(row)
+
     results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
     return results[:limit]
 
