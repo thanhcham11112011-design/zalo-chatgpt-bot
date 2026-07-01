@@ -2,6 +2,7 @@
 # Điều hướng câu hỏi người dân sang đúng nguồn dữ liệu
 
 from config import DEFAULT_REPLY
+from services.sheet_api import read_menu
 
 from services.search_engine import (
     normalize_text,
@@ -40,23 +41,42 @@ def is_greeting(user_text):
 
 
 def get_welcome_message():
+    menu_rows = read_menu()
+
+    lines = []
+
+    for index, row in enumerate(menu_rows, start=1):
+        title = (
+            row.get("TEN_CHUC_NANG")
+            or row.get("TEN")
+            or row.get("CHU_DE")
+            or row.get("MO_TA")
+            or ""
+        )
+
+        title = str(title).strip()
+
+        if title:
+            lines.append(f"{index}. {title}")
+
+    if not lines:
+        lines = [
+            "1. Làm căn cước",
+            "2. Đăng ký cư trú",
+            "3. VNeID / định danh điện tử",
+            "4. Phản ánh ANTT",
+            "5. Số điện thoại trực ban",
+            "6. Gặp cán bộ trực",
+        ]
+
+    menu_text = "\n".join(lines)
+
     return (
         "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
         "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
         "📋 DANH MỤC HỖ TRỢ\n"
-        "1. Làm căn cước\n"
-        "2. Đăng ký cư trú\n"
-        "3. VNeID / định danh điện tử\n"
-        "4. Phản ánh ANTT\n"
-        "5. Số điện thoại trực ban\n"
-        "6. Gặp cán bộ trực\n\n"
-        "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi.\n\n"
-        "Ví dụ:\n"
-        "• Cấp lại căn cước\n"
-        "• Đăng ký thường trú\n"
-        "• Kích hoạt VNeID mức 2\n"
-        "• Đăng ký xe máy\n"
-        "• Số điện thoại trực ban"
+        f"{menu_text}\n\n"
+        "💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi."
     )
 
 
