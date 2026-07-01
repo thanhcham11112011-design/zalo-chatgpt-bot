@@ -171,7 +171,7 @@ def menu_context(row):
 
 
 def _make_procedure_list_reply(sheet, topic="", page=1):
-    page_size = 5
+    page_size = 0
     if not sheet or not sheet.startswith("THU_TUC_"):
         return None
 
