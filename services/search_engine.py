@@ -12,7 +12,13 @@ def keyword_score(user_text, keywords, weight=1):
         if kw and kw in user_norm:
             score += max(len(kw), 2) * weight
     return score
+def field_score(user_text, *fields):
+    score = 0
 
+    for field in fields:
+        score += keyword_score(user_text, field)
+
+    return score
 
 def phrase_score(user_text, value, weight=1):
     user_norm = normalize_text(user_text)
