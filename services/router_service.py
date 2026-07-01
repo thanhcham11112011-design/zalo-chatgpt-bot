@@ -605,6 +605,21 @@ def route_message(user_text, context=None):
                 limit=3
             ), "TRA_CUU_LIEN_HE", ctx, ""
 
+# Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ
+if (
+    explicit
+    or ctx.get("procedure_id")
+    or ctx.get("sheet")
+    or is_location_question(text)
+    or text_norm in [
+        "lien he",
+        "so dien thoai",
+        "truc ban",
+        "google map",
+        "ban do",
+        "menu",
+    ]
+):
     faq = search_faq(search_text, limit=3)
 
     if faq:
