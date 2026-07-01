@@ -171,26 +171,26 @@ def answer_procedure_detail(row, user_text):
         value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
         return f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
    if (
-    "trinh tu" in t
-    or "quy trinh" in t
-    or "quy trinh thuc hien" in t
-    or "cac buoc" in t
-    or "buoc thuc hien" in t
-    or "thu tuc thuc hien" in t
-):
-    value = get_first(
-        row,
-        "TRINH_TU",
-        "TRÌNH_TỰ",
-        "QUY_TRINH",
-        "QUY_TRÌNH"
-    )
+        "trinh tu" in t
+        or "quy trinh" in t
+        or "quy trinh thuc hien" in t
+        or "cac buoc" in t
+        or "buoc thuc hien" in t
+        or "thu tuc thuc hien" in t
+        ):
+        value = get_first(
+            row,
+            "TRINH_TU",
+            "TRÌNH_TỰ",
+            "QUY_TRINH",
+            "QUY_TRÌNH"
+        )
 
     return (
-        f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}"
-        if value
-        else format_thu_tuc(row)
-    )
+            f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}"
+            if value
+            else format_thu_tuc(row)
+        )
     if is_location_question(t):
         value = get_first(row, "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "LUU_Y", "LƯU_Ý")
         return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
