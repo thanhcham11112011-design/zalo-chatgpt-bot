@@ -26,7 +26,49 @@ def is_location_question(text):
     return any(k in t for k in keys)
 
 
-def is_followup_detail_question(text):
+def is_followup_detail_question(user_text):
+    text = normalize_text(user_text)
+
+    detail_keywords = [
+        "ho so",
+        "ho so chi tiet",
+        "giay to",
+        "can giay to gi",
+        "can gi",
+
+        "trinh tu",
+        "quy trinh",
+        "quy trinh thuc hien",
+        "cac buoc",
+        "buoc thuc hien",
+        "thu tuc thuc hien",
+
+        "co quan tiep nhan",
+        "noi tiep nhan",
+        "noi thuc hien",
+        "noi nop",
+        "nop o dau",
+        "lam o dau",
+        "dia diem",
+
+        "thoi han",
+        "bao lau",
+        "may ngay",
+
+        "le phi",
+        "phi",
+        "mat phi",
+        "co mat phi khong",
+
+        "co so phap ly",
+        "can cu phap ly",
+
+        "link",
+        "link dvc",
+        "dich vu cong",
+    ]
+
+    return any(kw in text for kw in detail_keywords)text):
     t = normalize_text(text)
     keys = [
         "ho so", "can giay to gi", "can gi", "giay to", "thu tuc gom gi",
