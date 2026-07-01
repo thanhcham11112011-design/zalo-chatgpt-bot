@@ -1,5 +1,5 @@
 # services/contact_service.py
-# Tra cứu thông tin liên hệ
+# Tra cứu thông tin liên hệ từ sheet TRA_CUU_LIEN_HE
 
 from services.search_engine import (
     search_lien_he,
@@ -9,10 +9,10 @@ from services.search_engine import (
 
 
 def search_contact(question, limit=3):
-    """
-    Tra cứu thông tin liên hệ từ sheet TRA_CUU_LIEN_HE.
-    """
-    results = search_lien_he(question, limit=limit)
+    results = search_lien_he(
+        question,
+        limit=limit
+    )
 
     if not results:
         return None
@@ -24,24 +24,19 @@ def search_contact(question, limit=3):
     )
 
 
+def contact_router(question):
+    return search_contact(question)
+
+
 def start_contact_flow(user_id=None, user_states=None):
-    """
-    Giữ tương thích với code cũ.
-    """
     return (
-        "📞 Tra cứu thông tin liên hệ\n\n"
-        "Vui lòng nhập nội dung cần tra cứu.\n\n"
+        "📞 TRA CỨU LIÊN HỆ\n\n"
+        "Quý công dân vui lòng nhập nội dung cần tra cứu.\n\n"
         "Ví dụ:\n"
         "• Số điện thoại trực ban\n"
         "• Công an phường Phù Liễn\n"
-        "• Căn cước\n"
-        "• Đăng ký xe\n"
-        "• Lý lịch tư pháp"
+        "• Làm căn cước ở đâu\n"
+        "• Đăng ký xe ở đâu\n"
+        "• Lý lịch tư pháp\n"
+        "• PCCC"
     )
-
-
-def contact_router(question):
-    """
-    Router chuyên cho tra cứu liên hệ.
-    """
-    return search_contact(question)
