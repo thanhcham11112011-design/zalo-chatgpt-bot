@@ -43,9 +43,9 @@ def build_answer(user_id, question):
     source = routed.get("source", "DEFAULT")
     use_ai = routed.get("use_ai", False)
 
-    selected_context = routed.get("context")
-    if selected_context:
-        user_context[user_id] = selected_context
+    new_context = routed.get("context")
+    if new_context:
+        user_context[user_id] = new_context
 
     if use_ai:
         answer = ask_gemini(question)
