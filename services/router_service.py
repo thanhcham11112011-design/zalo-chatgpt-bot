@@ -6,6 +6,7 @@ from services.sheet_api import read_menu
 
 from services.search_engine import (
     normalize_text,
+    search_menu,
     search_lien_he,
     search_faq,
     search_thu_tuc,
