@@ -8,7 +8,7 @@ BOT_NAME = os.getenv("BOT_NAME", "Trợ lý AI Công an phường Phù Liễn").
 DEFAULT_REPLY = os.getenv(
     "DEFAULT_REPLY",
     "Xin lỗi, hiện tôi chưa hiểu rõ ý định câu hỏi của bạn ! \n\n"
-    "Bạn vui lòng nhập các từ theo hướng dẫn sau để được hỗ trợ , ví dụ \n\"
+    "Bạn vui lòng nhập các từ theo hướng dẫn sau để được hỗ trợ , ví dụ \n\n"
               
             "• Căn cước\n"
             "• Cư trú\n"
