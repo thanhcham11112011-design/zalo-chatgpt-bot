@@ -212,6 +212,7 @@ def _keyword_exact_match(user_text, keywords):
 # Vai trò: Tra cứu cán bộ, bộ phận, cơ quan, trực ban, địa chỉ, số điện thoại từ Google Sheets.
 def search_lien_he(user_text, limit=3):
     rows = read_lien_he()
+    text_raw = str(user_text or "").lower()
     text_norm = normalize_text(user_text)
 
     if not text_norm:
@@ -225,53 +226,125 @@ def search_lien_he(user_text, limit=3):
 
     bo_phan = detect_bo_phan_contact(user_text)
 
-    # TẦNG 1: Nếu xác định được bộ phận thì chỉ tìm trong đúng bộ phận đó.
+    if not bo_phan and any(k in text_norm for k in ["tong hop", "to tong hop", "doi tong hop"]):
+        bo_phan = "TH"
+
+    search_rows = active_rows
     if bo_phan:
-        filtered_rows = [
-            row for row in active_rows
-            if normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN")) == normalize_text(bo_phan)
+        search_rows = []
+        for row in active_rows:
+            row_bo_phan_norm = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
+            row_chuc_nang_norm = normalize_text(get_first(row, "CHUC_NANG", "CHỨC_NĂNG"))
+            row_tu_khoa_norm = normalize_text(get_first(row, "TU_KHOA", "TỪ_KHÓA"))
+
+            if row_bo_phan_norm == normalize_text(bo_phan):
+                search_rows.append(row)
+            elif normalize_text(bo_phan) == "th" and (
+                "tong hop" in row_chuc_nang_norm or "tong hop" in row_tu_khoa_norm
+            ):
+                search_rows.append(row)
+
+    name_results = []
+
+    clean_text_raw = text_raw
+    for ch in [",", ".", ";", ":", "?", "!", "-", "_", "/", "\\", "(", ")", "[", "]"]:
+        clean_text_raw = clean_text_raw.replace(ch, " ")
+
+    raw_words = [w.strip() for w in clean_text_raw.split() if len(w.strip()) >= 3]
+
+    for row in search_rows:
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        ten_raw = str(ten or "").lower().strip()
+        ten_norm = normalize_text(ten)
+        base_norm = _agency_base_name(ten)
+
+        if not ten_norm:
+            continue
+
+        score = 0
+
+        if ten_raw and ten_raw in text_raw:
+            score += 20000
+
+        ten_raw_words = [w.strip() for w in ten_raw.split() if len(w.strip()) >= 3]
+        for w in ten_raw_words:
+            if w in raw_words:
+                score += 12000
+
+        if score == 0:
+            if ten_norm in text_norm:
+                score += 8000
+
+            if base_norm and base_norm in text_norm:
+                score += 7000
+
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
+            name_results.append(row)
+
+    if name_results:
+        name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+
+        best_score = name_results[0].get("_SCORE", 0)
+
+        if best_score >= 20000:
+            return name_results[:1]
+
+        same_score_results = [
+            row for row in name_results
+            if row.get("_SCORE", 0) == best_score
         ]
 
-        keyword_results = []
+        return same_score_results[:limit]
 
-        for row in filtered_rows:
-            tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-            tdp = get_first(row, "TDP")
-            ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-            chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+    keyword_results = []
 
-            score = 0
-            score += keyword_score(user_text, tu_khoa, 8)
-            score += phrase_score(user_text, tdp, 6)
-            score += phrase_score(user_text, ten, 4)
-            score += phrase_score(user_text, chuc_nang, 1)
+    for row in search_rows:
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+        tdp = get_first(row, "TDP")
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+        row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
-            if score > 0:
-                row["_SCORE"] = score
-                row["_UU_TIEN"] = safe_int(
-                    get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-                )
-                keyword_results.append(row)
+        score = 0
+        score += keyword_score(user_text, tu_khoa, 8)
+        score += phrase_score(user_text, tdp, 6)
+        score += phrase_score(user_text, ten, 4)
+        score += phrase_score(user_text, chuc_nang, 2)
 
-        if keyword_results:
-            keyword_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+        if row_bo_phan:
+            score += phrase_score(user_text, row_bo_phan, 10)
 
-            if normalize_text(bo_phan) == "cskv":
-                return keyword_results[:1]
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
+            keyword_results.append(row)
 
-            if len(keyword_results) == 1:
-                return keyword_results[:1]
+    if keyword_results:
+        keyword_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
 
-            best_score = keyword_results[0].get("_SCORE", 0)
-            second_score = keyword_results[1].get("_SCORE", 0) if len(keyword_results) > 1 else 0
+        if bo_phan and normalize_text(bo_phan) == "cskv":
+            return keyword_results[:1]
 
-            if best_score >= second_score + 10:
-                return keyword_results[:1]
+        best_score = keyword_results[0].get("_SCORE", 0)
+        second_score = keyword_results[1].get("_SCORE", 0) if len(keyword_results) > 1 else 0
 
-            return keyword_results[:limit]
+        if len(keyword_results) == 1:
+            return keyword_results[:1]
 
+        if best_score >= second_score + 10:
+            return keyword_results[:1]
+
+        return keyword_results[:limit]
+
+    if bo_phan:
         results = []
-        for row in filtered_rows:
+        for row in search_rows:
             row["_SCORE"] = 10000
             row["_UU_TIEN"] = safe_int(
                 get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
@@ -286,69 +359,6 @@ def search_lien_he(user_text, limit=3):
         )
         return results[:limit]
 
-    # TẦNG 2: Chỉ khớp họ tên/tên cơ quan khi chưa xác định được bộ phận.
-    name_results = []
-
-    for row in active_rows:
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        ten_norm = normalize_text(ten)
-        base_norm = _agency_base_name(ten)
-
-        if not ten_norm:
-            continue
-
-        score = 0
-
-        if ten_norm in text_norm:
-            score += 10000
-
-        if base_norm and base_norm in text_norm:
-            score += 9000
-
-        words = [
-            w for w in ten_norm.split()
-            if len(w) >= 3
-        ]
-
-        for w in words:
-            if f" {w} " in f" {text_norm} ":
-                score += 3000
-
-        if score > 0:
-            row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            name_results.append(row)
-
-    if name_results:
-        name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
-        return name_results[:1]
-
-    # TẦNG 3: Khớp từ khóa rõ ràng trong TU_KHOA toàn sheet.
-    keyword_results = []
-
-    for row in active_rows:
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
-
-        if _keyword_exact_match(user_text, tu_khoa):
-            score = 8000 + keyword_score(user_text, tu_khoa, 5)
-
-            if row_bo_phan:
-                score += phrase_score(user_text, row_bo_phan, 10)
-
-            row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            keyword_results.append(row)
-
-    if keyword_results:
-        keyword_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
-        return keyword_results[:limit]
-
-    # TẦNG 4: Tìm rộng khi không có tên cơ quan/từ khóa rõ.
     fallback_results = []
 
     for row in active_rows:
