@@ -5,6 +5,8 @@ from services.text_utils import normalize_text, get_first, safe_int, split_keywo
 
 # Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
 # Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
+# Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
+# Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
 def detect_bo_phan_contact(user_text):
     t = normalize_text(user_text)
 
@@ -27,13 +29,26 @@ def detect_bo_phan_contact(user_text):
     if any(k in t for k in truc_ban_keys):
         return "TRUC_BAN"
 
-    if any(k in t for k in [
+    has_chi_huy = any(k in t for k in [
+        "chi huy",
+        "lanh dao",
+        "ban chi huy",
+        "truong cap",
+        "pho truong cap"
+    ])
+
+    has_pctp = any(k in t for k in [
         "pctp",
         "phong chong toi pham",
         "chong toi pham",
         "toi pham",
         "hinh su"
-    ]):
+    ])
+
+    if has_chi_huy:
+        return "CHI_HUY"
+
+    if has_pctp:
         return "PCTP"
 
     if any(k in t for k in [
@@ -43,15 +58,6 @@ def detect_bo_phan_contact(user_text):
         "phu trach dia ban"
     ]):
         return "CSKV"
-
-    if any(k in t for k in [
-        "chi huy",
-        "lanh dao",
-        "ban chi huy",
-        "truong cap",
-        "pho truong cap"
-    ]):
-        return "CHI_HUY"
 
     if any(k in t for k in [
         "an ninh",
