@@ -496,7 +496,17 @@ def get_contact_lookup_message():
         "4. liên hệ bộ phận PCTP\n"
         "5. liên hệ bộ phận CSTT"
     )
-
+def is_contact_lookup_keyword(text):
+    t = normalize_text(text)
+    keys = [
+        "lien he chi huy cap",
+        "lien he bo phan cskv",
+        "lien he bo phan an ninh",
+        "lien he bo phan pctp",
+        "lien he bo pctp",
+        "lien he bo phan cstt",
+    ]
+    return t in keys
 
 def is_contact_hint_question(text):
     t = normalize_text(text)
