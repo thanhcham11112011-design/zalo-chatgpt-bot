@@ -192,13 +192,34 @@ def search_lien_he(user_text, limit=3):
         if not ten_norm:
             continue
 
-        if ten_norm in text_norm or base_norm in text_norm:
-            row["_SCORE"] = 10000 + len(base_norm)
-            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+        score = 0
+
+        # Khớp đầy đủ
+        if ten_norm in text_norm:
+            score += 10000
+
+        if base_norm and base_norm in text_norm:
+            score += 9000
+
+        # Khớp từng từ trong họ tên (ví dụ: "Thành")
+        words = [
+            w for w in ten_norm.split()
+            if len(w) >= 3
+        ]
+
+        for w in words:
+            if f" {w} " in f" {text_norm} ":
+                score += 3000
+
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
             name_results.append(row)
 
     if name_results:
-        name_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+        name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
         return name_results[:1]
 
     # TẦNG 2: Nếu xác định được bộ phận thì chỉ tìm trong đúng bộ phận đó.
