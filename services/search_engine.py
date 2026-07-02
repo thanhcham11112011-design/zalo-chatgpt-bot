@@ -305,19 +305,19 @@ def search_lien_he(user_text, limit=3):
 
      keyword_results = []
 
-    for row in search_rows:
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        tdp = get_first(row, "TDP")
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
-        row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
+        for row in search_rows:
+            tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+            tdp = get_first(row, "TDP")
+            ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+            chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+            row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
-        score = 0
+            score = 0
 
-        tdp_norm = normalize_text(tdp)
-        tu_khoa_norm = normalize_text(tu_khoa)
+            tdp_norm = normalize_text(tdp)
+            tu_khoa_norm = normalize_text(tu_khoa)
 
-        exact_area_score = 0
+            exact_area_score = 0
         for area in split_keywords(tdp):
             area_norm = normalize_text(area)
             if area_norm and area_norm in text_norm:
