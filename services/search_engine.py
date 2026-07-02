@@ -312,7 +312,7 @@ def search_lien_he(user_text, limit=3):
             row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             fallback_results.append(row)
 
-       fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+    fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
     return fallback_results[:limit]
 
 
@@ -338,7 +338,6 @@ def search_faq(user_text, limit=3):
 
     results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
     return results[:limit]
-
 
 # Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
 # Vai trò: Tra cứu nội dung nghiệp vụ thủ tục từ Google Sheets.
