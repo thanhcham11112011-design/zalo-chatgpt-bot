@@ -313,15 +313,16 @@ def detect_explicit_topic(text):
         ],
     }
 
-    for sheet, keys in topic_map.items():
-        if any(k in t for k in keys):
-            return {
-                "sheet": sheet,
-                "topic": sheet.replace("THU_TUC_", ""),
-                "stage": "procedure_list",
-            }
+for sheet, keys in topic_map.items():
+    t_check = f" {t} "
+    if any(f" {normalize_text(k)} " in t_check for k in keys):
+        return {
+            "sheet": sheet,
+            "topic": sheet.replace("THU_TUC_", ""),
+            "stage": "procedure_list",
+        }
 
-    return None
+return None
 
 
 def context_prefix(ctx):
