@@ -542,12 +542,35 @@ def route_message(user_text, context=None):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
 
+    # Nếu đang ở bước hỏi tiếp CSKV thì tra cứu theo họ tên/TDP
+    if ctx.get("stage") == "cskv_lookup":
+        lien_he = search_lien_he(text, limit=5)
+        if lien_he:
+            return format_multiple_results(lien_he, format_lien_he, limit=5), "TRA_CUU_LIEN_HE_CSKV", {}, ""
+
+        return (
+            "Chưa tìm thấy cán bộ CSKV phù hợp.\n\n"
+            "Quý công dân vui lòng nhập rõ hơn họ tên cán bộ hoặc tổ dân phố cần liên hệ.",
+            "CSKV_NOT_FOUND",
+            ctx,
+            ""
+        )
+  
 # Nếu người dân nhập đúng từ khóa chuẩn liên hệ thì tra cứu luôn,
 # kể cả khi session chưa lưu được trạng thái menu 9.
     if is_contact_lookup_keyword(text):
-        lien_he = search_lien_he(text, limit=5)
+        if normalize_text(text) in ["lien he bo phan cskv"]:
+            return (
+            "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
+            "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở (VD: Nguyễn Văn B hoặc Phạm Xuân C; tôi ở tổ Kha Lâm; Kha Lâm hoặc tổ Kha Lâm.",
+            "CSKV_ASK_NAME",
+            {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
+            ""
+            )
+
+        lien_he = search_lien_he(text, limit=20)
         if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=5), "TRA_CUU_LIEN_HE", ctx, ""
+            return format_multiple_results(lien_he, format_lien_he, limit=20), "TRA_CUU_LIEN_HE", ctx, ""
 
 # Gợi ý truy cập hệ thống Tra cứu liên hệ khi chưa vào menu 9
     if ctx.get("stage") != "contact_lookup" and is_contact_hint_question(text):
