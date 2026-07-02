@@ -532,7 +532,14 @@ def route_message(user_text, context=None):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
 
-    # Gợi ý truy cập hệ thống Tra cứu liên hệ khi chưa vào menu 9
+# Nếu người dân nhập đúng từ khóa chuẩn liên hệ thì tra cứu luôn,
+# kể cả khi session chưa lưu được trạng thái menu 9.
+    if is_contact_lookup_keyword(text):
+        lien_he = search_lien_he(text, limit=5)
+        if lien_he:
+            return format_multiple_results(lien_he, format_lien_he, limit=5), "TRA_CUU_LIEN_HE", ctx, ""
+
+# Gợi ý truy cập hệ thống Tra cứu liên hệ khi chưa vào menu 9
     if ctx.get("stage") != "contact_lookup" and is_contact_hint_question(text):
         return get_contact_hint_message(), "CONTACT_HINT", {}, ""
 
