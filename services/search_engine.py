@@ -175,34 +175,16 @@ def search_lien_he(user_text, limit=3):
     if not text_norm:
         return []
 
-    bo_phan = detect_bo_phan_contact(user_text)
-
-    if bo_phan:
-        results = []
-
-        for row in rows:
-            row_bo_phan = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
-            trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-
-            if trang_thai == "off":
-                continue
-
-            if row_bo_phan == normalize_text(bo_phan):
-                row["_SCORE"] = 10000
-                row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
-                results.append(row)
-
-        results.sort(key=lambda r: (r["_UU_TIEN"], get_first(r, "TEN_CO_QUAN", "HỌ_TÊN", "HO_TEN")))
-        return results[:limit]
-
-    # TẦNG 1: nếu câu hỏi nêu rõ tên cơ quan
-    name_results = []
-
+    active_rows = []
     for row in rows:
         trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        if trang_thai == "off":
-            continue
+        if trang_thai != "off":
+            active_rows.append(row)
 
+    # TẦNG 1: Ưu tiên khớp rõ họ tên/tên cơ quan/cán bộ trước.
+    name_results = []
+
+    for row in active_rows:
         ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
         ten_norm = normalize_text(ten)
         base_norm = _agency_base_name(ten)
@@ -217,16 +199,69 @@ def search_lien_he(user_text, limit=3):
 
     if name_results:
         name_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
-        return name_results[:limit]
+        return name_results[:1]
 
-    # TẦNG 2: khớp từ khóa rõ ràng trong TU_KHOA
+    # TẦNG 2: Nếu xác định được bộ phận thì chỉ tìm trong đúng bộ phận đó.
+    bo_phan = detect_bo_phan_contact(user_text)
+
+    if bo_phan:
+        filtered_rows = [
+            row for row in active_rows
+            if normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN")) == normalize_text(bo_phan)
+        ]
+
+        keyword_results = []
+
+        for row in filtered_rows:
+            tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+            tdp = get_first(row, "TDP")
+            ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+            chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+
+            score = 0
+            score += keyword_score(user_text, tu_khoa, 8)
+            score += phrase_score(user_text, tdp, 6)
+            score += phrase_score(user_text, ten, 4)
+            score += phrase_score(user_text, chuc_nang, 1)
+
+            if score > 0:
+                row["_SCORE"] = score
+                row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+                keyword_results.append(row)
+
+        if keyword_results:
+            keyword_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+
+            # Nếu câu hỏi có địa bàn/từ khóa rõ trong nhóm CSKV thì trả 1 kết quả tốt nhất.
+            if normalize_text(bo_phan) == "cskv":
+                return keyword_results[:1]
+
+            # Nếu có điểm nổi bật thì trả 1 kết quả tốt nhất.
+            if len(keyword_results) == 1:
+                return keyword_results[:1]
+
+            best_score = keyword_results[0].get("_SCORE", 0)
+            second_score = keyword_results[1].get("_SCORE", 0) if len(keyword_results) > 1 else 0
+
+            if best_score >= second_score + 10:
+                return keyword_results[:1]
+
+            return keyword_results[:limit]
+
+        # Nếu chỉ hỏi chung bộ phận, không có địa bàn/tên cụ thể thì trả danh sách theo bộ phận.
+        results = []
+        for row in filtered_rows:
+            row["_SCORE"] = 10000
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            results.append(row)
+
+        results.sort(key=lambda r: (r["_UU_TIEN"], get_first(r, "TEN_CO_QUAN", "HỌ_TÊN", "HO_TEN")))
+        return results[:limit]
+
+    # TẦNG 3: Khớp từ khóa rõ ràng trong TU_KHOA toàn sheet.
     keyword_results = []
 
-    for row in rows:
-        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        if trang_thai == "off":
-            continue
-
+    for row in active_rows:
         tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
 
         if _keyword_exact_match(user_text, tu_khoa):
@@ -238,14 +273,10 @@ def search_lien_he(user_text, limit=3):
         keyword_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
         return keyword_results[:limit]
 
-    # TẦNG 3: tìm rộng khi không có tên cơ quan/từ khóa rõ
+    # TẦNG 4: Tìm rộng khi không có tên cơ quan/từ khóa rõ.
     fallback_results = []
 
-    for row in rows:
-        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        if trang_thai == "off":
-            continue
-
+    for row in active_rows:
         score = 0
         score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 3)
         score += phrase_score(user_text, get_first(row, "GHI_CHU", "GHI_CHÚ"), 1)
@@ -259,12 +290,7 @@ def search_lien_he(user_text, limit=3):
 
     fallback_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
     return fallback_results[:limit]
-
-
-# Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
-# Đầu vào: user_text - câu hỏi; limit - số kết quả tối đa.
-# Đầu ra: Danh sách FAQ phù hợp.
-# Vai trò: Trả lời các tình huống phổ biến trước khi chuyển AI_FALLBACK.
+    
 def search_faq(user_text, limit=3):
     results = []
 
