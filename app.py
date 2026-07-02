@@ -5,7 +5,7 @@ from config import PORT, BOT_NAME, DEFAULT_REPLY, check_config
 from services.router_service import route_message_for_ai, get_welcome_message
 from services.gemini_service import ask_gemini
 from services.zalo_service import send_zalo_text
-from services.logger import write_log, log_error
+from services.logger import write_log, log_error, debug_log
 from services.session_manager import get_context, save_context, clear_context
 
 app = Flask(__name__)
@@ -28,10 +28,24 @@ def remember_message(message_id):
 def build_answer(user_id, question):
     context = get_context(user_id)
 
+    debug_log("INPUT", {
+        "user_id": user_id,
+        "question": question,
+        "context_before": context
+    })
+
     routed = route_message_for_ai(
         question,
         context=context
     )
+
+    debug_log("ROUTER_RESULT", {
+        "reply": routed.get("reply"),
+        "source": routed.get("source"),
+        "use_ai": routed.get("use_ai"),
+        "context_after": routed.get("context"),
+        "ai_context": routed.get("ai_context")
+    })
 
     answer = routed.get("reply", DEFAULT_REPLY)
     source = routed.get("source", "DEFAULT")
@@ -79,6 +93,11 @@ def build_answer(user_id, question):
         bot_reply=answer,
         source=source
     )
+
+    debug_log("FINAL_ANSWER", {
+        "source": source,
+        "answer": answer
+    })
 
     return answer, source
 
