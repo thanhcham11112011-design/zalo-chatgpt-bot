@@ -4,10 +4,6 @@ from services.text_utils import normalize_text, get_first, safe_int, split_keywo
 
 
 # Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
-# Đầu vào: user_text - nội dung tin nhắn người dân.
-# Đầu ra: Mã BO_PHAN cần lọc trong sheet TRA_CUU_LIEN_HE; chuỗi rỗng nếu chưa xác định.
-# Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
-# Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
 # Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
 def detect_bo_phan_contact(user_text):
     t = normalize_text(user_text)
@@ -32,13 +28,13 @@ def detect_bo_phan_contact(user_text):
         return "TRUC_BAN"
 
     if any(k in t for k in [
-        "chi huy",
-        "lanh dao",
-        "ban chi huy",
-        "truong cap",
-        "pho truong cap"
+        "pctp",
+        "phong chong toi pham",
+        "chong toi pham",
+        "toi pham",
+        "hinh su"
     ]):
-        return "CHI_HUY"
+        return "PCTP"
 
     if any(k in t for k in [
         "cskv",
@@ -49,18 +45,20 @@ def detect_bo_phan_contact(user_text):
         return "CSKV"
 
     if any(k in t for k in [
+        "chi huy",
+        "lanh dao",
+        "ban chi huy",
+        "truong cap",
+        "pho truong cap"
+    ]):
+        return "CHI_HUY"
+
+    if any(k in t for k in [
         "an ninh",
         "to an ninh",
         "can bo an ninh"
     ]):
         return "AN_NINH"
-
-    if any(k in t for k in [
-        "pctp",
-        "phong chong toi pham",
-        "hinh su"
-    ]):
-        return "PCTP"
 
     if any(k in t for k in [
         "cstt",
@@ -82,7 +80,6 @@ def detect_bo_phan_contact(user_text):
     ]):
         return "DOAN_THANH_NIEN"
 
-    # Nhận diện Tổng hợp linh hoạt hơn
     if any(k in t for k in [
         "tong hop",
         "to tong hop",
