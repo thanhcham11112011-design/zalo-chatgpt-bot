@@ -48,10 +48,23 @@ def _clean_value(value: Any) -> str:
     """Chuan hoa gia tri doc tu Google Sheet/Excel."""
     if value is None:
         return ""
+
+    # Google Sheets/gspread co the tra so dien thoai ve dang number,
+    # lam mat so 0 dau. Chuyen ve chuoi va bo dau nhay neu co.
     text = str(value).strip()
-    # Excel hay luu so dien thoai dang '090xxx de giu so 0 dau.
+
     if text.startswith("'"):
         text = text[1:].strip()
+
+    # Truong hop Google API tra so nguyen dang chuoi float: 225876018.0
+    if text.endswith(".0") and text.replace(".0", "", 1).isdigit():
+        text = text[:-2]
+
+    # Neu la day so 9 chu so thi bo sung so 0 dau de dung dinh dang SDT Viet Nam.
+    # Vi du: 225876018 -> 0225876018; 904474589 -> 0904474589.
+    if text.isdigit() and len(text) == 9:
+        text = "0" + text
+
     return text
 
 
