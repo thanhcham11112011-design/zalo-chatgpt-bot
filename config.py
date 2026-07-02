@@ -65,7 +65,7 @@ ALL_SHEETS = [
 
 SESSION_TTL_MINUTES = int(os.getenv("SESSION_TTL_MINUTES", 60))
 MAX_ZALO_TEXT_LENGTH = int(os.getenv("MAX_ZALO_TEXT_LENGTH", 1900))
-
+DEBUG_MODE = os.getenv("DEBUG_MODE", "FALSE").strip().upper() == "TRUE"
 
 def check_config():
     missing = []
