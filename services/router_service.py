@@ -793,13 +793,12 @@ def route_message_for_ai(user_text, context=None):
     if any(k in t for k in contact_keys):
         return {
             "reply": (
-                "☎️ Số điện thoại Công an phường Phù Liễn:\n"
-                "Vui lòng xem tại mục thông tin liên hệ của Công an phường trong hệ thống dữ liệu.\n\n"
-                "💬 Bạn có thể hỏi tiếp:\n"
-                "• Địa chỉ Công an phường\n"
-                "• Giờ làm việc\n"
-                "• Số trực ban\n"
-                "• Gặp cán bộ trực"
+                "☎️ Câu hỏi không rõ chủ đề:\n"
+                "Vui lòng nhắn lại với cú pháp đầy đủ, rõ ràng.\n\n"
+                "💬 ví dụ:\n"
+                "• Công an phường Phù Liễn ở đâu\n"
+                "• số điện thoại công an phường Phù Liễn\n"
+                
             ),
             "source": "TRA_CUU_LIEN_HE",
             "use_ai": False,
