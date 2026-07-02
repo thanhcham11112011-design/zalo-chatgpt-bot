@@ -708,6 +708,24 @@ def route_message(user_text, context=None):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
 
+    # Nếu người dân nhập đúng từ khóa chuẩn tra cứu liên hệ thì xử lý trước.
+    # Riêng CSKV phải hỏi tiếp địa bàn/họ tên, không trả ngay danh sách cán bộ.
+    if is_contact_lookup_keyword(text):
+        if normalize_text(text) == "lien he bo phan cskv":
+            return (
+                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
+                "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở.\n\n"
+                "Ví dụ: Tổ 4, Nam Hải; TDP 4; Quy Tức 1; Gò Công 1.\n\n"
+                "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
+                "CSKV_ASK_NAME",
+                {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
+                ""
+            )
+
+        lien_he = search_lien_he(text, limit=20)
+        if lien_he:
+            return format_multiple_results(lien_he, format_lien_he, limit=20), "TRA_CUU_LIEN_HE", ctx, ""
+
     # Ưu tiên liên hệ rõ ràng trước thủ tục và trước context cũ.
     if is_contact_question(text):
         lien_he = search_lien_he(text, limit=5)
@@ -752,23 +770,6 @@ def route_message(user_text, context=None):
             {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
             ""
         )
-
-    # Nếu người dân nhập đúng từ khóa chuẩn liên hệ thì tra cứu luôn.
-    if is_contact_lookup_keyword(text):
-        if normalize_text(text) == "lien he bo phan cskv":
-            return (
-                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
-                "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở.\n\n"
-                "Ví dụ: Nguyễn Văn B; TDP Ngọc Sơn; tổ Ngọc Sơn.\n\n"
-                "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
-                "CSKV_ASK_NAME",
-                {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
-                ""
-            )
-
-        lien_he = search_lien_he(text, limit=20)
-        if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=20), "TRA_CUU_LIEN_HE", ctx, ""
 
     # Câu hỏi rõ tên cơ quan: bỏ ngữ cảnh thủ tục cũ.
     if is_specific_contact_question(text):
@@ -1000,7 +1001,18 @@ def route_message(user_text, context=None):
             ctx,
             ""
         )
-
+        # Nếu người dân nhập đúng từ khóa chuẩn liên hệ thì tra cứu luôn.
+    if is_contact_lookup_keyword(text):
+        if normalize_text(text) == "lien he bo phan cskv":
+            return (
+                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
+                "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở.\n\n"
+                "Ví dụ: Nguyễn Văn B; TDP Ngọc Sơn; tổ Ngọc Sơn.\n\n"
+                "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
+                "CSKV_ASK_NAME",
+                {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
+                ""
+            )
     # Chỉ tra cứu liên hệ khi câu hỏi có ý định liên hệ/địa điểm rõ ràng.
     if is_contact_question(text) or is_location_question(text) or text_norm in [
         "lien he",
