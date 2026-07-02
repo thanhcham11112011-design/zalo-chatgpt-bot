@@ -2,38 +2,83 @@ import re
 from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
 
+
+# Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
+# Đầu vào: user_text - nội dung tin nhắn người dân.
+# Đầu ra: Mã BO_PHAN cần lọc trong sheet TRA_CUU_LIEN_HE; chuỗi rỗng nếu chưa xác định.
+# Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
 def detect_bo_phan_contact(user_text):
     t = normalize_text(user_text)
 
-    if "chi huy" in t or "lanh dao" in t:
+    truc_ban_keys = [
+        "so dien thoai cong an phuong",
+        "dien thoai cong an phuong",
+        "sdt cong an phuong",
+        "so truc ban",
+        "dien thoai truc ban",
+        "sdt truc ban",
+        "truc ban",
+        "hotline",
+        "duong day nong",
+        "tiep nhan tin bao",
+        "to giac toi pham",
+        "phan anh antt",
+        "bao tin",
+    ]
+
+    if any(k in t for k in truc_ban_keys):
+        return "TRUC_BAN"
+
+    if any(k in t for k in ["chi huy", "lanh dao", "ban chi huy", "truong cap", "pho truong cap"]):
         return "CHI_HUY"
 
-    if "cskv" in t or "canh sat khu vuc" in t:
+    if any(k in t for k in ["cskv", "canh sat khu vuc", "can bo khu vuc", "phu trach dia ban"]):
         return "CSKV"
 
-    if "an ninh" in t:
+    if any(k in t for k in ["an ninh", "to an ninh", "can bo an ninh"]):
         return "AN_NINH"
 
-    if "pctp" in t or "phong chong toi pham" in t:
+    if any(k in t for k in ["pctp", "phong chong toi pham", "hinh su"]):
         return "PCTP"
 
-    if "cstt" in t or "canh sat trat tu" in t:
+    if any(k in t for k in ["cstt", "canh sat trat tu", "trat tu"]):
         return "CSTT"
+
+    if any(k in t for k in ["cntt", "cong nghe thong tin", "chuyen doi so"]):
+        return "CNTT"
+
+    if any(k in t for k in ["doan thanh nien", "dtn"]):
+        return "DOAN_THANH_NIEN"
 
     if t in ["th", "tong hop", "to tong hop"]:
         return "TH"
 
+    if any(k in t for k in ["dia chi", "google map", "ban do", "co quan", "co so 1", "co so 2"]):
+        return "CO_QUAN"
+
     return ""
-    
+
+
+# Chức năng: Chấm điểm khớp từ khóa giữa câu hỏi người dân và chuỗi từ khóa trong Sheet.
+# Đầu vào: user_text - câu hỏi; keywords - chuỗi từ khóa; weight - trọng số điểm.
+# Đầu ra: Điểm số khớp từ khóa.
+# Vai trò: Là nền tảng chấm điểm cho menu, liên hệ, FAQ và thủ tục.
 def keyword_score(user_text, keywords, weight=1):
     user_norm = normalize_text(user_text)
     if not user_norm:
         return 0
+
     score = 0
     for kw in split_keywords(keywords):
         if kw and kw in user_norm:
             score += max(len(kw), 2) * weight
     return score
+
+
+# Chức năng: Chấm điểm nhiều trường dữ liệu theo cùng cơ chế từ khóa.
+# Đầu vào: user_text - câu hỏi; fields - các trường cần chấm điểm.
+# Đầu ra: Tổng điểm khớp từ khóa.
+# Vai trò: Hỗ trợ gom điểm từ nhiều cột dữ liệu khi tìm kiếm.
 def field_score(user_text, *fields):
     score = 0
 
@@ -42,11 +87,17 @@ def field_score(user_text, *fields):
 
     return score
 
+
+# Chức năng: Chấm điểm khớp cụm từ giữa câu hỏi và một giá trị dữ liệu.
+# Đầu vào: user_text - câu hỏi; value - giá trị cần so khớp; weight - trọng số.
+# Đầu ra: Điểm số khớp cụm từ.
+# Vai trò: Giúp BOT tìm theo tên cơ quan, tên thủ tục, mô tả hoặc chức năng.
 def phrase_score(user_text, value, weight=1):
     user_norm = normalize_text(user_text)
     value_norm = normalize_text(value)
     if not user_norm or not value_norm:
         return 0
+
     score = 0
     if user_norm == value_norm:
         score += 100 * weight
@@ -58,28 +109,40 @@ def phrase_score(user_text, value, weight=1):
     return score
 
 
+# Chức năng: Tìm chức năng menu phù hợp với nội dung người dân nhập.
+# Đầu vào: user_text - câu hỏi hoặc số menu.
+# Đầu ra: Dòng MENU phù hợp nhất hoặc None.
+# Vai trò: Định tuyến nhóm chức năng chính của BOT.
 def search_menu(user_text):
     user_norm = normalize_text(user_text)
     results = []
+
     for row in read_menu():
         menu_id = str(row.get("ID", "")).strip()
         title = get_first(row, "TEN_CHUC_NANG", "TÊN_CHỨC_NĂNG", "TEN", "CHU_DE", "MO_TA", "MÔ_TẢ")
         keywords = get_first(row, "TU_KHOA", "TỪ_KHÓA", "TU KHOA")
         desc = get_first(row, "MO_TA", "MÔ_TẢ")
+
         score = 0
         if user_norm == normalize_text(menu_id):
             score += 1000
         score += keyword_score(user_text, keywords, 4)
         score += phrase_score(user_text, title, 3)
         score += phrase_score(user_text, desc, 1)
+
         if score > 0:
             row["_SCORE"] = score
             row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             results.append(row)
+
     results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
     return results[0] if results else None
 
 
+# Chức năng: Chuẩn hóa tên cơ quan về tên gốc để so khớp rộng.
+# Đầu vào: name - tên cơ quan.
+# Đầu ra: Tên cơ quan đã bỏ phần trong ngoặc, cơ sở và khoảng trắng thừa.
+# Vai trò: Giúp BOT nhận diện tên cơ quan ngay cả khi người dân nhập thiếu phần mô tả.
 def _agency_base_name(name):
     text = normalize_text(name)
     text = re.sub(r"\(.*?\)", "", text)
@@ -88,6 +151,10 @@ def _agency_base_name(name):
     return text
 
 
+# Chức năng: Kiểm tra câu hỏi có khớp rõ một từ khóa trong cột TU_KHOA hay không.
+# Đầu vào: user_text - câu hỏi; keywords - chuỗi từ khóa trong Sheet.
+# Đầu ra: True nếu có từ khóa khớp, False nếu không.
+# Vai trò: Tầng lọc chính xác trước khi tìm kiếm rộng.
 def _keyword_exact_match(user_text, keywords):
     user_norm = normalize_text(user_text)
     for kw in split_keywords(keywords):
@@ -97,12 +164,17 @@ def _keyword_exact_match(user_text, keywords):
     return False
 
 
+# Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE.
+# Đầu vào: user_text - câu hỏi; limit - số kết quả tối đa.
+# Đầu ra: Danh sách dòng liên hệ phù hợp.
+# Vai trò: Tra cứu cán bộ, bộ phận, cơ quan, trực ban, địa chỉ, số điện thoại từ Google Sheets.
 def search_lien_he(user_text, limit=3):
     rows = read_lien_he()
     text_norm = normalize_text(user_text)
 
     if not text_norm:
         return []
+
     bo_phan = detect_bo_phan_contact(user_text)
 
     if bo_phan:
@@ -127,6 +199,10 @@ def search_lien_he(user_text, limit=3):
     name_results = []
 
     for row in rows:
+        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
+        if trang_thai == "off":
+            continue
+
         ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
         ten_norm = normalize_text(ten)
         base_norm = _agency_base_name(ten)
@@ -147,6 +223,10 @@ def search_lien_he(user_text, limit=3):
     keyword_results = []
 
     for row in rows:
+        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
+        if trang_thai == "off":
+            continue
+
         tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
 
         if _keyword_exact_match(user_text, tu_khoa):
@@ -162,6 +242,10 @@ def search_lien_he(user_text, limit=3):
     fallback_results = []
 
     for row in rows:
+        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
+        if trang_thai == "off":
+            continue
+
         score = 0
         score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 3)
         score += phrase_score(user_text, get_first(row, "GHI_CHU", "GHI_CHÚ"), 1)
@@ -177,21 +261,32 @@ def search_lien_he(user_text, limit=3):
     return fallback_results[:limit]
 
 
+# Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
+# Đầu vào: user_text - câu hỏi; limit - số kết quả tối đa.
+# Đầu ra: Danh sách FAQ phù hợp.
+# Vai trò: Trả lời các tình huống phổ biến trước khi chuyển AI_FALLBACK.
 def search_faq(user_text, limit=3):
     results = []
+
     for row in read_faq():
         score = 0
         score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
         score += phrase_score(user_text, get_first(row, "CAU_HOI", "CÂU_HỎI"), 4)
         score += phrase_score(user_text, get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRA_LOI_DAY_DU"), 1)
+
         if score > 0:
             row["_SCORE"] = score
             row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             results.append(row)
+
     results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
     return results[:limit]
 
 
+# Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
+# Đầu vào: user_text - câu hỏi; limit - số kết quả tối đa; sheet - sheet cần giới hạn nếu có.
+# Đầu ra: Danh sách thủ tục phù hợp.
+# Vai trò: Tra cứu nội dung nghiệp vụ thủ tục từ Google Sheets.
 def search_thu_tuc(user_text, limit=5, sheet=None):
     """
     BOT V2.2:
@@ -234,26 +329,42 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
     return results[:limit]
 
 
+# Chức năng: Liệt kê các thủ tục trong một sheet THU_TUC_*.
+# Đầu vào: sheet - tên sheet; limit - số thủ tục tối đa.
+# Đầu ra: Danh sách thủ tục thuộc sheet.
+# Vai trò: Hiển thị danh sách thủ tục theo lĩnh vực để người dân chọn.
 def list_procedures_by_sheet(sheet, limit=10):
     rows = []
+
     for row in read_all_thu_tuc():
         if row.get("_SHEET") == sheet:
             row["_UU_TIEN"] = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", default=999))
             rows.append(row)
+
     rows.sort(key=lambda r: r["_UU_TIEN"])
     return rows[:limit]
 
 
+# Chức năng: Tìm thủ tục theo ID trên toàn bộ các sheet THU_TUC_*.
+# Đầu vào: procedure_id - mã thủ tục.
+# Đầu ra: Dòng thủ tục hoặc None.
+# Vai trò: Phục vụ chọn thủ tục từ danh sách và giữ context thủ tục.
 def find_procedure_by_id(procedure_id):
     pid = str(procedure_id or "").strip()
     if not pid:
         return None
+
     for row in read_all_thu_tuc():
         if str(row.get("ID", "")).strip() == pid:
             return row
+
     return None
 
 
+# Chức năng: Định dạng một dòng thông tin liên hệ để trả lời người dân.
+# Đầu vào: row - dòng dữ liệu từ TRA_CUU_LIEN_HE.
+# Đầu ra: Chuỗi trả lời đã định dạng.
+# Vai trò: Chuẩn hóa cách BOT hiển thị thông tin liên hệ, cán bộ, cơ quan, bản đồ.
 def format_lien_he(row):
     parts = []
     ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HỌ_TÊN", "HO_TEN")
@@ -263,24 +374,40 @@ def format_lien_he(row):
     address = get_first(row, "DIA_CHI", "ĐỊA_CHỈ", "ADDRESS")
     note = get_first(row, "GHI_CHU", "GHI_CHÚ")
     map_link = get_first(row, "GOOGLE_MAP", "MAP")
-    if ten: parts.append(f"📌 {ten}")
-    if chuc: parts.append(f"Chức năng: {chuc}")
-    if bo_phan: parts.append(f"Bộ phận: {bo_phan}")
-    if address: parts.append(f"Địa chỉ: {address}")
-    if phone: parts.append(f"Điện thoại: {phone}")
-    if note: parts.append(f"Ghi chú: {note}")
-    if map_link: parts.append(f"Bản đồ: {map_link}")
+
+    if ten:
+        parts.append(f"📌 {ten}")
+    if chuc:
+        parts.append(f"Chức năng: {chuc}")
+    if bo_phan:
+        parts.append(f"Bộ phận: {bo_phan}")
+    if address:
+        parts.append(f"Địa chỉ: {address}")
+    if phone:
+        parts.append(f"Điện thoại: {phone}")
+    if note:
+        parts.append(f"Ghi chú: {note}")
+    if map_link:
+        parts.append(f"Bản đồ: {map_link}")
+
     return "\n".join(parts)
 
 
+# Chức năng: Định dạng một dòng FAQ để trả lời người dân.
+# Đầu vào: row - dòng dữ liệu FAQ.
+# Đầu ra: Chuỗi câu hỏi và câu trả lời.
+# Vai trò: Chuẩn hóa cách hiển thị câu hỏi thường gặp.
 def format_faq(row):
     q = get_first(row, "CAU_HOI", "CÂU_HỎI")
     a = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
     return f"❓ {q}\n\n{a}" if q and a else (a or q)
 
 
+# Chức năng: Rút gọn nội dung trình tự/quy trình khi trả lời thủ tục.
+# Đầu vào: value - nội dung cần rút gọn; max_len - độ dài tối đa.
+# Đầu ra: Chuỗi đã rút gọn.
+# Vai trò: Giúp tin nhắn Zalo không quá dài nhưng vẫn giữ nội dung chính.
 def _short_steps(value, max_len=700):
-    """Rút gọn quy trình/trình tự ở phần trả lời đầu."""
     text = compact(value, max_len)
     if not text:
         return ""
@@ -293,6 +420,10 @@ def _short_steps(value, max_len=700):
     return text
 
 
+# Chức năng: Định dạng một thủ tục hành chính để trả lời người dân.
+# Đầu vào: row - dòng dữ liệu thủ tục từ THU_TUC_*.
+# Đầu ra: Chuỗi trả lời gồm đối tượng, hồ sơ, quy trình, link DVC và gợi ý hỏi tiếp.
+# Vai trò: Chuẩn hóa mẫu trả lời thủ tục hành chính của BOT CAP.
 def format_thu_tuc(row):
     """
     BOT V2.1 - Mẫu trả lời thủ tục thống nhất:
@@ -337,13 +468,26 @@ def format_thu_tuc(row):
 
     return "\n\n".join(parts)
 
+
+# Chức năng: Định dạng nhiều kết quả tìm kiếm thành một tin nhắn trả lời.
+# Đầu vào: results - danh sách dòng dữ liệu; formatter - hàm định dạng; limit - số kết quả tối đa.
+# Đầu ra: Chuỗi trả lời đánh số thứ tự.
+# Vai trò: Hiển thị danh sách kết quả liên hệ, FAQ hoặc thủ tục gần đúng.
 def format_multiple_results(results, formatter, limit=3):
     texts = []
+
     for i, row in enumerate(results[:limit], start=1):
         val = formatter(row)
         if val:
             texts.append(f"{i}. {val}")
+
     return "\n\n".join(texts)
+
+
+# Chức năng: Tìm thông tin liên hệ theo đúng tên cơ quan/cán bộ.
+# Đầu vào: name - tên cơ quan hoặc họ tên cần tìm.
+# Đầu ra: Dòng liên hệ phù hợp hoặc None.
+# Vai trò: Liên kết trường CO_QUAN_THUC_HIEN/NOI_NOP của thủ tục sang TRA_CUU_LIEN_HE.
 def find_lien_he_by_ten_co_quan(name):
     if not name:
         return None
@@ -358,7 +502,8 @@ def find_lien_he_by_ten_co_quan(name):
 
     for row in rows:
         ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        if name_norm in normalize_text(ten) or normalize_text(ten) in name_norm:
+        ten_norm = normalize_text(ten)
+        if name_norm in ten_norm or ten_norm in name_norm:
             return row
 
     return None
