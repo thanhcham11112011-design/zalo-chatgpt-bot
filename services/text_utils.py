@@ -29,9 +29,11 @@ def safe_int(value, default=999):
         return default
 
 
+# Chức năng: Tách chuỗi từ khóa trong Google Sheets thành danh sách từ khóa riêng lẻ.
+# Vai trò: Hỗ trợ các hàm chấm điểm tìm kiếm MENU, FAQ, THỦ TỤC, LIÊN HỆ theo dữ liệu sheet.
 def split_keywords(value):
     text = normalize_text(value)
-    return [x.strip() for x in re.split(r"[,;\n]+", text) if x.strip()]
+    return [x.strip() for x in re.split(r"[,;\n|]+", text) if x.strip()]
 
 
 def compact(value, limit=1500):
