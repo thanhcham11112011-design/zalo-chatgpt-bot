@@ -92,18 +92,48 @@ def is_location_question(text):
 # Đầu vào: text - nội dung người dân gửi.
 # Đầu ra: True nếu có ý định liên hệ/số điện thoại/địa chỉ cơ quan; False nếu không phải.
 # Vai trò: Ưu tiên tra cứu TRA_CUU_LIEN_HE trước khi tìm thủ tục để tránh nhầm “số điện thoại” sang VNeID.
+# Chức năng: Nhận diện câu hỏi tra cứu liên hệ của người dân.
+# Vai trò: Xác định intent TRA_CUU_LIEN_HE trước khi chuyển sang xử lý thủ tục hoặc AI.
 def is_contact_question(text):
     t = normalize_text(text)
+
     contact_keys = [
-        "lien he", "so dien thoai", "sdt", "dien thoai",
-        "truc ban", "hotline", "gap can bo", "gap cskv",
-        "gap chi huy", "lanh dao", "chi huy", "can bo truc"
+        "lien he",
+        "so dien thoai",
+        "sdt",
+        "dien thoai",
+        "truc ban",
+        "hotline",
+        "gap can bo",
+        "gap cskv",
+        "gap chi huy",
+        "chi huy",
+        "lanh dao",
+        "can bo truc",
+        "cskv",
+        "canh sat khu vuc",
+        "dong chi",
+        "ai la",
+        "quan ly",
+        "phu trach"
     ]
+
     agency_keys = [
-        "cong an phuong", "cong an thanh pho", "catp", "pc08", "pc07",
-        "phong canh sat", "phong csgt", "phong pccc", "phong csqlhc",
-        "so tu phap", "cuc c06", "c06", "bo cong an",
-        "phu lien", "kien an"
+        "cong an phuong",
+        "cong an thanh pho",
+        "catp",
+        "pc08",
+        "pc07",
+        "phong canh sat",
+        "phong csgt",
+        "phong pccc",
+        "phong csqlhc",
+        "so tu phap",
+        "cuc c06",
+        "c06",
+        "bo cong an",
+        "phu lien",
+        "kien an"
     ]
 
     if any(k in t for k in contact_keys):
@@ -113,12 +143,6 @@ def is_contact_question(text):
         return True
 
     return False
-
-
-# Chức năng: Kiểm tra câu hỏi có phải tra cứu địa điểm/liên hệ của một cơ quan cụ thể hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu là câu hỏi liên hệ cơ quan cụ thể; False nếu không phải.
-# Vai trò: Khi người dân hỏi rõ Công an phường hoặc đơn vị cụ thể thì bỏ context thủ tục cũ.
 def is_specific_contact_question(text):
     t = normalize_text(text)
     agency_keys = [
@@ -963,6 +987,19 @@ def route_message(user_text, context=None):
             return reply, "MENU", new_ctx, ""
 
     search_text = text
+
+    # Ưu tiên tra cứu liên hệ trước khi tìm thủ tục toàn cục.
+    if is_contact_question(text) or is_location_question(text) or text_norm in [
+        "lien he",
+        "so dien thoai",
+        "truc ban",
+        "google map",
+        "ban do",
+    ]:
+        lien_he = search_lien_he(search_text, limit=3)
+        if lien_he:
+            return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", {}, ""
+
     thu_tuc_results = search_thu_tuc(search_text, limit=5, sheet=None)
 
     if thu_tuc_results:
@@ -1001,29 +1038,6 @@ def route_message(user_text, context=None):
             ctx,
             ""
         )
-        # Nếu người dân nhập đúng từ khóa chuẩn liên hệ thì tra cứu luôn.
-    if is_contact_lookup_keyword(text):
-        if normalize_text(text) == "lien he bo phan cskv":
-            return (
-                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
-                "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở.\n\n"
-                "Ví dụ: Nguyễn Văn B; TDP Ngọc Sơn; tổ Ngọc Sơn.\n\n"
-                "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
-                "CSKV_ASK_NAME",
-                {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
-                ""
-            )
-    # Chỉ tra cứu liên hệ khi câu hỏi có ý định liên hệ/địa điểm rõ ràng.
-    if is_contact_question(text) or is_location_question(text) or text_norm in [
-        "lien he",
-        "so dien thoai",
-        "truc ban",
-        "google map",
-        "ban do",
-    ]:
-        lien_he = search_lien_he(search_text, limit=3)
-        if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", ctx, ""
 
     # Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ.
     if (
