@@ -165,8 +165,6 @@ def _keyword_exact_match(user_text, keywords):
 
 
 # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE.
-# Đầu vào: user_text - câu hỏi; limit - số kết quả tối đa.
-# Đầu ra: Danh sách dòng liên hệ phù hợp.
 # Vai trò: Tra cứu cán bộ, bộ phận, cơ quan, trực ban, địa chỉ, số điện thoại từ Google Sheets.
 def search_lien_he(user_text, limit=3):
     rows = read_lien_he()
@@ -181,50 +179,9 @@ def search_lien_he(user_text, limit=3):
         if trang_thai != "off":
             active_rows.append(row)
 
-    # TẦNG 1: Ưu tiên khớp rõ họ tên/tên cơ quan/cán bộ trước.
-    name_results = []
-
-    for row in active_rows:
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        ten_norm = normalize_text(ten)
-        base_norm = _agency_base_name(ten)
-
-        if not ten_norm:
-            continue
-
-        score = 0
-
-        # Khớp đầy đủ
-        if ten_norm in text_norm:
-            score += 10000
-
-        if base_norm and base_norm in text_norm:
-            score += 9000
-
-        # Khớp từng từ trong họ tên (ví dụ: "Thành")
-        words = [
-            w for w in ten_norm.split()
-            if len(w) >= 3
-        ]
-
-        for w in words:
-            if f" {w} " in f" {text_norm} ":
-                score += 3000
-
-        if score > 0:
-            row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            name_results.append(row)
-
-    if name_results:
-        name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
-        return name_results[:1]
-
-    # TẦNG 2: Nếu xác định được bộ phận thì chỉ tìm trong đúng bộ phận đó.
     bo_phan = detect_bo_phan_contact(user_text)
 
+    # TẦNG 1: Nếu xác định được bộ phận thì chỉ tìm trong đúng bộ phận đó.
     if bo_phan:
         filtered_rows = [
             row for row in active_rows
@@ -247,7 +204,9 @@ def search_lien_he(user_text, limit=3):
 
             if score > 0:
                 row["_SCORE"] = score
-                row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+                row["_UU_TIEN"] = safe_int(
+                    get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+                )
                 keyword_results.append(row)
 
         if keyword_results:
@@ -270,11 +229,57 @@ def search_lien_he(user_text, limit=3):
         results = []
         for row in filtered_rows:
             row["_SCORE"] = 10000
-            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
             results.append(row)
 
-        results.sort(key=lambda r: (r["_UU_TIEN"], get_first(r, "TEN_CO_QUAN", "HỌ_TÊN", "HO_TEN")))
+        results.sort(
+            key=lambda r: (
+                r["_UU_TIEN"],
+                get_first(r, "TEN_CO_QUAN", "HỌ_TÊN", "HO_TEN")
+            )
+        )
         return results[:limit]
+
+    # TẦNG 2: Chỉ khớp họ tên/tên cơ quan khi chưa xác định được bộ phận.
+    name_results = []
+
+    for row in active_rows:
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        ten_norm = normalize_text(ten)
+        base_norm = _agency_base_name(ten)
+
+        if not ten_norm:
+            continue
+
+        score = 0
+
+        if ten_norm in text_norm:
+            score += 10000
+
+        if base_norm and base_norm in text_norm:
+            score += 9000
+
+        words = [
+            w for w in ten_norm.split()
+            if len(w) >= 3
+        ]
+
+        for w in words:
+            if f" {w} " in f" {text_norm} ":
+                score += 3000
+
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
+            name_results.append(row)
+
+    if name_results:
+        name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+        return name_results[:1]
 
     # TẦNG 3: Khớp từ khóa rõ ràng trong TU_KHOA toàn sheet.
     keyword_results = []
@@ -290,7 +295,9 @@ def search_lien_he(user_text, limit=3):
                 score += phrase_score(user_text, row_bo_phan, 10)
 
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
             keyword_results.append(row)
 
     if keyword_results:
@@ -309,12 +316,13 @@ def search_lien_he(user_text, limit=3):
 
         if score > 0:
             row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
             fallback_results.append(row)
 
     fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
     return fallback_results[:limit]
-
 
 # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
 # Vai trò: Tra cứu FAQ từ Google Sheets để BOT trả lời các câu hỏi phổ biến.
