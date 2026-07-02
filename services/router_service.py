@@ -26,6 +26,7 @@ def is_greeting(text):
     return normalize_text(text) in [
         "xin chao", "chao", "chao ban", "hello", "hi",
         "alo", "menu", "danh muc", "bat dau", "0"
+        "Kết nối nhân viên AI",
     ]
 
 
