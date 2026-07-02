@@ -6,6 +6,5 @@ gspread==6.1.4
 google-auth==2.34.0
 
 gunicorn==22.0.0
-python-dotenv==1.0.1
 
 google-genai==0.3.0
