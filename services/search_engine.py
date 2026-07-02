@@ -2,7 +2,29 @@ import re
 from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
 
+def detect_bo_phan_contact(user_text):
+    t = normalize_text(user_text)
 
+    if "chi huy" in t or "lanh dao" in t:
+        return "CHI_HUY"
+
+    if "cskv" in t or "canh sat khu vuc" in t:
+        return "CSKV"
+
+    if "an ninh" in t:
+        return "AN_NINH"
+
+    if "pctp" in t or "phong chong toi pham" in t:
+        return "PCTP"
+
+    if "cstt" in t or "canh sat trat tu" in t:
+        return "CSTT"
+
+    if t in ["th", "tong hop", "to tong hop"]:
+        return "TH"
+
+    return ""
+    
 def keyword_score(user_text, keywords, weight=1):
     user_norm = normalize_text(user_text)
     if not user_norm:
@@ -81,6 +103,25 @@ def search_lien_he(user_text, limit=3):
 
     if not text_norm:
         return []
+    bo_phan = detect_bo_phan_contact(user_text)
+
+    if bo_phan:
+        results = []
+
+        for row in rows:
+            row_bo_phan = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
+            trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
+
+            if trang_thai == "off":
+                continue
+
+            if row_bo_phan == normalize_text(bo_phan):
+                row["_SCORE"] = 10000
+                row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+                results.append(row)
+
+        results.sort(key=lambda r: (r["_UU_TIEN"], get_first(r, "TEN_CO_QUAN", "HỌ_TÊN", "HO_TEN")))
+        return results[:limit]
 
     # TẦNG 1: nếu câu hỏi nêu rõ tên cơ quan
     name_results = []
