@@ -251,13 +251,11 @@ def search_lien_he(user_text, limit=3):
                 keyword_results.append(row)
 
         if keyword_results:
-            keyword_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+            keyword_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
 
-            # Nếu câu hỏi có địa bàn/từ khóa rõ trong nhóm CSKV thì trả 1 kết quả tốt nhất.
             if normalize_text(bo_phan) == "cskv":
                 return keyword_results[:1]
 
-            # Nếu có điểm nổi bật thì trả 1 kết quả tốt nhất.
             if len(keyword_results) == 1:
                 return keyword_results[:1]
 
@@ -269,7 +267,6 @@ def search_lien_he(user_text, limit=3):
 
             return keyword_results[:limit]
 
-        # Nếu chỉ hỏi chung bộ phận, không có địa bàn/tên cụ thể thì trả danh sách theo bộ phận.
         results = []
         for row in filtered_rows:
             row["_SCORE"] = 10000
@@ -284,14 +281,20 @@ def search_lien_he(user_text, limit=3):
 
     for row in active_rows:
         tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+        row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
         if _keyword_exact_match(user_text, tu_khoa):
-            row["_SCORE"] = 8000 + keyword_score(user_text, tu_khoa, 5)
+            score = 8000 + keyword_score(user_text, tu_khoa, 5)
+
+            if row_bo_phan:
+                score += phrase_score(user_text, row_bo_phan, 10)
+
+            row["_SCORE"] = score
             row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             keyword_results.append(row)
 
     if keyword_results:
-        keyword_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+        keyword_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
         return keyword_results[:limit]
 
     # TẦNG 4: Tìm rộng khi không có tên cơ quan/từ khóa rõ.
@@ -309,31 +312,8 @@ def search_lien_he(user_text, limit=3):
             row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             fallback_results.append(row)
 
-    fallback_results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+    fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
     return fallback_results[:limit]
-    
-def search_faq(user_text, limit=3):
-    results = []
-
-    for row in read_faq():
-        score = 0
-        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
-        score += phrase_score(user_text, get_first(row, "CAU_HOI", "CÂU_HỎI"), 4)
-        score += phrase_score(user_text, get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRA_LOI_DAY_DU"), 1)
-
-        if score > 0:
-            row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
-            results.append(row)
-
-    results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
-    return results[:limit]
-
-
-# Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
-# Đầu vào: user_text - câu hỏi; limit - số kết quả tối đa; sheet - sheet cần giới hạn nếu có.
-# Đầu ra: Danh sách thủ tục phù hợp.
-# Vai trò: Tra cứu nội dung nghiệp vụ thủ tục từ Google Sheets.
 def search_thu_tuc(user_text, limit=5, sheet=None):
     """
     BOT V2.2:
