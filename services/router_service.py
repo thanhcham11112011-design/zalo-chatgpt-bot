@@ -417,6 +417,45 @@ def context_prefix(ctx):
     return mapping.get(sheet, "")
 
 
+# Chức năng: Kiểm tra người dân chỉ nhập tên nhóm thủ tục, chưa nhập tên thủ tục cụ thể.
+# Đầu vào: text - nội dung người dân gửi; explicit - kết quả nhận diện chủ đề.
+# Đầu ra: True nếu là yêu cầu mở lại danh sách nhóm; False nếu có khả năng là tên thủ tục cụ thể.
+# Vai trò: Giữ nguyên format danh sách 5 thủ tục khi người dân nhập lại tên nhóm như “căn cước”, “cư trú”, “đăng ký xe”.
+def is_group_only_topic_request(text, explicit):
+    t = normalize_text(text)
+    sheet = explicit.get("sheet", "") if explicit else ""
+
+    group_keys = {
+        "THU_TUC_CCCD": [
+            "can cuoc", "cccd", "the can cuoc"
+        ],
+        "THU_TUC_CUTRU": [
+            "cu tru", "thu tuc cu tru", "dang ky cu tru"
+        ],
+        "THU_TUC_VNEID": [
+            "vneid", "dinh danh", "dinh danh dien tu"
+        ],
+        "THU_TUC_PTGT": [
+            "dang ky xe", "phuong tien", "phuong tien giao thong", "xe"
+        ],
+        "THU_TUC_PCCC": [
+            "pccc", "phong chay", "chua chay", "phong chay chua chay"
+        ],
+        "THU_TUC_VKVLN": [
+            "vkvln", "vu khi", "vat lieu no", "cong cu ho tro"
+        ],
+        "THU_TUC_LLTP": [
+            "lltp", "ly lich tu phap", "phieu ly lich", "phieu ly lich tu phap"
+        ],
+        "THU_TUC_ANTT": [
+            "antt", "nganh nghe antt", "nganh nghe dau tu kinh doanh co dieu kien ve antt",
+            "kinh doanh co dieu kien"
+        ],
+    }
+
+    return t in group_keys.get(sheet, [])
+
+
 # Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp của người dân.
 # Đầu vào: row - dòng thủ tục; user_text - câu hỏi nối tiếp.
 # Đầu ra: Chuỗi trả lời chi tiết theo trường dữ liệu phù hợp.
@@ -775,12 +814,22 @@ def route_message(user_text, context=None):
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     # Nếu người dân nhập chủ đề mới rõ ràng thì thoát context cũ.
-    # Nếu câu hỏi có tên thủ tục đúng hoặc gần đúng trong nhóm đó,
-    # BOT ưu tiên trả nội dung thủ tục; nếu không thì vẫn trả danh sách 5 thủ tục như cũ.
+    # Nếu chỉ nhập tên nhóm như “căn cước”, “cư trú”, “đăng ký xe” thì vẫn trả danh sách 5 thủ tục.
+    # Nếu nhập đúng/gần đúng tên thủ tục trong nhóm thì ưu tiên trả nội dung thủ tục.
     explicit = detect_explicit_topic(text)
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
         explicit_topic = explicit.get("topic", "")
+
+        if is_group_only_topic_request(text, explicit):
+            grouped = _make_procedure_list_reply(
+                explicit_sheet,
+                topic=explicit_topic,
+                page=1
+            )
+            if grouped:
+                reply, new_ctx = grouped
+                return reply, "MENU_GROUP", new_ctx, ""
 
         procedure_results = search_thu_tuc(
             text,
@@ -807,7 +856,6 @@ def route_message(user_text, context=None):
 
             suggestions = []
             lines = []
-
             for i, row in enumerate(procedure_results[:5], start=1):
                 name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
                 pid = get_first(row, "ID")
