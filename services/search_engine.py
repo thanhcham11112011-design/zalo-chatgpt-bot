@@ -312,9 +312,38 @@ def search_lien_he(user_text, limit=3):
             row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
             fallback_results.append(row)
 
-    fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+       fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
     return fallback_results[:limit]
+
+
+# Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
+# Vai trò: Tra cứu FAQ từ Google Sheets để BOT trả lời các câu hỏi phổ biến.
+def search_faq(user_text, limit=3):
+    results = []
+
+    for row in read_faq():
+        score = 0
+        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
+        score += phrase_score(user_text, get_first(row, "CAU_HOI", "CÂU_HỎI"), 4)
+        score += phrase_score(
+            user_text,
+            get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRA_LOI_DAY_DU"),
+            1
+        )
+
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999))
+            results.append(row)
+
+    results.sort(key=lambda r: (r["_UU_TIEN"], -r["_SCORE"]))
+    return results[:limit]
+
+
+# Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
+# Vai trò: Tra cứu nội dung nghiệp vụ thủ tục từ Google Sheets.
 def search_thu_tuc(user_text, limit=5, sheet=None):
+    
     """
     BOT V2.2:
     Chỉ tìm thủ tục khi câu hỏi khớp rõ TU_KHOA hoặc TEN_THU_TUC.
