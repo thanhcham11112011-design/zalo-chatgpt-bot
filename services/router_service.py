@@ -280,7 +280,6 @@ def answer_from_menu(row):
 
     return ("\n\n".join(parts) if parts else get_welcome_message()), []
 
-
 def detect_explicit_topic(text):
     t = normalize_text(text)
 
@@ -313,16 +312,20 @@ def detect_explicit_topic(text):
         ],
     }
 
-for sheet, keys in topic_map.items():
-    t_check = f" {t} "
-    if any(f" {normalize_text(k)} " in t_check for k in keys):
-        return {
-            "sheet": sheet,
-            "topic": sheet.replace("THU_TUC_", ""),
-            "stage": "procedure_list",
-        }
+    for sheet, keys in topic_map.items():
+        t_check = f" {t} "
 
-return None
+        if any(f" {normalize_text(k)} " in t_check for k in keys):
+            return {
+                "sheet": sheet,
+                "topic": sheet.replace("THU_TUC_", ""),
+                "stage": "procedure_list",
+            }
+
+    return None
+
+
+def context_prefix(ctx):
 
 
 def context_prefix(ctx):
