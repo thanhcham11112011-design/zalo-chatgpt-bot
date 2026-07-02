@@ -303,7 +303,7 @@ def search_lien_he(user_text, limit=3):
 
         return same_score_results[:limit]
 
-    keyword_results = []
+     keyword_results = []
 
     for row in search_rows:
         tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
@@ -313,6 +313,22 @@ def search_lien_he(user_text, limit=3):
         row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
         score = 0
+
+        tdp_norm = normalize_text(tdp)
+        tu_khoa_norm = normalize_text(tu_khoa)
+
+        exact_area_score = 0
+        for area in split_keywords(tdp):
+            area_norm = normalize_text(area)
+            if area_norm and area_norm in text_norm:
+                exact_area_score += 50000
+
+        for area in split_keywords(tu_khoa):
+            area_norm = normalize_text(area)
+            if area_norm and area_norm in text_norm and any(ch.isdigit() for ch in area_norm):
+                exact_area_score += 30000
+
+        score += exact_area_score
         score += keyword_score(user_text, tu_khoa, 8)
         score += phrase_score(user_text, tdp, 6)
         score += phrase_score(user_text, ten, 4)
@@ -344,7 +360,6 @@ def search_lien_he(user_text, limit=3):
             return keyword_results[:1]
 
         return keyword_results[:limit]
-
     if bo_phan:
         results = []
         for row in search_rows:
