@@ -771,7 +771,45 @@ def route_message(user_text, context=None):
     return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
 
 
+# Chức năng: Định tuyến tin nhắn người dân, ưu tiên intent rõ ràng trước khi dùng context cũ.
+# Đầu vào: user_text - nội dung người dân gửi; context - ngữ cảnh hội thoại hiện tại.
+# Đầu ra: Dict gồm reply, source, use_ai, context, ai_context.
+# Vai trò: Là lớp trung gian để BOT quyết định trả lời từ Sheet hay chuyển sang AI.
 def route_message_for_ai(user_text, context=None):
+    t = normalize_text(user_text)
+
+    # Ưu tiên intent tra cứu số điện thoại Công an phường trước khi tìm thủ tục
+    contact_keys = [
+        "so dien thoai cong an phuong",
+        "sdt cong an phuong",
+        "dien thoai cong an phuong",
+        "so truc ban",
+        "sdt truc ban",
+        "truc ban cong an",
+        "lien he cong an phuong",
+        "hotline cong an phuong",
+    ]
+
+    if any(k in t for k in contact_keys):
+        return {
+            "reply": (
+                "☎️ Số điện thoại Công an phường Phù Liễn:\n"
+                "Vui lòng xem tại mục thông tin liên hệ của Công an phường trong hệ thống dữ liệu.\n\n"
+                "💬 Bạn có thể hỏi tiếp:\n"
+                "• Địa chỉ Công an phường\n"
+                "• Giờ làm việc\n"
+                "• Số trực ban\n"
+                "• Gặp cán bộ trực"
+            ),
+            "source": "TRA_CUU_LIEN_HE",
+            "use_ai": False,
+            "context": {
+                "stage": "contact",
+                "topic": "TRA_CUU_LIEN_HE",
+            },
+            "ai_context": "",
+        }
+
     reply, source, new_context, ai_context = route_message(user_text, context=context)
 
     return {
