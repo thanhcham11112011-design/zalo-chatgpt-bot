@@ -324,10 +324,6 @@ def detect_explicit_topic(text):
 
     return None
 
-
-def context_prefix(ctx):
-
-
 def context_prefix(ctx):
     sheet = ctx.get("sheet", "")
     mapping = {
