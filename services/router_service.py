@@ -775,11 +775,68 @@ def route_message(user_text, context=None):
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     # Nếu người dân nhập chủ đề mới rõ ràng thì thoát context cũ.
+    # Nếu câu hỏi có tên thủ tục đúng hoặc gần đúng trong nhóm đó,
+    # BOT ưu tiên trả nội dung thủ tục; nếu không thì vẫn trả danh sách 5 thủ tục như cũ.
     explicit = detect_explicit_topic(text)
     if explicit:
+        explicit_sheet = explicit.get("sheet", "")
+        explicit_topic = explicit.get("topic", "")
+
+        procedure_results = search_thu_tuc(
+            text,
+            limit=5,
+            sheet=explicit_sheet
+        )
+
+        if procedure_results:
+            best = procedure_results[0]
+            best_score = best.get("_SCORE", 0)
+            second_score = procedure_results[1].get("_SCORE", 0) if len(procedure_results) > 1 else 0
+
+            if best_score >= 20 and best_score >= second_score + 8:
+                new_ctx = {
+                    "sheet": best.get("_SHEET", explicit_sheet),
+                    "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
+                    "procedure_id": get_first(best, "ID"),
+                    "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                    "stage": "procedure",
+                    "page": 1,
+                    "last_suggestions": [],
+                }
+                return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
+
+            suggestions = []
+            lines = []
+
+            for i, row in enumerate(procedure_results[:5], start=1):
+                name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+                pid = get_first(row, "ID")
+                suggestions.append({"index": i, "id": pid, "name": name})
+                if name:
+                    lines.append(f"{i}. {name}")
+
+            new_ctx = {
+                "sheet": explicit_sheet,
+                "topic": explicit_topic,
+                "stage": "clarify_procedure",
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": suggestions,
+            }
+
+            return (
+                "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. "
+                "Quý công dân vui lòng chọn số tương ứng:\n\n"
+                + "\n".join(lines),
+                "CLARIFY_THU_TUC_IN_GROUP",
+                new_ctx,
+                ""
+            )
+
         grouped = _make_procedure_list_reply(
-            explicit.get("sheet", ""),
-            topic=explicit.get("topic", ""),
+            explicit_sheet,
+            topic=explicit_topic,
             page=1
         )
         if grouped:
