@@ -7,6 +7,8 @@ from services.text_utils import normalize_text, get_first, safe_int, split_keywo
 # Đầu vào: user_text - nội dung tin nhắn người dân.
 # Đầu ra: Mã BO_PHAN cần lọc trong sheet TRA_CUU_LIEN_HE; chuỗi rỗng nếu chưa xác định.
 # Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
+# Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
+# Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
 def detect_bo_phan_contact(user_text):
     t = normalize_text(user_text)
 
@@ -29,36 +31,78 @@ def detect_bo_phan_contact(user_text):
     if any(k in t for k in truc_ban_keys):
         return "TRUC_BAN"
 
-    if any(k in t for k in ["chi huy", "lanh dao", "ban chi huy", "truong cap", "pho truong cap"]):
+    if any(k in t for k in [
+        "chi huy",
+        "lanh dao",
+        "ban chi huy",
+        "truong cap",
+        "pho truong cap"
+    ]):
         return "CHI_HUY"
 
-    if any(k in t for k in ["cskv", "canh sat khu vuc", "can bo khu vuc", "phu trach dia ban"]):
+    if any(k in t for k in [
+        "cskv",
+        "canh sat khu vuc",
+        "can bo khu vuc",
+        "phu trach dia ban"
+    ]):
         return "CSKV"
 
-    if any(k in t for k in ["an ninh", "to an ninh", "can bo an ninh"]):
+    if any(k in t for k in [
+        "an ninh",
+        "to an ninh",
+        "can bo an ninh"
+    ]):
         return "AN_NINH"
 
-    if any(k in t for k in ["pctp", "phong chong toi pham", "hinh su"]):
+    if any(k in t for k in [
+        "pctp",
+        "phong chong toi pham",
+        "hinh su"
+    ]):
         return "PCTP"
 
-    if any(k in t for k in ["cstt", "canh sat trat tu", "trat tu"]):
+    if any(k in t for k in [
+        "cstt",
+        "canh sat trat tu",
+        "trat tu"
+    ]):
         return "CSTT"
 
-    if any(k in t for k in ["cntt", "cong nghe thong tin", "chuyen doi so"]):
+    if any(k in t for k in [
+        "cntt",
+        "cong nghe thong tin",
+        "chuyen doi so"
+    ]):
         return "CNTT"
 
-    if any(k in t for k in ["doan thanh nien", "dtn"]):
+    if any(k in t for k in [
+        "doan thanh nien",
+        "dtn"
+    ]):
         return "DOAN_THANH_NIEN"
 
-    if t in ["th", "tong hop", "to tong hop"]:
+    # Nhận diện Tổng hợp linh hoạt hơn
+    if any(k in t for k in [
+        "tong hop",
+        "to tong hop",
+        "doi tong hop",
+        "bo phan tong hop",
+        "can bo tong hop"
+    ]):
         return "TH"
 
-    if any(k in t for k in ["dia chi", "google map", "ban do", "co quan", "co so 1", "co so 2"]):
+    if any(k in t for k in [
+        "dia chi",
+        "google map",
+        "ban do",
+        "co quan",
+        "co so 1",
+        "co so 2"
+    ]):
         return "CO_QUAN"
 
     return ""
-
-
 # Chức năng: Chấm điểm khớp từ khóa giữa câu hỏi người dân và chuỗi từ khóa trong Sheet.
 # Đầu vào: user_text - câu hỏi; keywords - chuỗi từ khóa; weight - trọng số điểm.
 # Đầu ra: Điểm số khớp từ khóa.
