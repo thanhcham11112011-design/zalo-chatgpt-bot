@@ -252,9 +252,10 @@ def answer_from_menu(row):
     desc = get_first(row, "MO_TA", "MÔ_TẢ")
     sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
 
-    # Riêng mục 9 - Tra cứu liên hệ
-    if sheet == "TRA_CUU_LIEN_HE":
-        return get_contact_lookup_message(), []
+# Riêng mục Tra cứu liên hệ:
+# Chọn menu 9 chỉ trả cột MO_TA trong sheet MENU
+if normalize_text(sheet) == "tra_cuu_lien_he":
+    return str(desc or DEFAULT_REPLY).strip(), []
 
     # Các nhóm thủ tục THU_TUC_*
     if sheet and sheet.startswith("THU_TUC_"):
