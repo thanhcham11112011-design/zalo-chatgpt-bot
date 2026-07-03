@@ -221,11 +221,34 @@ def search_lien_he(user_text, limit=3):
     if not text_norm:
         return []
 
+    phone_digits = re.sub(r"\D+", "", str(user_text or ""))
+
     active_rows = []
     for row in rows:
         trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
         if trang_thai != "off":
             active_rows.append(row)
+
+    # Ưu tiên 0: Nếu câu hỏi có số điện thoại thì tra cứu đúng theo số điện thoại trước.
+    if len(phone_digits) >= 9:
+        phone_results = []
+
+        for row in active_rows:
+            phone = get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI", "PHONE")
+            phone_norm = re.sub(r"\D+", "", str(phone or ""))
+
+            if phone_norm and phone_digits in phone_norm:
+                row["_SCORE"] = 100000
+                row["_UU_TIEN"] = safe_int(
+                    get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+                )
+                phone_results.append(row)
+
+        if phone_results:
+            phone_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+            return phone_results[:1]
+
+        return []
 
     bo_phan = detect_bo_phan_contact(user_text)
 
