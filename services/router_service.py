@@ -762,7 +762,15 @@ def route_message(user_text, context=None):
     if is_contact_question(text):
         lien_he = search_lien_he(text, limit=5)
         if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=5), "TRA_CUU_LIEN_HE", {}, ""
+            reply = format_multiple_results(lien_he, format_lien_he, limit=5)
+
+            if len(lien_he) > 1:
+                reply += (
+                    "\n\nℹ️ Có nhiều cán bộ phù hợp với thông tin vừa nhập. "
+                    "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
+                )
+
+            return reply, "TRA_CUU_LIEN_HE", {}, ""
 
         if is_contact_hint_question(text):
             return get_contact_hint_message(), "CONTACT_HINT", {"stage": "contact_lookup", "sheet": "TRA_CUU_LIEN_HE"}, ""
@@ -782,9 +790,16 @@ def route_message(user_text, context=None):
 
         lien_he = search_lien_he(text, limit=5)
         if lien_he:
+            reply = format_multiple_results(lien_he, format_lien_he, limit=5)
+
+            if len(lien_he) > 1:
+                reply += (
+                    "\n\nℹ️ Có nhiều cán bộ CSKV phù hợp với thông tin vừa nhập. "
+                    "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ hoặc địa bàn phụ trách để BOT tra cứu chính xác."
+                )
+
             return (
-                format_multiple_results(lien_he, format_lien_he, limit=5)
-                + "\n\nQuý công dân có thể nhập tiếp tên cán bộ hoặc tổ dân phố khác để tra cứu CSKV.",
+                reply + "\n\nQuý công dân có thể nhập tiếp tên cán bộ hoặc tổ dân phố khác để tra cứu CSKV.",
                 "TRA_CUU_LIEN_HE_CSKV",
                 {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
                 ""
@@ -807,7 +822,15 @@ def route_message(user_text, context=None):
     if is_specific_contact_question(text):
         lien_he = search_lien_he(text, limit=3)
         if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE_EXPLICIT", {}, ""
+            reply = format_multiple_results(lien_he, format_lien_he, limit=3)
+
+            if len(lien_he) > 1:
+                reply += (
+                    "\n\nℹ️ Có nhiều kết quả phù hợp. "
+                    "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
+                )
+
+            return reply, "TRA_CUU_LIEN_HE_EXPLICIT", {}, ""
 
     # Chọn số trong danh sách thủ tục đang hiển thị.
     selected = _select_from_suggestions(text, ctx)
@@ -822,7 +845,6 @@ def route_message(user_text, context=None):
             "last_suggestions": [],
         }
         return format_thu_tuc(selected), "THU_TUC_SELECT", new_ctx, ""
-
     # Khi đang ở nhóm thủ tục, số thứ tự phải ưu tiên danh sách đang hiển thị.
     if text_norm.isdigit() and ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         reply, new_ctx = _need_select_procedure_message(ctx)
