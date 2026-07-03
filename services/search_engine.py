@@ -232,6 +232,8 @@ def search_lien_he(user_text, limit=3):
     if not bo_phan and any(k in text_norm for k in ["tong hop", "to tong hop", "doi tong hop"]):
         bo_phan = "TH"
 
+    bo_phan_norm = normalize_text(bo_phan)
+
     search_rows = active_rows
     if bo_phan:
         search_rows = []
@@ -240,20 +242,64 @@ def search_lien_he(user_text, limit=3):
             row_chuc_nang_norm = normalize_text(get_first(row, "CHUC_NANG", "CHỨC_NĂNG"))
             row_tu_khoa_norm = normalize_text(get_first(row, "TU_KHOA", "TỪ_KHÓA"))
 
-            if row_bo_phan_norm == normalize_text(bo_phan):
+            if row_bo_phan_norm == bo_phan_norm:
                 search_rows.append(row)
-            elif normalize_text(bo_phan) == "th" and (
+            elif bo_phan_norm == "th" and (
                 "tong hop" in row_chuc_nang_norm or "tong hop" in row_tu_khoa_norm
             ):
                 search_rows.append(row)
-
-    name_results = []
 
     clean_text_raw = text_raw
     for ch in [",", ".", ";", ":", "?", "!", "-", "_", "/", "\\", "(", ")", "[", "]"]:
         clean_text_raw = clean_text_raw.replace(ch, " ")
 
     raw_words = [w.strip() for w in clean_text_raw.split() if len(w.strip()) >= 3]
+
+    # Ưu tiên 1: Có TDP/địa bàn thì chỉ tìm trong đúng địa bàn đó.
+    area_results = []
+
+    for row in search_rows:
+        tdp = get_first(row, "TDP")
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+
+        score = 0
+
+        for area in split_keywords(tdp):
+            area_norm = normalize_text(area)
+            if area_norm and area_norm in text_norm:
+                score += 50000
+
+        for area in split_keywords(tu_khoa):
+            area_norm = normalize_text(area)
+            if area_norm and area_norm in text_norm:
+                if any(ch.isdigit() for ch in area_norm):
+                    score += 30000
+                elif len(area_norm.split()) >= 2:
+                    score += 25000
+
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
+            area_results.append(row)
+
+    if area_results:
+        area_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+
+        if bo_phan_norm == "cskv":
+            return area_results[:1]
+
+        best_score = area_results[0].get("_SCORE", 0)
+        same_score_results = [
+            row for row in area_results
+            if row.get("_SCORE", 0) == best_score
+        ]
+
+        return same_score_results[:limit]
+
+    # Ưu tiên 2: Có họ tên đầy đủ thì trả đúng 1 cán bộ.
+    full_name_results = []
 
     for row in search_rows:
         ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
@@ -269,21 +315,39 @@ def search_lien_he(user_text, limit=3):
         if ten_raw and ten_raw in text_raw:
             score += 20000
 
+        if ten_norm and ten_norm in text_norm:
+            score += 18000
+
+        if base_norm and base_norm in text_norm:
+            score += 15000
+
+        if score > 0:
+            row["_SCORE"] = score
+            row["_UU_TIEN"] = safe_int(
+                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
+            )
+            full_name_results.append(row)
+
+    if full_name_results:
+        full_name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
+        return full_name_results[:1]
+
+    # Ưu tiên 3 và 4: Tên riêng + bộ phận; nếu mơ hồ thì trả nhiều kết quả để người dân chọn.
+    name_results = []
+
+    for row in search_rows:
+        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
+        ten_raw = str(ten or "").lower().strip()
+
+        if not ten_raw:
+            continue
+
         ten_raw_words = [w.strip() for w in ten_raw.split() if len(w.strip()) >= 3]
+        score = 0
 
-        # Nếu người dân đang hỏi CSKV theo địa bàn/TDP thì không chấm điểm tên cán bộ theo từng từ rời.
-        # Tránh lỗi "Hoàng Quốc Việt" khớp sai với tên cán bộ có chữ "Hoàng" hoặc "Việt".
-        if normalize_text(bo_phan) != "cskv":
-            for w in ten_raw_words:
-                if w in raw_words:
-                    score += 12000
-
-        if score == 0:
-            if ten_norm in text_norm:
-                score += 8000
-
-            if base_norm and base_norm in text_norm:
-                score += 7000
+        for w in ten_raw_words:
+            if w in raw_words:
+                score += 12000
 
         if score > 0:
             row["_SCORE"] = score
@@ -296,17 +360,17 @@ def search_lien_he(user_text, limit=3):
         name_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
 
         best_score = name_results[0].get("_SCORE", 0)
-
-        if best_score >= 20000:
-            return name_results[:1]
-
         same_score_results = [
             row for row in name_results
             if row.get("_SCORE", 0) == best_score
         ]
 
+        if len(same_score_results) == 1:
+            return same_score_results[:1]
+
         return same_score_results[:limit]
 
+    # Tìm rộng theo từ khóa/chức năng khi không có địa bàn hoặc tên người rõ ràng.
     keyword_results = []
 
     for row in search_rows:
@@ -317,37 +381,14 @@ def search_lien_he(user_text, limit=3):
         row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
         score = 0
-
-        tdp_norm = normalize_text(tdp)
-        tu_khoa_norm = normalize_text(tu_khoa)
-
-        exact_area_score = 0
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and area_norm in text_norm:
-                exact_area_score += 50000
-
-        for area in split_keywords(tu_khoa):
-            area_norm = normalize_text(area)
-            if area_norm and area_norm in text_norm:
-                if any(ch.isdigit() for ch in area_norm):
-                    exact_area_score += 30000
-                elif len(area_norm.split()) >= 2:
-                    exact_area_score += 25000
-
-        score += exact_area_score
-
-        if exact_area_score > 0:
-            score += keyword_score(user_text, tu_khoa, 8)
-            score += phrase_score(user_text, tdp, 6)
-        else:
-            score += keyword_score(user_text, tu_khoa, 4)
-
+        score += keyword_score(user_text, tu_khoa, 4)
+        score += phrase_score(user_text, tdp, 2)
         score += phrase_score(user_text, ten, 1)
         score += phrase_score(user_text, chuc_nang, 1)
 
         if row_bo_phan:
             score += phrase_score(user_text, row_bo_phan, 3)
+
         if score > 0:
             row["_SCORE"] = score
             row["_UU_TIEN"] = safe_int(
@@ -357,9 +398,6 @@ def search_lien_he(user_text, limit=3):
 
     if keyword_results:
         keyword_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
-
-        if bo_phan and normalize_text(bo_phan) == "cskv":
-            return keyword_results[:1]
 
         best_score = keyword_results[0].get("_SCORE", 0)
         second_score = keyword_results[1].get("_SCORE", 0) if len(keyword_results) > 1 else 0
@@ -371,41 +409,8 @@ def search_lien_he(user_text, limit=3):
             return keyword_results[:1]
 
         return keyword_results[:limit]
-    if bo_phan:
-        results = []
-        for row in search_rows:
-            row["_SCORE"] = 10000
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            results.append(row)
 
-        results.sort(
-            key=lambda r: (
-                r["_UU_TIEN"],
-                get_first(r, "TEN_CO_QUAN", "HỌ_TÊN", "HO_TEN")
-            )
-        )
-        return results[:limit]
-
-    fallback_results = []
-
-    for row in active_rows:
-        score = 0
-        score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 3)
-        score += phrase_score(user_text, get_first(row, "GHI_CHU", "GHI_CHÚ"), 1)
-        score += phrase_score(user_text, get_first(row, "BO_PHAN", "BỘ_PHẬN"), 1)
-        score += phrase_score(user_text, get_first(row, "TDP"), 1)
-
-        if score > 0:
-            row["_SCORE"] = score
-            row["_UU_TIEN"] = safe_int(
-                get_first(row, "UU_TIEN", "MUC_UU_TIEN", default=999)
-            )
-            fallback_results.append(row)
-
-    fallback_results.sort(key=lambda r: (-r["_SCORE"], r["_UU_TIEN"]))
-    return fallback_results[:limit]
+    return []
 
 # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
 # Vai trò: Tra cứu FAQ từ Google Sheets để BOT trả lời các câu hỏi phổ biến.
