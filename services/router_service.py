@@ -19,14 +19,23 @@ PAGE_SIZE = 5
 
 
 # Chức năng: Kiểm tra tin nhắn có phải lời chào, yêu cầu menu hoặc bắt đầu lại hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu là lời chào/menu; False nếu không phải.
 # Vai trò: Giúp BOT hiển thị menu chính khi người dân bắt đầu phiên chat.
 def is_greeting(text):
     return normalize_text(text) in [
-        "xin chao", "chao", "chao ban", "hello", "hi",
-        "alo", "menu", "danh muc", "bat dau", "0","ket noi nhan vien AI",
-        "Kết nối nhân viên AI",  "ket noi_nhan_vien_ai",
+        "xin chao",
+        "chao",
+        "chao ban",
+        "hello",
+        "hi",
+        "alo",
+        "menu",
+        "danh muc",
+        "bat dau",
+        "0",
+        "ket noi bot cap",
+        "#ket noi bot cap",
+        "ket_noi_bot_cap",
+        "#ket_noi_bot_cap",
     ]
 
 
