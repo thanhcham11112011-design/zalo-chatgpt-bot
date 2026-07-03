@@ -325,18 +325,25 @@ def search_lien_he(user_text, limit=3):
 
         for area in split_keywords(tu_khoa):
             area_norm = normalize_text(area)
-            if area_norm and area_norm in text_norm and any(ch.isdigit() for ch in area_norm):
-                exact_area_score += 30000
+            if area_norm and area_norm in text_norm:
+                if any(ch.isdigit() for ch in area_norm):
+                    exact_area_score += 30000
+                elif len(area_norm.split()) >= 2:
+                    exact_area_score += 25000
 
         score += exact_area_score
-        score += keyword_score(user_text, tu_khoa, 8)
-        score += phrase_score(user_text, tdp, 6)
-        score += phrase_score(user_text, ten, 4)
-        score += phrase_score(user_text, chuc_nang, 2)
+
+        if exact_area_score > 0:
+            score += keyword_score(user_text, tu_khoa, 8)
+            score += phrase_score(user_text, tdp, 6)
+        else:
+            score += keyword_score(user_text, tu_khoa, 4)
+
+        score += phrase_score(user_text, ten, 1)
+        score += phrase_score(user_text, chuc_nang, 1)
 
         if row_bo_phan:
-            score += phrase_score(user_text, row_bo_phan, 10)
-
+            score += phrase_score(user_text, row_bo_phan, 3)
         if score > 0:
             row["_SCORE"] = score
             row["_UU_TIEN"] = safe_int(
