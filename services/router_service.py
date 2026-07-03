@@ -98,9 +98,7 @@ def is_location_question(text):
     return any(k in t for k in keys)
 
 
-# Chức năng: Kiểm tra câu hỏi có ý định tra cứu thông tin liên hệ hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu có ý định liên hệ/số điện thoại/địa chỉ cơ quan; False nếu không phải.
+
 # Vai trò: Ưu tiên tra cứu TRA_CUU_LIEN_HE trước khi tìm thủ tục để tránh nhầm “số điện thoại” sang VNeID.
 # Chức năng: Nhận diện câu hỏi tra cứu liên hệ của người dân.
 # Vai trò: Xác định intent TRA_CUU_LIEN_HE trước khi chuyển sang xử lý thủ tục hoặc AI.
