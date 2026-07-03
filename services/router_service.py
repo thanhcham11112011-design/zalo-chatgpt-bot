@@ -25,8 +25,8 @@ PAGE_SIZE = 5
 def is_greeting(text):
     return normalize_text(text) in [
         "xin chao", "chao", "chao ban", "hello", "hi",
-        "alo", "menu", "danh muc", "bat dau", "0","ket noi nhan vien AI"
-        "Kết nối nhân viên AI",
+        "alo", "menu", "danh muc", "bat dau", "0","ket noi nhan vien AI",
+        "Kết nối nhân viên AI",  "ket noi_nhan_vien_ai",
     ]
 
 
