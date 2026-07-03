@@ -270,9 +270,13 @@ def search_lien_he(user_text, limit=3):
             score += 20000
 
         ten_raw_words = [w.strip() for w in ten_raw.split() if len(w.strip()) >= 3]
-        for w in ten_raw_words:
-            if w in raw_words:
-                score += 12000
+
+        # Nếu người dân đang hỏi CSKV theo địa bàn/TDP thì không chấm điểm tên cán bộ theo từng từ rời.
+        # Tránh lỗi "Hoàng Quốc Việt" khớp sai với tên cán bộ có chữ "Hoàng" hoặc "Việt".
+        if normalize_text(bo_phan) != "cskv":
+            for w in ten_raw_words:
+                if w in raw_words:
+                    score += 12000
 
         if score == 0:
             if ten_norm in text_norm:
