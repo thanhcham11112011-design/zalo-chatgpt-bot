@@ -65,16 +65,23 @@ def keyword_score(user_text, keywords, weight=1):
     if not user_norm:
         return 0
 
+    user_words = set(user_norm.split())
     score = 0
+
     for kw in split_keywords(keywords):
         kw_norm = normalize_text(kw)
         if not kw_norm:
             continue
 
+        kw_words = kw_norm.split()
+
         if kw_norm == user_norm:
             score += 100 * weight
+        elif len(kw_words) == 1:
+            if kw_norm in user_words:
+                score += max(len(kw_norm), 2) * weight
         elif kw_norm in user_norm:
-            score += max(len(kw_norm), 2) * weight
+            score += len(kw_norm) * weight
 
     return score
 
