@@ -1,4 +1,4 @@
-BOT CAP PHU LIEN - V2.1
+BOT CAP PHU LIEN - V3.0
 - Chuẩn hóa mẫu trả lời thủ tục: Đối tượng, Hồ sơ, Quy trình thực hiện, LINK DVC.
 - Chuẩn hóa lời nhắc hỏi tiếp.
 - Khi đang ở nhóm thủ tục mà hỏi chi tiết, BOT yêu cầu chọn thủ tục cụ thể, không tìm lệch sang nhóm khác.
