@@ -382,10 +382,8 @@ def answer_from_menu(row):
     return ("\n\n".join(parts) if parts else get_welcome_message()), []
 
 
-# Chức năng: Nhận diện chủ đề thủ tục rõ ràng từ nội dung người dân nhập.
-# Đầu vào: text - nội dung tin nhắn của người dân.
-# Đầu ra: Dict chứa sheet, topic, stage nếu nhận diện được; None nếu không khớp.
-# Vai trò: Ưu tiên Intent mới, giúp BOT chuyển đúng chủ đề và hủy context cũ khi cần.
+# Chức năng: Nhận diện nhóm thủ tục được nêu rõ trong câu hỏi.
+# Vai trò: Giúp BOT mở đúng danh sách thủ tục theo nhóm dữ liệu Google Sheets.
 def detect_explicit_topic(text):
     t = normalize_text(text)
 
@@ -401,7 +399,8 @@ def detect_explicit_topic(text):
             "vneid", "dinh danh", "muc 2", "kich hoat vneid"
         ],
         "THU_TUC_PTGT": [
-            "dang ky xe", "bien so", "sang ten xe", "phuong tien", "xe may", "o to"
+            "dang ky xe", "cap bien so", "doi bien so", "cap lai bien so",
+            "sang ten xe", "dang ky phuong tien", "dang ky xe may", "dang ky o to"
         ],
         "THU_TUC_PCCC": [
             "pccc", "phong chay", "chua chay", "nghiem thu pccc", "tham duyet pccc"
@@ -428,7 +427,6 @@ def detect_explicit_topic(text):
             }
 
     return None
-
 
 # Chức năng: Tạo tiền tố ngữ cảnh dựa trên sheet thủ tục đang lưu trong context.
 # Đầu vào: ctx - dict ngữ cảnh hiện tại của phiên chat.
