@@ -325,10 +325,15 @@ def search_lien_he(user_text, limit=3):
 
         ten_raw_words = [w.strip() for w in ten_raw.split() if len(w.strip()) >= 3]
         score = 0
+        matched_tokens = 0
 
         for w in ten_raw_words:
             if w in raw_words:
+                matched_tokens += 1
                 score += 12000
+
+        if matched_tokens < 2:
+            continue
 
         if score > 0:
             name_results.append(_add_meta(
