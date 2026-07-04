@@ -637,29 +637,33 @@ def _append_field(parts, icon, title, value, max_len=700):
         parts.append(f"{icon} {title}:\n{compact(value, max_len)}")
 
 def format_thu_tuc(row):
-    # Chức năng: Định dạng tóm tắt một thủ tục hành chính để trả lời người dân.
-    # Vai trò: Trả lời ngắn gọn khi người dân chọn thủ tục, các chi tiết khác sẽ hỏi tiếp theo ngữ cảnh.
+    # Chức năng: Định dạng thủ tục hành chính theo cấu trúc trả lời đã chốt.
+    # Vai trò: Trả lời 4 nội dung chính gồm đối tượng, điều kiện, quy trình và link DVC.
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
     doi_tuong = get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG")
-    ho_so = get_first(row, "HO_SO", "HỒ_SƠ")
+    dieu_kien = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
     trinh_tu = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
+    link_dvc = get_first(row, "LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG")
 
     parts = [f"📌 {ten}" if ten else "📌 Thông tin thủ tục"]
 
-    _append_field(parts, "👤", "Đối tượng", doi_tuong, 350)
-    _append_field(parts, "📄", "Hồ sơ", ho_so, 500)
-    _append_field(parts, "📝", "Trình tự thực hiện", _short_steps(trinh_tu, 500), 500)
+    _append_field(parts, "👤", "Đối tượng", doi_tuong, 500)
+    _append_field(parts, "✅", "Điều kiện", dieu_kien, 500)
+    _append_field(parts, "📝", "Quy trình thực hiện", _short_steps(trinh_tu, 800), 800)
+
+    if link_dvc:
+        parts.append(f"🔗 Link Dịch vụ công:\n{link_dvc}")
 
     parts.append(
-        "————————————\n"
+        "────────────────\n"
         "💬 Quý công dân có thể hỏi tiếp:\n"
+        "• Hồ sơ\n"
+        "• Nơi nộp hồ sơ\n"
+        "• Thời hạn giải quyết\n"
         "• Lệ phí\n"
-        "• Thời hạn\n"
-        "• Nơi nộp\n"
-        "• Điều kiện\n"
-        "• Kết quả\n"
+        "• Kết quả giải quyết\n"
         "• Cơ sở pháp lý\n"
-        "• Link dịch vụ công"
+        "• Lưu ý"
     )
 
     return "\n\n".join(parts)
