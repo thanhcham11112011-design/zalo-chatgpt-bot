@@ -1001,6 +1001,9 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU_GROUP"
             return reply, "MENU_GROUP", new_ctx, ""
 
+    # Đang ở ngữ cảnh danh sách thủ tục:
+    # - Nếu người dân hỏi tiếp về thủ tục => giữ ngữ cảnh.
+    # - Nếu người dân chuyển sang câu hỏi mới/không liên quan => thoát ngữ cảnh và quay về định tuyến từ đầu.
     if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         if is_next_page_question(text):
             next_ctx = dict(ctx)
@@ -1011,24 +1014,27 @@ def route_message(user_text, context=None):
                 new_ctx["last_route"] = "PROCEDURE_LIST_NEXT"
                 return reply, "PROCEDURE_LIST_NEXT", new_ctx, ""
 
-        procedure = _find_procedure_in_current_sheet(text, ctx)
-        if procedure:
-            new_ctx = {
-                "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
-                "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
-                "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                "stage": "procedure",
-                "page": ctx.get("page", 1),
-                "last_suggestions": [],
-                "last_route": "THU_TUC_IN_CONTEXT",
-            }
-            return format_thu_tuc(procedure), "THU_TUC_IN_CONTEXT", new_ctx, ""
+        if not is_followup_detail_question(text):
+            ctx = {}
+        else:
+            procedure = _find_procedure_in_current_sheet(text, ctx)
+            if procedure:
+                new_ctx = {
+                    "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
+                    "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
+                    "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
+                    "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                    "stage": "procedure",
+                    "page": ctx.get("page", 1),
+                    "last_suggestions": [],
+                    "last_route": "THU_TUC_IN_CONTEXT",
+                }
+                return format_thu_tuc(procedure), "THU_TUC_IN_CONTEXT", new_ctx, ""
 
-        reply, new_ctx = _need_select_procedure_message(ctx)
-        new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
-        return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
-
+            reply, new_ctx = _need_select_procedure_message(ctx)
+            new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
+            return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
+            
     # Không có ngữ cảnh + câu hỏi địa điểm quá mơ hồ.
     if (
         not ctx.get("procedure_id")
