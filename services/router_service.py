@@ -708,11 +708,6 @@ def is_contact_lookup_keyword(text):
     ]
     return t in keys
 
-
-# Chức năng: Kiểm tra câu hỏi gợi ý cần vào mục tra cứu liên hệ.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu là câu hỏi cần liên hệ cán bộ/bộ phận; False nếu không phải.
-# Vai trò: Hướng dẫn người dân vào đúng mục tra cứu liên hệ khi câu hỏi còn chung chung.
 def is_contact_hint_question(text):
     # Chức năng: Nhận diện câu hỏi cần hỏi tiếp để xác định CSKV.
     # Vai trò: Chỉ kích hoạt khi người dân hỏi chung chung về CSKV, không áp dụng cho chỉ huy hoặc lãnh đạo.
@@ -764,7 +759,7 @@ def route_message(user_text, context=None):
             return (
                 "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
                 "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở.\n\n"
-                "Ví dụ: Tổ 4, Nam Hải; TDP 4; Quy Tức 1; Gò Công 1.\n\n"
+                "Ví dụ: Tổ Ngọc Sơn, Tổ Đồng Tử; Tổ Quy Tức; Tổ Khúc Trì...\n\n"
                 "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
                 "CSKV_ASK_NAME",
                 {
@@ -1190,7 +1185,21 @@ def route_message(user_text, context=None):
             return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
-    return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
+
+    return (
+        "Tôi chưa hiểu ý định Quý công dân đang hỏi về vấn đề gì.\n\n"
+        "Quý công dân vui lòng nhắn tin câu từ có đầy đủ chủ đề cụ thể !.\n\n"
+        "Ví dụ:\n"
+        "• Hồ sơ cấp lại thẻ căn cước\n"
+        "• Lệ phí đăng ký tạm trú\n"
+        "• Thời hạn đăng ký xe\n"
+        "• Đăng ký thường trú\n"
+        "• Cấp đổi giấy phép sử dụng công cụ hỗ trợ\n\n"
+        "Hoặc nhập 'menu' để xem danh mục hỗ trợ.",
+        "DEFAULT",
+        ctx,
+        "",
+    )
 
 
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
