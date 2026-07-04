@@ -797,14 +797,13 @@ def route_message(user_text, context=None):
                 "",
             )
 
-    # Nếu đang ở bước hỏi tiếp CSKV thì tra cứu theo họ tên/TDP.
     if ctx.get("stage") == "cskv_lookup":
         explicit = detect_explicit_topic(text)
         if explicit:
             grouped = _make_procedure_list_reply(
                 explicit.get("sheet", ""),
                 topic=explicit.get("topic", ""),
-                page=1
+                page=1,
             )
             if grouped:
                 reply, new_ctx = grouped
@@ -820,11 +819,22 @@ def route_message(user_text, context=None):
                     "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ hoặc địa bàn phụ trách để BOT tra cứu chính xác."
                 )
 
+            new_ctx = {
+                "stage": "cskv_lookup",
+                "sheet": "TRA_CUU_LIEN_HE",
+                "topic": "Tra cứu CSKV",
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "TRA_CUU_LIEN_HE_CSKV",
+            }
+
             return (
                 reply + "\n\nQuý công dân có thể nhập tiếp tên cán bộ hoặc tổ dân phố khác để tra cứu CSKV.",
                 "TRA_CUU_LIEN_HE_CSKV",
-                {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
-                ""
+                new_ctx,
+                "",
             )
 
         return (
@@ -836,11 +846,19 @@ def route_message(user_text, context=None):
             "• menu để quay lại danh mục chính\n"
             "• cảm ơn để kết thúc",
             "CSKV_NOT_FOUND",
-            {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
-            ""
+            {
+                "stage": "cskv_lookup",
+                "sheet": "TRA_CUU_LIEN_HE",
+                "topic": "Tra cứu CSKV",
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "CSKV_NOT_FOUND",
+            },
+            "",
         )
 
-    # Câu hỏi rõ tên cơ quan: bỏ ngữ cảnh thủ tục cũ.
     if is_specific_contact_question(text):
         lien_he = search_lien_he(text, limit=3)
         if lien_he:
@@ -854,45 +872,45 @@ def route_message(user_text, context=None):
 
             return reply, "TRA_CUU_LIEN_HE_EXPLICIT", {}, ""
 
-    # Chọn số trong danh sách thủ tục đang hiển thị.
     selected = _select_from_suggestions(text, ctx)
     if selected:
         new_ctx = {
             "sheet": selected.get("_SHEET", ctx.get("sheet", "")),
             "topic": get_first(selected, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-            "procedure_id": get_first(selected, "ID"),
+            "procedure_id": get_first(selected, "ID", "MA", "MÃ"),
             "procedure_name": get_first(selected, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
             "stage": "procedure",
             "page": ctx.get("page", 1),
             "last_suggestions": [],
+            "last_route": "THU_TUC_SELECT",
         }
         return format_thu_tuc(selected), "THU_TUC_SELECT", new_ctx, ""
-    # Khi đang ở nhóm thủ tục, số thứ tự phải ưu tiên danh sách đang hiển thị.
+
     if text_norm.isdigit() and ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         reply, new_ctx = _need_select_procedure_message(ctx)
+        new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
         return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
 
-    # Chọn menu chính bằng số.
     if text_norm.isdigit():
         menu = search_menu(text)
         if menu:
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
+            new_ctx["page"] = 1
+            new_ctx["last_route"] = "MENU"
+
             if new_ctx.get("sheet", "").startswith("THU_TUC_"):
                 new_ctx["stage"] = "procedure_list"
-            new_ctx["page"] = 1
+
             return reply, "MENU", new_ctx, ""
 
-    # Có thủ tục hiện tại: ưu tiên hỏi tiếp theo ngữ cảnh.
     if ctx.get("procedure_id") and is_followup_detail_question(text):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
         if procedure:
+            ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    # Nếu người dân nhập chủ đề mới rõ ràng thì thoát context cũ.
-    # Nếu chỉ nhập tên nhóm như “căn cước”, “cư trú”, “đăng ký xe” thì vẫn trả danh sách 5 thủ tục.
-    # Nếu nhập đúng/gần đúng tên thủ tục trong nhóm thì ưu tiên trả nội dung thủ tục.
     explicit = detect_explicit_topic(text)
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
@@ -902,40 +920,39 @@ def route_message(user_text, context=None):
             grouped = _make_procedure_list_reply(
                 explicit_sheet,
                 topic=explicit_topic,
-                page=1
+                page=1,
             )
             if grouped:
                 reply, new_ctx = grouped
+                new_ctx["last_route"] = "MENU_GROUP"
                 return reply, "MENU_GROUP", new_ctx, ""
 
-        procedure_results = search_thu_tuc(
-            text,
-            limit=5,
-            sheet=explicit_sheet
-        )
+        procedure_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
 
         if procedure_results:
             best = procedure_results[0]
-            best_score = best.get("_SCORE", 0)
-            second_score = procedure_results[1].get("_SCORE", 0) if len(procedure_results) > 1 else 0
+            best_score = safe_int(best.get("_SCORE", 0))
+            second_score = safe_int(procedure_results[1].get("_SCORE", 0)) if len(procedure_results) > 1 else 0
 
             if best_score >= 20 and best_score >= second_score + 8:
                 new_ctx = {
                     "sheet": best.get("_SHEET", explicit_sheet),
                     "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
-                    "procedure_id": get_first(best, "ID"),
+                    "procedure_id": get_first(best, "ID", "MA", "MÃ"),
                     "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                     "stage": "procedure",
                     "page": 1,
                     "last_suggestions": [],
+                    "last_route": "THU_TUC_EXPLICIT",
                 }
                 return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
 
             suggestions = []
             lines = []
+
             for i, row in enumerate(procedure_results[:5], start=1):
                 name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-                pid = get_first(row, "ID")
+                pid = get_first(row, "ID", "MA", "MÃ")
                 suggestions.append({"index": i, "id": pid, "name": name})
                 if name:
                     lines.append(f"{i}. {name}")
@@ -948,6 +965,7 @@ def route_message(user_text, context=None):
                 "procedure_name": "",
                 "page": 1,
                 "last_suggestions": suggestions,
+                "last_route": "CLARIFY_THU_TUC_IN_GROUP",
             }
 
             return (
@@ -956,19 +974,19 @@ def route_message(user_text, context=None):
                 + "\n".join(lines),
                 "CLARIFY_THU_TUC_IN_GROUP",
                 new_ctx,
-                ""
+                "",
             )
 
         grouped = _make_procedure_list_reply(
             explicit_sheet,
             topic=explicit_topic,
-            page=1
+            page=1,
         )
         if grouped:
             reply, new_ctx = grouped
+            new_ctx["last_route"] = "MENU_GROUP"
             return reply, "MENU_GROUP", new_ctx, ""
 
-    # Đang ở nhóm thủ tục: xử lý xem tiếp hoặc tìm thủ tục trong đúng sheet hiện tại.
     if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         if is_next_page_question(text):
             next_ctx = dict(ctx)
@@ -976,6 +994,7 @@ def route_message(user_text, context=None):
             grouped = _procedure_list_reply_for_context(next_ctx)
             if grouped:
                 reply, new_ctx = grouped
+                new_ctx["last_route"] = "PROCEDURE_LIST_NEXT"
                 return reply, "PROCEDURE_LIST_NEXT", new_ctx, ""
 
         procedure = _find_procedure_in_current_sheet(text, ctx)
@@ -983,15 +1002,17 @@ def route_message(user_text, context=None):
             new_ctx = {
                 "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
                 "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                "procedure_id": get_first(procedure, "ID"),
+                "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
                 "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                 "stage": "procedure",
                 "page": ctx.get("page", 1),
                 "last_suggestions": [],
+                "last_route": "THU_TUC_IN_CONTEXT",
             }
             return format_thu_tuc(procedure), "THU_TUC_IN_CONTEXT", new_ctx, ""
 
         reply, new_ctx = _need_select_procedure_message(ctx)
+        new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
         return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
 
     # Không có ngữ cảnh + câu hỏi địa điểm quá mơ hồ.
@@ -1005,7 +1026,7 @@ def route_message(user_text, context=None):
 
         if lien_he and text_norm not in [
             "o dau", "lam o dau", "den dau", "den dau lam",
-            "di dau lam", "toi dau lam", "vi tri", "map", "google map"
+            "di dau lam", "toi dau lam", "vi tri", "map", "google map",
         ]:
             return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", {}, ""
 
@@ -1018,13 +1039,13 @@ def route_message(user_text, context=None):
             "Hoặc nhập 'menu' để xem danh mục hỗ trợ.",
             "ASK_TOPIC",
             {},
-            ""
+            "",
         )
 
     menu_keys = [
         "can cuoc", "cu tru", "vneid", "phuong tien giao thong",
         "dang ky xe", "ly lich tu phap", "pccc", "vkvln",
-        "lien he", "tra cuu lien he"
+        "lien he", "tra cuu lien he",
     ]
 
     if text_norm in menu_keys:
@@ -1033,14 +1054,16 @@ def route_message(user_text, context=None):
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
+            new_ctx["page"] = 1
+            new_ctx["last_route"] = "MENU"
+
             if new_ctx.get("sheet", "").startswith("THU_TUC_"):
                 new_ctx["stage"] = "procedure_list"
-            new_ctx["page"] = 1
+
             return reply, "MENU", new_ctx, ""
 
     search_text = text
 
-    # Ưu tiên tra cứu liên hệ trước khi tìm thủ tục toàn cục.
     if is_contact_question(text) or is_location_question(text) or text_norm in [
         "lien he",
         "so dien thoai",
@@ -1056,42 +1079,45 @@ def route_message(user_text, context=None):
 
     if thu_tuc_results:
         best = thu_tuc_results[0]
-        best_score = best.get("_SCORE", 0)
-        second_score = thu_tuc_results[1].get("_SCORE", 0) if len(thu_tuc_results) > 1 else 0
+        best_score = safe_int(best.get("_SCORE", 0))
+        second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
 
         if best_score >= 20 and best_score >= second_score + 8:
             new_ctx = {
                 "sheet": best.get("_SHEET", ""),
                 "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
-                "procedure_id": get_first(best, "ID"),
+                "procedure_id": get_first(best, "ID", "MA", "MÃ"),
                 "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                 "stage": "procedure",
                 "page": 1,
                 "last_suggestions": [],
+                "last_route": "THU_TUC",
             }
             return format_thu_tuc(best), "THU_TUC", new_ctx, ""
 
         suggestions = []
         lines = []
+
         for i, row in enumerate(thu_tuc_results[:5], start=1):
             name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-            pid = get_first(row, "ID")
+            pid = get_first(row, "ID", "MA", "MÃ")
             suggestions.append({"index": i, "id": pid, "name": name})
             if name:
                 lines.append(f"{i}. {name}")
 
         ctx["last_suggestions"] = suggestions
         ctx["stage"] = "clarify_global"
+        ctx["last_route"] = "CLARIFY_THU_TUC"
+
         return (
             "Tôi tìm thấy một số thủ tục gần giống nhau. "
             "Quý công dân vui lòng chọn số tương ứng:\n\n"
             + "\n".join(lines),
             "CLARIFY_THU_TUC",
             ctx,
-            ""
+            "",
         )
 
-    # Chỉ tìm FAQ khi câu hỏi có vẻ thuộc phạm vi hỗ trợ.
     if (
         ctx.get("procedure_id")
         or is_location_question(text)
@@ -1107,22 +1133,69 @@ def route_message(user_text, context=None):
     ):
         faq = search_faq(search_text, limit=3)
         if faq:
+            ctx["last_route"] = "FAQ"
             return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
+    ctx["last_route"] = "DEFAULT"
     return DEFAULT_REPLY, "DEFAULT", ctx, build_ai_context(ctx)
 
 
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
-# Đầu vào: user_text - nội dung người dân gửi; context - ngữ cảnh hội thoại hiện tại.
-# Đầu ra: Dict gồm reply, source, use_ai, context, ai_context.
-# Vai trò: Là lớp trung gian để BOT quyết định trả lời từ Sheet hay chuyển sang AI.
+# Vai trò: Là lớp trung gian để BOT quyết định trả lời từ Google Sheets hay chuyển sang AI.
 def route_message_for_ai(user_text, context=None):
-    reply, source, new_context, ai_context = route_message(user_text, context=context)
-
-    return {
-        "reply": reply,
-        "source": source,
-        "use_ai": source in ["DEFAULT", "EMPTY"],
-        "context": new_context,
-        "ai_context": ai_context,
+    result = {
+        "reply": DEFAULT_REPLY,
+        "source": "DEFAULT",
+        "use_ai": True,
+        "context": dict(context or {}),
+        "ai_context": "",
     }
+
+    try:
+        reply, source, new_context, ai_context = route_message(
+            user_text=user_text,
+            context=context,
+        )
+
+        result["reply"] = reply
+        result["source"] = source
+        result["context"] = new_context
+        result["ai_context"] = ai_context
+
+        # Các nguồn đã có dữ liệu trong Google Sheets thì không gọi AI.
+        sheet_sources = {
+            "WELCOME",
+            "RESET",
+            "MENU",
+            "MENU_GROUP",
+            "THU_TUC",
+            "THU_TUC_SELECT",
+            "THU_TUC_EXPLICIT",
+            "THU_TUC_IN_CONTEXT",
+            "PROCEDURE_CONTEXT",
+            "PROCEDURE_LIST_NEXT",
+            "NEED_PROCEDURE_SELECT",
+            "CLARIFY_THU_TUC",
+            "CLARIFY_THU_TUC_IN_GROUP",
+            "FAQ",
+            "TRA_CUU_LIEN_HE",
+            "TRA_CUU_LIEN_HE_CSKV",
+            "TRA_CUU_LIEN_HE_EXPLICIT",
+            "CONTACT_HINT",
+            "CSKV_ASK_NAME",
+            "CSKV_NOT_FOUND",
+            "ASK_TOPIC",
+        }
+
+        result["use_ai"] = source not in sheet_sources
+
+    except Exception as e:
+        print(f"[ROUTER ERROR] {e}")
+
+        result["reply"] = DEFAULT_REPLY
+        result["source"] = "ROUTER_ERROR"
+        result["use_ai"] = True
+        result["context"] = dict(context or {})
+        result["ai_context"] = ""
+
+    return result
