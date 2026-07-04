@@ -1166,23 +1166,10 @@ def route_message(user_text, context=None):
             "",
         )
 
-    if (
-        ctx.get("procedure_id")
-        or is_location_question(text)
-        or is_contact_question(text)
-        or text_norm in [
-            "lien he",
-            "so dien thoai",
-            "truc ban",
-            "google map",
-            "ban do",
-            "menu",
-        ]
-    ):
-        faq = search_faq(search_text, limit=3)
-        if faq:
-            ctx["last_route"] = "FAQ"
-            return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+    faq = search_faq(search_text, limit=3)
+    if faq:
+        ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
 
