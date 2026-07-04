@@ -284,8 +284,6 @@ def menu_context(row):
 
 
 # Chức năng: Tạo danh sách thủ tục theo từng sheet THU_TUC_* có phân trang.
-# Đầu vào: sheet - tên sheet thủ tục; topic - tên chủ đề; page - số trang.
-# Đầu ra: Tuple(reply, new_ctx) hoặc None nếu không có dữ liệu.
 # Vai trò: Hiển thị danh sách thủ tục để người dân chọn số thứ tự.
 def _make_procedure_list_reply(sheet, topic="", page=1):
     if not sheet or not sheet.startswith("THU_TUC_"):
@@ -323,10 +321,11 @@ def _make_procedure_list_reply(sheet, topic="", page=1):
     has_next = end < total
 
     reply_parts = [
-        f"📌 {title}",
-        "Quý công dân vui lòng chọn thủ tục:",
+        "Tôi chưa xác định được chính xác Quý công dân đang hỏi về thủ tục nào.",
+        f"Quý công dân vui lòng hỏi rõ hơn trong nhóm thủ tục: {title}.",
+        "📌 Danh sách thủ tục hiện có:",
         "\n".join(lines),
-        "Nhắn số thứ tự để chọn thủ tục hoặc nhập từ khóa gần đúng của thủ tục cần hỏi.",
+        "➡️ Quý công dân vui lòng:\n• Nhắn số thứ tự của thủ tục cần tra cứu; hoặc\n• Nhập rõ tên thủ tục trong nhóm trên để BOT hỗ trợ chính xác.",
     ]
 
     if has_next:
