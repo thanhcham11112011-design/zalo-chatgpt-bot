@@ -699,15 +699,21 @@ def is_contact_lookup_keyword(text):
 # Đầu ra: True nếu là câu hỏi cần liên hệ cán bộ/bộ phận; False nếu không phải.
 # Vai trò: Hướng dẫn người dân vào đúng mục tra cứu liên hệ khi câu hỏi còn chung chung.
 def is_contact_hint_question(text):
+    # Chức năng: Nhận diện câu hỏi cần hỏi tiếp để xác định CSKV.
+    # Vai trò: Chỉ kích hoạt khi người dân hỏi chung chung về CSKV, không áp dụng cho chỉ huy hoặc lãnh đạo.
     t = normalize_text(text)
-    keys = [
-        "gap cskv", "can gap cskv", "so dien thoai cskv",
-        "gap chi huy", "gap chi huy phuong", "chi huy",
-        "lanh dao", "gap lanh dao", "so dien thoai chi huy",
-        "gap can bo", "gap to", "lien he can bo"
-    ]
-    return any(k in t for k in keys)
 
+    keys = [
+        "gap cskv",
+        "can gap cskv",
+        "so dien thoai cskv",
+        "lien he cskv",
+        "tim cskv",
+        "muon gap cskv",
+        "can tim cskv",
+    ]
+
+    return any(k in t for k in keys)
 
 # Chức năng: Tạo thông báo hướng dẫn vào mục tra cứu liên hệ.
 # Đầu vào: Không có.
