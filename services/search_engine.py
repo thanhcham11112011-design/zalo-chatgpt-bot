@@ -374,14 +374,16 @@ def search_lien_he(user_text, limit=3):
         chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
         row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
-        score = 0
-        score += keyword_score(user_text, tu_khoa, 4)
-        score += phrase_score(user_text, tdp, 2)
-        score += phrase_score(user_text, ten, 1)
-        score += phrase_score(user_text, chuc_nang, 1)
+        keyword_match = keyword_score(user_text, tu_khoa, 4)
+        area_match = phrase_score(user_text, tdp, 2)
+        name_match = phrase_score(user_text, ten, 1)
+        function_match = phrase_score(user_text, chuc_nang, 1)
+        department_match = phrase_score(user_text, row_bo_phan, 3) if row_bo_phan else 0
 
-        if row_bo_phan:
-            score += phrase_score(user_text, row_bo_phan, 3)
+        score = keyword_match + area_match + name_match + function_match + department_match
+
+        if keyword_match <= 0 and area_match < 20 and name_match < 20:
+            continue
 
         if bo_phan and score > 0:
             score += 500
