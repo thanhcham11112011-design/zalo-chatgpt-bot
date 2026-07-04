@@ -721,12 +721,9 @@ def get_contact_hint_message():
         "Sau đó nhập đúng từ khóa chuẩn theo danh sách hướng dẫn."
     )
 
-
-# Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
-# Đầu vào: user_text - nội dung người dân gửi; context - ngữ cảnh phiên chat hiện tại.
-# Đầu ra: Tuple(reply, source, new_context, ai_context).
-# Vai trò: Bộ máy trung tâm xử lý MENU, TRA_CUU_LIEN_HE, THU_TUC_*, FAQ và AI fallback.
 def route_message(user_text, context=None):
+    # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
+    # Vai trò: Bộ máy trung tâm xử lý MENU, TRA_CUU_LIEN_HE, THU_TUC_*, FAQ và AI fallback.
     ctx = dict(context or {})
     text = str(user_text or "").strip()
     text_norm = normalize_text(text)
@@ -740,8 +737,6 @@ def route_message(user_text, context=None):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
 
-    # Nếu người dân nhập đúng từ khóa chuẩn tra cứu liên hệ thì xử lý trước.
-    # Riêng CSKV phải hỏi tiếp địa bàn/họ tên, không trả ngay danh sách cán bộ.
     if is_contact_lookup_keyword(text):
         if normalize_text(text) == "lien he bo phan cskv":
             return (
@@ -750,15 +745,28 @@ def route_message(user_text, context=None):
                 "Ví dụ: Tổ 4, Nam Hải; TDP 4; Quy Tức 1; Gò Công 1.\n\n"
                 "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
                 "CSKV_ASK_NAME",
-                {"stage": "cskv_lookup", "sheet": "TRA_CUU_LIEN_HE"},
-                ""
+                {
+                    "stage": "cskv_lookup",
+                    "sheet": "TRA_CUU_LIEN_HE",
+                    "topic": "Tra cứu CSKV",
+                    "procedure_id": "",
+                    "procedure_name": "",
+                    "page": 1,
+                    "last_suggestions": [],
+                    "last_route": "CSKV_ASK_NAME",
+                },
+                "",
             )
 
         lien_he = search_lien_he(text, limit=20)
         if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=20), "TRA_CUU_LIEN_HE", ctx, ""
+            return (
+                format_multiple_results(lien_he, format_lien_he, limit=20),
+                "TRA_CUU_LIEN_HE",
+                {},
+                "",
+            )
 
-    # Ưu tiên liên hệ rõ ràng trước thủ tục và trước context cũ.
     if is_contact_question(text):
         lien_he = search_lien_he(text, limit=5)
         if lien_he:
@@ -766,14 +774,28 @@ def route_message(user_text, context=None):
 
             if len(lien_he) > 1:
                 reply += (
-                    "\n\nℹ️ Có nhiều cán bộ phù hợp với thông tin vừa nhập. "
+                    "\n\nℹ️ Có nhiều kết quả phù hợp với thông tin vừa nhập. "
                     "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
                 )
 
             return reply, "TRA_CUU_LIEN_HE", {}, ""
 
         if is_contact_hint_question(text):
-            return get_contact_hint_message(), "CONTACT_HINT", {"stage": "contact_lookup", "sheet": "TRA_CUU_LIEN_HE"}, ""
+            return (
+                get_contact_hint_message(),
+                "CONTACT_HINT",
+                {
+                    "stage": "contact_lookup",
+                    "sheet": "TRA_CUU_LIEN_HE",
+                    "topic": "Tra cứu liên hệ",
+                    "procedure_id": "",
+                    "procedure_name": "",
+                    "page": 1,
+                    "last_suggestions": [],
+                    "last_route": "CONTACT_HINT",
+                },
+                "",
+            )
 
     # Nếu đang ở bước hỏi tiếp CSKV thì tra cứu theo họ tên/TDP.
     if ctx.get("stage") == "cskv_lookup":
