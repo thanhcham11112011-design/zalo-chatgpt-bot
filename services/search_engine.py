@@ -654,14 +654,14 @@ def format_thu_tuc(row):
 
     parts.append("────────────────")
 
-    parts.append("📍 Thủ tục này được thực hiện trên Cổng Dịch vụ công Bộ Công an.")
+    parts.append("📍 Công dân có thể tìm hiểu về thủ tục này và nộp hồ sơ trực tuyến trên Cổng Dịch vụ công Bộ Công an.")
 
     if link_dvc:
         parts.append(f"🔗 Dịch vụ công:\n{link_dvc}")
 
     parts.append(
         "────────────────\n"
-        "💬 Quý công dân có thể tìm hiểu các nội dung liên quan đến thủ tục này bằng cách nhập một trong các từ khóa sau:\n\n"
+        "💬 Quý công dân có thể trực tiếp hỏi BOT các nội dung liên quan đến thủ tục này bằng cách nhập một trong các từ khóa sau:\n\n"
         "1️⃣ Hồ sơ cần chuẩn bị\n"
         "2️⃣ Nơi nộp hồ sơ\n"
         "3️⃣ Thời hạn giải quyết\n"
