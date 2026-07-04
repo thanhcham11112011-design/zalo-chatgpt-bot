@@ -442,18 +442,21 @@ def search_faq(user_text, limit=3):
     for row in read_faq():
         keywords = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         question = get_first(row, "CAU_HOI", "CÂU_HỎI")
+        ways = get_first(row, "CAC_CACH_HOI", "CÁC_CÁCH_HỎI")
         answer = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
 
         score = 0
         keyword_match = keyword_score(user_text, keywords, 6)
         question_match = phrase_score(user_text, question, 5)
+        ways_match = keyword_score(user_text, ways, 5)
         answer_match = phrase_score(user_text, answer, 1)
 
         score += keyword_match
         score += question_match
+        score += ways_match
         score += answer_match
 
-        if keyword_match <= 0 and question_match < 20:
+        if keyword_match <= 0 and question_match < 20 and ways_match <= 0:
             continue
 
         if score > 0:
@@ -468,7 +471,6 @@ def search_faq(user_text, limit=3):
 
     _sort_results(results)
     return results[:limit]
-
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
     # Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
