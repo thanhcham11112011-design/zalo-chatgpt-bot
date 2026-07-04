@@ -971,7 +971,7 @@ def route_message(user_text, context=None):
             best_score = safe_int(best.get("_SCORE", 0))
             second_score = safe_int(procedure_results[1].get("_SCORE", 0)) if len(procedure_results) > 1 else 0
 
-            if best_score >= 20 and best_score >= second_score + 8:
+            if best_score >= 35 and best_score >= second_score + 15:
                 new_ctx = {
                     "sheet": best.get("_SHEET", explicit_sheet),
                     "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
@@ -983,7 +983,6 @@ def route_message(user_text, context=None):
                     "last_route": "THU_TUC_EXPLICIT",
                 }
                 return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
-
             suggestions = []
             lines = []
 
