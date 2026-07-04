@@ -40,7 +40,7 @@ def detect_bo_phan_contact(user_text):
             "so truc ban", "dien thoai truc ban", "sdt truc ban", "truc ban", "hotline",
             "duong day nong", "tiep nhan tin bao", "to giac toi pham", "phan anh antt", "bao tin",
         ]),
-        ("CHI_HUY", ["chi huy", "lanh dao", "ban chi huy", "truong cap", "pho truong cap"]),
+        ("CHI_HUY", ["chi huy", "lanh dao", "ban chi huy", "truong cap", trưởng công an phường "pho truong cap"]),
         ("PCTP", ["pctp", "phong chong toi pham", "chong toi pham", "toi pham", "hinh su"]),
         ("CSKV", ["cskv", "canh sat khu vuc", "can bo khu vuc", "phu trach dia ban"]),
         ("AN_NINH", ["an ninh", "to an ninh", "can bo an ninh"]),
