@@ -454,7 +454,7 @@ def search_faq(user_text, limit=3):
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
     # Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
-    # Vai trò: Tra cứu nội dung nghiệp vụ thủ tục từ Google Sheets, hạn chế bắt nhầm câu ngoài luồng.
+    # Vai trò: Chỉ trả thủ tục khi câu hỏi có đối tượng nghiệp vụ khớp dữ liệu Google Sheets.
     results = []
     user_norm = normalize_text(user_text)
 
@@ -469,7 +469,7 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
         "dang ky xe", "bien so", "pccc", "vu khi", "vat lieu no", "ly lich tu phap",
     ]
 
-    has_intent = _has_question_intent(user_text, intent_words)
+    intent_norms = set(normalize_text(w) for w in intent_words)
 
     for row in read_all_thu_tuc():
         row_sheet = row.get("_SHEET", "")
@@ -485,7 +485,14 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
         tra_loi_ngan = get_first(row, "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN")
         noi_nop = get_first(row, "NOI_NOP", "NƠI_NỘP", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
 
+        object_keywords = []
+        for kw in split_keywords(keywords):
+            kw_norm = normalize_text(kw)
+            if kw_norm and kw_norm not in intent_norms:
+                object_keywords.append(kw)
+
         keyword_match = keyword_score(user_text, keywords, 9)
+        object_keyword_match = keyword_score(user_text, ", ".join(object_keywords), 9)
         title_match = phrase_score(user_text, ten, 7)
         topic_match = phrase_score(user_text, chu_de, 3)
         desc_match = phrase_score(user_text, mo_ta, 2)
@@ -504,34 +511,28 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
         )
 
         has_procedure_object = (
-            title_match >= 30
+            object_keyword_match > 0
+            or title_match >= 30
             or topic_match >= 20
-            or desc_match >= 20
-            or suggest_match >= 20
         )
-        
-        if keyword_match > 0 and not has_procedure_object:
-            continue
-        
-        if keyword_match <= 0 and title_match < 30:
-            continue
-        
-        if keyword_match <= 0 and title_match < 20 and score < 60:
+
+        if not has_procedure_object:
             continue
 
-        if score > 0:
-            results.append(_add_meta(
-                row=row,
-                route="THU_TUC",
-                score=score,
-                sheet=row_sheet,
-                row_id=get_first(row, "ID", "MA", "MÃ"),
-                note="PROCEDURE_MATCH",
-            ))
+        if score < 35:
+            continue
+
+        results.append(_add_meta(
+            row=row,
+            route="THU_TUC",
+            score=score,
+            sheet=row_sheet,
+            row_id=get_first(row, "ID", "MA", "MÃ"),
+            note="PROCEDURE_MATCH",
+        ))
 
     _sort_results(results)
     return results[:limit]
-
 
 def list_procedures_by_sheet(sheet, limit=10):
     # Chức năng: Liệt kê các thủ tục trong một sheet THU_TUC_*.
