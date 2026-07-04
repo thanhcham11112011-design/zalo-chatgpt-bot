@@ -503,10 +503,9 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             + place_match
         )
 
-        if keyword_match <= 0 and title_match < 30:
-            continue
+        strong_match = keyword_match > 0 or title_match >= 80
         
-        if keyword_match <= 0 and title_match < 20 and score < 60:
+        if not strong_match:
             continue
 
         if score > 0:
