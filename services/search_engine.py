@@ -387,9 +387,15 @@ def search_lien_he(user_text, limit=3):
             row_id=get_first(row, "ID", "MA", "MÃ"),
             note="KEYWORD_MATCH",
         ))
-
     if keyword_results:
         _sort_results(keyword_results)
+
+        keyword_results.sort(
+            key=lambda r: (
+                safe_int(get_first(r, "UU_TIEN", "ƯU_TIÊN"), default=999),
+                -safe_int(r.get("_SCORE", 0)),
+            )
+        )
 
         best_score = keyword_results[0].get("_SCORE", 0)
         second_score = keyword_results[1].get("_SCORE", 0) if len(keyword_results) > 1 else 0
