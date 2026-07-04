@@ -384,8 +384,11 @@ def answer_from_menu(row):
 
 # Chức năng: Nhận diện nhóm thủ tục được nêu rõ trong câu hỏi.
 # Vai trò: Giúp BOT mở đúng danh sách thủ tục theo nhóm dữ liệu Google Sheets.
+# Chức năng: Nhận diện nhóm thủ tục khi người dân có ý định tra cứu thủ tục hành chính.
+# Vai trò: Ngăn BOT mở sai menu khi câu hỏi chỉ có từ khóa nhưng không phải hỏi thủ tục.
 def detect_explicit_topic(text):
     t = normalize_text(text)
+    t_check = f" {t} "
 
     topic_map = {
         "THU_TUC_CCCD": [
@@ -417,8 +420,24 @@ def detect_explicit_topic(text):
         ],
     }
 
+    procedure_intent_keys = [
+        "thu tuc", "lam", "cap", "cap lai", "cap doi", "doi",
+        "dang ky", "xin", "nop", "ho so", "giay to", "can gi",
+        "o dau", "tai dau", "le phi", "thoi han", "ket qua",
+        "truc tuyen", "online", "dich vu cong", "huong dan"
+    ]
+
+    menu_only_keys = []
+    for keys in topic_map.values():
+        menu_only_keys.extend(keys)
+
+    has_procedure_intent = any(f" {k} " in t_check for k in procedure_intent_keys)
+    is_exact_menu_key = any(t == normalize_text(k) for k in menu_only_keys)
+
+    if not has_procedure_intent and not is_exact_menu_key:
+        return None
+
     for sheet, keys in topic_map.items():
-        t_check = f" {t} "
         if any(f" {normalize_text(k)} " in t_check for k in keys):
             return {
                 "sheet": sheet,
@@ -427,7 +446,6 @@ def detect_explicit_topic(text):
             }
 
     return None
-
 # Chức năng: Tạo tiền tố ngữ cảnh dựa trên sheet thủ tục đang lưu trong context.
 # Đầu vào: ctx - dict ngữ cảnh hiện tại của phiên chat.
 # Đầu ra: Chuỗi tiền tố chủ đề hoặc chuỗi rỗng nếu không có sheet phù hợp.
