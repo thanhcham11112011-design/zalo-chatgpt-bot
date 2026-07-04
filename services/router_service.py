@@ -938,10 +938,15 @@ def route_message(user_text, context=None):
             return reply, "MENU", new_ctx, ""
 
     if ctx.get("procedure_id") and is_followup_detail_question(text):
-        procedure = find_procedure_by_id(ctx.get("procedure_id"))
-        if procedure:
-            ctx["last_route"] = "PROCEDURE_CONTEXT"
-            return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
+        explicit = detect_explicit_topic(text)
+
+        if explicit and explicit.get("sheet") != ctx.get("sheet"):
+            ctx = {}
+        else:
+            procedure = find_procedure_by_id(ctx.get("procedure_id"))
+            if procedure:
+                ctx["last_route"] = "PROCEDURE_CONTEXT"
+                return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     explicit = detect_explicit_topic(text)
     if explicit:
