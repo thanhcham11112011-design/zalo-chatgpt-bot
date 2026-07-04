@@ -981,7 +981,11 @@ def route_message(user_text, context=None):
                     "last_suggestions": [],
                     "last_route": "THU_TUC_EXPLICIT",
                 }
-                return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
+            if is_followup_detail_question(text):
+                return answer_procedure_detail(best, text), "THU_TUC_EXPLICIT", new_ctx, ""
+            
+            return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
+            
             suggestions = []
             lines = []
 
