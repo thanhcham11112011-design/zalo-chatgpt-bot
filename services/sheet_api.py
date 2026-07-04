@@ -282,10 +282,14 @@ def read_prompt() -> Dict[str, str]:
 # =========================
 
 def _key_value_sheet(sheet_name: str) -> Dict[str, str]:
+    # Chức năng: Đọc sheet dạng KEY/VALUE thành dict cấu hình.
+    # Vai trò: Cung cấp cấu hình hệ thống, AI, chat, prompt và thông tin đơn vị cho BOT.
     data: Dict[str, str] = {}
+
     for row in read_sheet(sheet_name):
         if not _is_active(row):
             continue
+
         key = (
             row.get("KEY")
             or row.get("MA")
@@ -294,21 +298,27 @@ def _key_value_sheet(sheet_name: str) -> Dict[str, str]:
             or row.get("TÊN")
             or row.get("ID")
         )
+
         value = (
             row.get("VALUE")
             or row.get("GIA_TRI")
             or row.get("GIÁ_TRỊ")
             or row.get("NOI_DUNG")
             or row.get("NỘI_DUNG")
+            or row.get("MO_TA")
+            or row.get("MÔ_TẢ")
         )
+
         key = _clean_value(key)
         if key:
             data[key] = _clean_value(value)
+
     return data
 
 
 def update_setting_system(key: str, value: Any) -> bool:
-    """Cap nhat/tao KEY trong SETTING_SYSTEM. Dung cho Zalo token."""
+    # Chức năng: Cập nhật hoặc tạo mới một KEY trong sheet SETTING_SYSTEM.
+    # Vai trò: Cho phép BOT lưu cấu hình hệ thống động như token hoặc tham số vận hành.
     try:
         ws = ensure_worksheet(
             SHEET_SETTING_SYSTEM,
@@ -316,6 +326,7 @@ def update_setting_system(key: str, value: Any) -> bool:
             rows=200,
             cols=10,
         )
+
         values = ws.get_all_values()
         if not values:
             ws.append_row(["KEY", "VALUE", "DESCRIPTION", "STATUS"])
@@ -334,6 +345,7 @@ def update_setting_system(key: str, value: Any) -> bool:
         ws.append_row([key, value, "", "ON"])
         clear_cache(SHEET_SETTING_SYSTEM)
         return True
+
     except Exception as e:
         print(f"[SETTING UPDATE ERROR] {key}: {e}")
         return False
@@ -344,15 +356,41 @@ def update_setting_system(key: str, value: Any) -> bool:
 # =========================
 
 def ensure_log_sheet():
+    # Chức năng: Bảo đảm sheet LICH_SU_CHAT tồn tại.
+    # Vai trò: Chuẩn bị nơi lưu lịch sử hội thoại của BOT.
     return ensure_worksheet(
         SHEET_LICH_SU_CHAT,
-        headers=["THOI_GIAN", "USER_ID", "TIN_NHAN", "BOT_REPLY", "SOURCE"],
+        headers=[
+            "THOI_GIAN",
+            "USER_ID",
+            "TIN_NHAN",
+            "BOT_REPLY",
+            "SOURCE",
+            "ROUTE",
+            "SCORE",
+            "SHEET",
+            "ROW_ID",
+            "NOTE",
+        ],
         rows=5000,
-        cols=10,
+        cols=15,
     )
 
 
-def log_chat(thoi_gian: str, user_id: str, user_message: str, bot_reply: str, source: str = "BOT") -> bool:
+def log_chat(
+    thoi_gian: str,
+    user_id: str,
+    user_message: str,
+    bot_reply: str,
+    source: str = "BOT",
+    route: str = "",
+    score: Any = "",
+    sheet: str = "",
+    row_id: str = "",
+    note: str = "",
+) -> bool:
+    # Chức năng: Ghi một lượt hội thoại vào sheet LICH_SU_CHAT.
+    # Vai trò: Phục vụ kiểm tra chất lượng trả lời, truy vết nguồn dữ liệu và cải tiến BOT.
     try:
         ws = ensure_log_sheet()
         ws.append_row([
@@ -361,12 +399,41 @@ def log_chat(thoi_gian: str, user_id: str, user_message: str, bot_reply: str, so
             _clean_value(user_message),
             _clean_value(bot_reply),
             _clean_value(source),
+            _clean_value(route),
+            _clean_value(score),
+            _clean_value(sheet),
+            _clean_value(row_id),
+            _clean_value(note),
         ])
         clear_cache(SHEET_LICH_SU_CHAT)
         return True
+
     except Exception as e:
         print(f"[LOG CHAT ERROR] {e}")
         return False
+
+
+def log_unknown(
+    thoi_gian: str,
+    user_id: str,
+    user_message: str,
+    route: str = "UNKNOWN",
+    note: str = "NO_MATCH",
+) -> bool:
+    # Chức năng: Ghi nhận câu hỏi chưa tìm thấy dữ liệu phù hợp.
+    # Vai trò: Tạo nguồn dữ liệu để bổ sung FAQ, từ khóa hoặc thủ tục trong Google Sheets.
+    return log_chat(
+        thoi_gian=thoi_gian,
+        user_id=user_id,
+        user_message=user_message,
+        bot_reply="",
+        source="UNKNOWN",
+        route=route,
+        score="",
+        sheet="",
+        row_id="",
+        note=note,
+    )
 
 
 # =========================
@@ -374,6 +441,8 @@ def log_chat(thoi_gian: str, user_id: str, user_message: str, bot_reply: str, so
 # =========================
 
 def ensure_session_sheet():
+    # Chức năng: Bảo đảm sheet BOT_SESSION tồn tại.
+    # Vai trò: Chuẩn bị nơi lưu ngữ cảnh hội thoại theo từng người dùng.
     return ensure_worksheet(
         SHEET_SESSION,
         headers=["USER_ID", "CONTEXT_JSON", "UPDATED_AT"],
@@ -382,26 +451,111 @@ def ensure_session_sheet():
     )
 
 
+def read_session(user_id: str) -> Dict[str, Any]:
+    # Chức năng: Đọc ngữ cảnh hội thoại của một người dùng từ sheet BOT_SESSION.
+    # Vai trò: Giúp BOT hiểu các câu hỏi nối tiếp trong cùng phiên chat.
+    user_id = _clean_value(user_id)
+    if not user_id:
+        return {}
+
+    try:
+        rows = read_sheet(SHEET_SESSION, use_cache=False)
+        for row in rows:
+            if _clean_value(row.get("USER_ID")) == user_id:
+                raw = _clean_value(row.get("CONTEXT_JSON"))
+                if not raw:
+                    return {}
+                try:
+                    data = json.loads(raw)
+                    return data if isinstance(data, dict) else {}
+                except Exception:
+                    return {}
+        return {}
+
+    except Exception as e:
+        print(f"[SESSION READ ERROR] {user_id}: {e}")
+        return {}
+
+
+def save_session(user_id: str, context: Dict[str, Any], updated_at: str) -> bool:
+    # Chức năng: Lưu hoặc cập nhật ngữ cảnh hội thoại của một người dùng.
+    # Vai trò: Duy trì bộ nhớ phiên chat để BOT trả lời theo ngữ cảnh.
+    user_id = _clean_value(user_id)
+    if not user_id:
+        return False
+
+    try:
+        ws = ensure_session_sheet()
+        values = ws.get_all_values()
+
+        if not values:
+            ws.append_row(["USER_ID", "CONTEXT_JSON", "UPDATED_AT"])
+            values = ws.get_all_values()
+
+        context_json = json.dumps(context or {}, ensure_ascii=False)
+
+        for idx, row in enumerate(values[1:], start=2):
+            current_user_id = _clean_value(row[0] if len(row) > 0 else "")
+            if current_user_id == user_id:
+                ws.update(f"B{idx}:C{idx}", [[context_json, _clean_value(updated_at)]])
+                clear_cache(SHEET_SESSION)
+                return True
+
+        ws.append_row([user_id, context_json, _clean_value(updated_at)])
+        clear_cache(SHEET_SESSION)
+        return True
+
+    except Exception as e:
+        print(f"[SESSION SAVE ERROR] {user_id}: {e}")
+        return False
+
+
 # =========================
 # DEBUG / HEALTH
 # =========================
 
 def sheet_health() -> Dict[str, Any]:
-    result = {"ok": False, "spreadsheet_id": GOOGLE_SHEET_ID, "sheets": {}, "error": ""}
+    # Chức năng: Kiểm tra tình trạng kết nối và sự tồn tại của các sheet bắt buộc.
+    # Vai trò: Hỗ trợ kiểm tra nhanh hệ thống BOT trước và sau khi deploy.
+    result = {
+        "ok": False,
+        "spreadsheet_id": GOOGLE_SHEET_ID,
+        "sheets": {},
+        "total_required": 0,
+        "total_missing": 0,
+        "missing": [],
+        "error": "",
+    }
+
     try:
         ss = get_spreadsheet()
         existing = {ws.title for ws in ss.worksheets()}
+
         check_sheets = [
             SHEET_MENU,
+            SHEET_SETTING_SYSTEM,
+            SHEET_SETTING_AI,
+            SHEET_SETTING_CHAT,
+            SHEET_PROMPT,
+            SHEET_THONGTIN,
             SHEET_TRA_CUU_LIEN_HE,
             SHEET_FAQ,
             SHEET_LICH_SU_CHAT,
             SHEET_SESSION,
             *THU_TUC_SHEETS,
         ]
+
         for name in check_sheets:
-            result["sheets"][name] = name in existing
-        result["ok"] = True
+            exists = name in existing
+            result["sheets"][name] = exists
+            if not exists:
+                result["missing"].append(name)
+
+        result["total_required"] = len(check_sheets)
+        result["total_missing"] = len(result["missing"])
+        result["ok"] = result["total_missing"] == 0
+
     except Exception as e:
         result["error"] = str(e)
+
     return result
