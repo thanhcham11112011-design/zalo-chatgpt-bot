@@ -1178,6 +1178,7 @@ def route_message_for_ai(user_text, context=None):
 
         # Các nguồn đã có dữ liệu trong Google Sheets thì không gọi AI.
         sheet_sources = {
+            "DEFAULT",
             "WELCOME",
             "RESET",
             "MENU",
