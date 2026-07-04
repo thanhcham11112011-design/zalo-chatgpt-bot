@@ -371,26 +371,22 @@ def search_lien_he(user_text, limit=3):
         function_match = phrase_score(user_text, chuc_nang, 1)
         department_match = phrase_score(user_text, row_bo_phan, 3) if row_bo_phan else 0
 
-        if keyword_match > 0 and area_match < 20 and name_match < 20 and function_match < 20 and department_match < 20:
-            continue
-
         score = keyword_match + area_match + name_match + function_match + department_match
 
-        if keyword_match <= 0 and area_match < 20 and name_match < 20:
+        if score <= 0:
             continue
 
         if bo_phan and score > 0:
             score += 500
 
-        if score > 0:
-            keyword_results.append(_add_meta(
-                row=row,
-                route="LIEN_HE",
-                score=score,
-                sheet="TRA_CUU_LIEN_HE",
-                row_id=get_first(row, "ID", "MA", "MÃ"),
-                note="KEYWORD_MATCH",
-            ))
+        keyword_results.append(_add_meta(
+            row=row,
+            route="LIEN_HE",
+            score=score,
+            sheet="TRA_CUU_LIEN_HE",
+            row_id=get_first(row, "ID", "MA", "MÃ"),
+            note="KEYWORD_MATCH",
+        ))
 
     if keyword_results:
         _sort_results(keyword_results)
