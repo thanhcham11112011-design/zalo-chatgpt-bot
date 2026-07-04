@@ -493,8 +493,35 @@ def is_group_only_topic_request(text, explicit):
 # Đầu ra: Chuỗi trả lời chi tiết theo trường dữ liệu phù hợp.
 # Vai trò: Khai thác các cột HO_SO, TRINH_TU, THOI_HAN, LE_PHI... trong sheet THU_TUC_*.
 def answer_procedure_detail(row, user_text):
+    # Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp của người dân.
+    # Vai trò: Khai thác các cột HO_SO, NOI_NOP, TRINH_TU, THOI_HAN, LE_PHI... trong sheet THU_TUC_*.
     t = normalize_text(user_text)
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+
+    if is_location_question(t):
+        co_quan = get_first(
+            row,
+            "NOI_NOP",
+            "NƠI_NỘP",
+            "NOI_THUC_HIEN",
+            "NƠI_THỰC_HIỆN",
+            "CO_QUAN_TIEP_NHAN",
+            "CƠ_QUAN_TIẾP_NHẬN",
+            "CO_QUAN_THUC_HIEN",
+            "CƠ_QUAN_THỰC_HIỆN",
+        )
+
+        lien_he = find_lien_he_by_ten_co_quan(co_quan)
+        if lien_he:
+            return format_lien_he(lien_he)
+
+        if co_quan:
+            return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}"
+
+        return (
+            f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n"
+            "Quý công dân vui lòng liên hệ Công an phường để được hướng dẫn cụ thể."
+        )
 
     if "ho so" in t or "giay to" in t or "can gi" in t or "chi tiet" in t:
         value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
@@ -510,31 +537,6 @@ def answer_procedure_detail(row, user_text):
     ):
         value = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
         return f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
-
-    if is_location_question(t):
-        co_quan = get_first(
-            row,
-            "CO_QUAN_THUC_HIEN",
-            "CƠ_QUAN_THỰC_HIỆN",
-            "CO_QUAN_TIEP_NHAN",
-            "CƠ_QUAN_TIẾP_NHẬN",
-            "NOI_NOP",
-            "NƠI_NỘP",
-            "NOI_THUC_HIEN",
-            "NƠI_THỰC_HIỆN",
-        )
-
-        lien_he = find_lien_he_by_ten_co_quan(co_quan)
-        if lien_he:
-            return format_lien_he(lien_he)
-
-        if co_quan:
-            return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}"
-
-        return (
-            f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n"
-            "Quý công dân vui lòng liên hệ Công an phường để được hướng dẫn cụ thể."
-        )
 
     if "bao lau" in t or "thoi han" in t:
         value = get_first(row, "THOI_HAN", "THỜI_HẠN")
@@ -561,7 +563,6 @@ def answer_procedure_detail(row, user_text):
         return f"🔗 Link dịch vụ công - {ten}\n\n{value}" if value else format_thu_tuc(row)
 
     return format_thu_tuc(row)
-
 
 # Chức năng: Tạo ngữ cảnh dữ liệu để chuyển sang AI fallback khi không tìm thấy câu trả lời trực tiếp.
 # Đầu vào: ctx - context hiện tại.
