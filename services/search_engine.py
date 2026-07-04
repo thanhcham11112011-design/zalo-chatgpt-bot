@@ -78,13 +78,14 @@ def keyword_score(user_text, keywords, weight=1):
         if kw_norm == user_norm:
             score += 100 * weight
         elif len(kw_words) == 1:
+            if len(kw_norm) <= 2:
+                continue
             if kw_norm in user_words:
-                score += max(len(kw_norm), 2) * weight
+                score += len(kw_norm) * weight
         elif kw_norm in user_norm:
             score += len(kw_norm) * weight
 
     return score
-
 
 def field_score(user_text, *fields):
     # Chức năng: Chấm điểm nhiều trường dữ liệu theo cơ chế từ khóa.
