@@ -638,37 +638,39 @@ def _append_field(parts, icon, title, value, max_len=700):
         parts.append(f"{icon} {title}:\n{compact(value, max_len)}")
 
 def format_thu_tuc(row):
-    # Chức năng: Định dạng thủ tục hành chính theo cấu trúc trả lời đã chốt.
-    # Vai trò: Trả lời 4 nội dung chính gồm đối tượng, điều kiện, quy trình và link DVC.
+    # Chức năng: Định dạng thông báo khi BOT đã xác định đúng thủ tục hành chính.
+    # Vai trò: Điều hướng người dân tra cứu từng nội dung chi tiết của thủ tục từ Google Sheets.
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-    doi_tuong = get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG")
-    dieu_kien = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
-    trinh_tu = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
     link_dvc = get_first(row, "LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG")
 
-    parts = [f"📌 {ten}" if ten else "📌 Thông tin thủ tục"]
+    parts = []
 
-    _append_field(parts, "👤", "Đối tượng", doi_tuong, 500)
-    _append_field(parts, "✅", "Điều kiện", dieu_kien, 500)
-    _append_field(parts, "📝", "Quy trình thực hiện", _short_steps(trinh_tu, 800), 800)
+    parts.append("📌 BOT đã xác định Quý công dân đang hỏi về thủ tục:\n")
+
+    if ten:
+        parts.append(ten.upper())
+    else:
+        parts.append("THỦ TỤC HÀNH CHÍNH")
+
+    parts.append("────────────────")
+
+    parts.append("📍 Thủ tục này được thực hiện trên Cổng Dịch vụ công Bộ Công an.")
 
     if link_dvc:
-        parts.append(f"🔗 Link Dịch vụ công:\n{link_dvc}")
+        parts.append(f"🔗 Dịch vụ công:\n{link_dvc}")
 
     parts.append(
         "────────────────\n"
-        "💬 Quý công dân có thể hỏi tiếp:\n"
-        "• Hồ sơ\n"
-        "• Nơi nộp hồ sơ\n"
-        "• Thời hạn giải quyết\n"
-        "• Lệ phí\n"
-        "• Kết quả giải quyết\n"
-        "• Cơ sở pháp lý\n"
-        "• Lưu ý"
+        "💬 Quý công dân có thể tìm hiểu các nội dung liên quan đến thủ tục này bằng cách nhập một trong các từ khóa sau:\n\n"
+        "1️⃣ Hồ sơ cần chuẩn bị\n"
+        "2️⃣ Nơi nộp hồ sơ\n"
+        "3️⃣ Thời hạn giải quyết\n"
+        "4️⃣ Lệ phí\n"
+        "5️⃣ Kết quả giải quyết\n"
+        "6️⃣ Cơ sở pháp lý"
     )
 
     return "\n\n".join(parts)
-
 
 def format_multiple_results(results, formatter, limit=3):
     # Chức năng: Định dạng nhiều kết quả tìm kiếm thành một tin nhắn trả lời.
