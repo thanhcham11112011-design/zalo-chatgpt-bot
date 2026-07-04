@@ -173,19 +173,19 @@ def is_specific_contact_question(text):
     return is_contact_question(t) and any(k in t for k in agency_keys)
 
 
-# Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
-# Đầu vào: user_text - nội dung người dân gửi.
-# Đầu ra: True nếu hỏi hồ sơ, trình tự, lệ phí, thời hạn, nơi nộp...; False nếu không phải.
-# Vai trò: Chỉ giữ context khi người dân hỏi tiếp về chi tiết thủ tục hiện tại.
 def is_followup_detail_question(user_text):
+    # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
+    # Vai trò: Chỉ giữ context khi người dân hỏi tiếp về thủ tục hiện tại.
     text = normalize_text(user_text)
     detail_keywords = [
         "ho so", "ho so chi tiet", "giay to", "can giay to gi", "can gi",
+        "dieu kien", "yeu cau", "yeu cau dieu kien",
         "trinh tu", "quy trinh", "quy trinh thuc hien",
         "cac buoc", "buoc thuc hien", "thu tuc thuc hien",
         "co quan tiep nhan", "noi tiep nhan", "noi thuc hien",
         "noi nop", "nop o dau", "lam o dau", "dia diem",
-        "o dau", "o cho nao", "den dau", "den dau lam", "di dau lam", "toi dau lam",
+        "o dau", "o cho nao", "den dau", "den dau lam",
+        "di dau lam", "toi dau lam",
         "vi tri", "ban do", "google map", "map",
         "thoi han", "bao lau", "may ngay",
         "le phi", "phi", "mat phi", "co mat phi khong",
