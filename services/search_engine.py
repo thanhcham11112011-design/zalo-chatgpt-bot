@@ -251,26 +251,12 @@ def search_lien_he(user_text, limit=3):
 
     for row in search_rows:
         tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         score = 0
 
         for area in split_keywords(tdp):
             area_norm = normalize_text(area)
             if area_norm and area_norm in text_norm:
                 score += 50000
-
-        for area in split_keywords(tu_khoa):
-            area_norm = normalize_text(area)
-            if not area_norm:
-                continue
-
-            if area_norm in text_norm:
-                if any(ch.isdigit() for ch in area_norm):
-                    score += 30000
-                elif len(area_norm.split()) >= 2:
-                    score += 25000
-                else:
-                    score += 3000
 
         if score > 0:
             area_results.append(_add_meta(
