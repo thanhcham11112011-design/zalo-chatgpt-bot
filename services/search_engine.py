@@ -510,15 +510,9 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             + place_match
         )
 
-        has_procedure_object = (
-            object_keyword_match > 0
-            or title_match >= 30
-            or topic_match >= 20
-        )
-
-        if not has_procedure_object:
+        if object_keyword_match <= 0:
             continue
-
+        
         if score < 35:
             continue
 
