@@ -636,40 +636,30 @@ def _append_field(parts, icon, title, value, max_len=700):
     if value:
         parts.append(f"{icon} {title}:\n{compact(value, max_len)}")
 
-
 def format_thu_tuc(row):
-    # Chức năng: Định dạng một thủ tục hành chính để trả lời người dân.
-    # Vai trò: Chuẩn hóa mẫu trả lời thủ tục hành chính của BOT CAP.
+    # Chức năng: Định dạng tóm tắt một thủ tục hành chính để trả lời người dân.
+    # Vai trò: Trả lời ngắn gọn khi người dân chọn thủ tục, các chi tiết khác sẽ hỏi tiếp theo ngữ cảnh.
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
     doi_tuong = get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG")
-    dieu_kien = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
     ho_so = get_first(row, "HO_SO", "HỒ_SƠ")
     trinh_tu = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
-    noi_nop = get_first(row, "NOI_NOP", "NƠI_NỘP", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
-    thoi_han = get_first(row, "THOI_HAN", "THỜI_HẠN")
-    le_phi = get_first(row, "LE_PHI", "LỆ_PHÍ")
-    ket_qua = get_first(row, "KET_QUA", "KẾT_QUẢ")
-    luu_y = get_first(row, "LUU_Y", "LƯU_Ý")
-    link_dvc = get_first(row, "LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG")
 
     parts = [f"📌 {ten}" if ten else "📌 Thông tin thủ tục"]
 
-    _append_field(parts, "👤", "Đối tượng", doi_tuong, 500)
-    _append_field(parts, "✅", "Điều kiện", dieu_kien, 500)
-    _append_field(parts, "📄", "Hồ sơ", ho_so, 800)
-    _append_field(parts, "📝", "Trình tự thực hiện", _short_steps(trinh_tu, 800), 800)
-    _append_field(parts, "🏢", "Nơi nộp", noi_nop, 500)
-    _append_field(parts, "⏱️", "Thời hạn giải quyết", thoi_han, 300)
-    _append_field(parts, "💰", "Lệ phí", le_phi, 500)
-    _append_field(parts, "📬", "Kết quả", ket_qua, 400)
-    _append_field(parts, "⚠️", "Lưu ý", luu_y, 500)
-
-    if link_dvc:
-        parts.append(f"🔗 Link dịch vụ công:\n{link_dvc}")
+    _append_field(parts, "👤", "Đối tượng", doi_tuong, 350)
+    _append_field(parts, "📄", "Hồ sơ", ho_so, 500)
+    _append_field(parts, "📝", "Trình tự thực hiện", _short_steps(trinh_tu, 500), 500)
 
     parts.append(
         "————————————\n"
-        "💬 Bạn có thể hỏi tiếp: hồ sơ chi tiết, nơi nộp, thời hạn, lệ phí, cơ sở pháp lý."
+        "💬 Quý công dân có thể hỏi tiếp:\n"
+        "• Lệ phí\n"
+        "• Thời hạn\n"
+        "• Nơi nộp\n"
+        "• Điều kiện\n"
+        "• Kết quả\n"
+        "• Cơ sở pháp lý\n"
+        "• Link dịch vụ công"
     )
 
     return "\n\n".join(parts)
