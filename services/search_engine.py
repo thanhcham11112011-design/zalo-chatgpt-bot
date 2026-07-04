@@ -311,6 +311,26 @@ def search_lien_he(user_text, limit=3):
             ))
 
     if full_name_results:
+        keyword_rows = []
+
+        for row in search_rows:
+            tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+            keyword_match = keyword_score(user_text, tu_khoa, 6)
+
+            if keyword_match > 0:
+                keyword_rows.append(_add_meta(
+                    row=row,
+                    route="LIEN_HE",
+                    score=keyword_match,
+                    sheet="TRA_CUU_LIEN_HE",
+                    row_id=get_first(row, "ID", "MA", "MÃ"),
+                    note="KEYWORD_BEFORE_FULL_NAME",
+                ))
+
+        if keyword_rows:
+            keyword_rows.sort(key=lambda r: (safe_int(r.get("_UU_TIEN", 999)), -safe_int(r.get("_SCORE", 0))))
+            return keyword_rows[:1]
+
         _sort_results(full_name_results)
         return full_name_results[:1]
 
