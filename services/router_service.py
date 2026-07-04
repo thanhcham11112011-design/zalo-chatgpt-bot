@@ -769,6 +769,33 @@ def route_message(user_text, context=None):
             )
 
     if is_contact_question(text):
+
+        if is_contact_hint_question(text):
+            return (
+                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
+                "Vui lòng nhập:\n"
+                "• Họ tên cán bộ (nếu biết)\n"
+                "hoặc\n"
+                "• Tổ dân phố/khu vực cư trú.\n\n"
+                "Ví dụ:\n"
+                "• Lệ Tảo 1\n"
+                "• Quy Tức 2\n"
+                "• Hoàng Quốc Việt\n\n"
+                "Để thoát, vui lòng nhập 'menu' hoặc 'cảm ơn'.",
+                "CONTACT_HINT",
+                {
+                    "stage": "cskv_lookup",
+                    "sheet": "TRA_CUU_LIEN_HE",
+                    "topic": "Tra cứu CSKV",
+                    "procedure_id": "",
+                    "procedure_name": "",
+                    "page": 1,
+                    "last_suggestions": [],
+                    "last_route": "CSKV_ASK_NAME",
+                },
+                "",
+            )
+
         lien_he = search_lien_he(text, limit=5)
         if lien_he:
             reply = format_multiple_results(lien_he, format_lien_he, limit=5)
@@ -780,24 +807,6 @@ def route_message(user_text, context=None):
                 )
 
             return reply, "TRA_CUU_LIEN_HE", {}, ""
-
-        if is_contact_hint_question(text):
-            return (
-                get_contact_hint_message(),
-                "CONTACT_HINT",
-                {
-                    "stage": "contact_lookup",
-                    "sheet": "TRA_CUU_LIEN_HE",
-                    "topic": "Tra cứu liên hệ",
-                    "procedure_id": "",
-                    "procedure_name": "",
-                    "page": 1,
-                    "last_suggestions": [],
-                    "last_route": "CONTACT_HINT",
-                },
-                "",
-            )
-
     if ctx.get("stage") == "cskv_lookup":
         explicit = detect_explicit_topic(text)
         if explicit:
