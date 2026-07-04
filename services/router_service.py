@@ -778,8 +778,8 @@ def route_message(user_text, context=None):
                 "hoặc\n"
                 "• Tổ dân phố/khu vực cư trú.\n\n"
                 "Ví dụ:\n"
-                "• Lệ Tảo 1\n"
-                "• Quy Tức 2\n"
+                "• Đồng Tử\n"
+                "• Quy Tức\n"
                 "• Hoàng Quốc Việt\n\n"
                 "Để thoát, vui lòng nhập 'menu' hoặc 'cảm ơn'.",
                 "CONTACT_HINT",
