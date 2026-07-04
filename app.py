@@ -70,7 +70,7 @@ def build_answer(user_id, question):
                 ai_answer.strip()
                 + "\n\n────────────────\n"
                 + "🤖 Lưu ý: Nội dung trên do AI hỗ trợ trả lời. "
-                + "Quý công dân có thể nhắn 'menu' để xem danh mục hỗ trợ chính thức từ Google Sheets."
+                + "Quý công dân có thể nhắn \"menu\" để tra cứu các thủ tục hành chính và thông tin chính thức."
             )
             source = "GEMINI_AI"
         else:
