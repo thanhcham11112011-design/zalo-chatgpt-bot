@@ -519,8 +519,6 @@ def answer_procedure_detail(row, user_text):
     if is_location_question(t):
         co_quan = get_first(
             row,
-            "NOI_NOP",
-            "NƠI_NỘP",
             "NOI_THUC_HIEN",
             "NƠI_THỰC_HIỆN",
             "CO_QUAN_TIEP_NHAN",
@@ -916,7 +914,7 @@ def route_message(user_text, context=None):
             detail_map = {
                 "1": "dieu kien",
                 "2": "ho so",
-                "3": "noi nop",
+                "3": "co quan thuc hien",
                 "4": "thoi han",
                 "5": "le phi",
                 "6": "ket qua",
