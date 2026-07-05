@@ -688,12 +688,13 @@ def format_thu_tuc(row):
     parts.append(
         "────────────────\n"
         "💬 Quý công dân có thể trực tiếp hỏi BOT các nội dung liên quan đến thủ tục này bằng cách nhập một trong các từ khóa sau:\n\n"
-        "1️⃣ Hồ sơ cần chuẩn bị\n"
-        "2️⃣ Nơi nộp hồ sơ\n"
-        "3️⃣ Thời hạn giải quyết\n"
-        "4️⃣ Lệ phí\n"
-        "5️⃣ Kết quả giải quyết\n"
-        "6️⃣ Cơ sở pháp lý"
+        "1. Điều kiện\n"
+        "2. Hồ sơ cần chuẩn bị\n"
+        "3. Nơi nộp hồ sơ\n"
+        "4. Thời hạn giải quyết\n"
+        "5. Lệ phí\n"
+        "6. Kết quả giải quyết\n"
+        "7. Cơ sở pháp lý"
     )
 
     return "\n\n".join(parts)
