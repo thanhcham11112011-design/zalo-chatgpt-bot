@@ -914,7 +914,7 @@ def route_message(user_text, context=None):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
         if procedure:
             detail_map = {
-                "1": "dieu kien"
+                "1": "dieu kien",
                 "2": "ho so",
                 "3": "noi nop",
                 "4": "thoi han",
