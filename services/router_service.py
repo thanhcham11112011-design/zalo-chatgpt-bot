@@ -512,6 +512,9 @@ def answer_procedure_detail(row, user_text):
     # Vai trò: Khai thác các cột HO_SO, NOI_NOP, TRINH_TU, THOI_HAN, LE_PHI... trong sheet THU_TUC_*.
     t = normalize_text(user_text)
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+    if "dieu kien" in t or "yeu cau" in t:
+        value = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
+        return f"✅ Điều kiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
     if is_location_question(t):
         co_quan = get_first(
@@ -568,10 +571,6 @@ def answer_procedure_detail(row, user_text):
     if "co so phap ly" in t:
         value = get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
         return f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
-
-    if "luu y" in t:
-        value = get_first(row, "LUU_Y", "LƯU_Ý")
-        return f"ℹ️ Lưu ý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
     if "link" in t or "dich vu cong" in t:
         value = get_first(row, "LINK_DVC", "LINK")
