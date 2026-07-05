@@ -690,7 +690,7 @@ def format_thu_tuc(row):
         "💬 Quý công dân có thể trực tiếp hỏi BOT các nội dung liên quan đến thủ tục này bằng cách nhập một trong các từ khóa sau:\n\n"
         "1. Điều kiện\n"
         "2. Hồ sơ cần chuẩn bị\n"
-        "3. Nơi nộp hồ sơ\n"
+        "3. Co quan thuc hien\n"
         "4. Thời hạn giải quyết\n"
         "5. Lệ phí\n"
         "6. Kết quả giải quyết\n"
