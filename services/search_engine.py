@@ -453,29 +453,23 @@ def search_faq(user_text, limit=3):
         ways = get_first(row, "CAC_CACH_HOI", "CÁC_CÁCH_HỎI")
         answer = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
 
-        score = 0
         keyword_match = keyword_score(user_text, keywords, 6)
         question_match = phrase_score(user_text, question, 5)
         ways_match = keyword_score(user_text, ways, 5)
-        answer_match = phrase_score(user_text, answer, 1)
 
-        score += keyword_match
-        score += question_match
-        score += ways_match
-        score += answer_match
+        score = keyword_match + question_match + ways_match
 
-        if keyword_match <= 0 and question_match < 20 and ways_match <= 0:
+        if score < 35:
             continue
 
-        if score > 0:
-            results.append(_add_meta(
-                row=row,
-                route="FAQ",
-                score=score,
-                sheet="FAQ",
-                row_id=get_first(row, "ID", "MA", "MÃ"),
-                note="FAQ_MATCH",
-            ))
+        results.append(_add_meta(
+            row=row,
+            route="FAQ",
+            score=score,
+            sheet="FAQ",
+            row_id=get_first(row, "ID", "MA", "MÃ"),
+            note="FAQ_MATCH",
+        ))
 
     _sort_results(results)
     return results[:limit]
