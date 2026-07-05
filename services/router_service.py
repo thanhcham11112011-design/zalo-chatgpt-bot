@@ -910,6 +910,22 @@ def route_message(user_text, context=None):
             "last_route": "THU_TUC_SELECT",
         }
         return format_thu_tuc(selected), "THU_TUC_SELECT", new_ctx, ""
+    if text_norm.isdigit() and ctx.get("procedure_id"):
+        procedure = find_procedure_by_id(ctx.get("procedure_id"))
+        if procedure:
+            detail_map = {
+                "1": "ho so",
+                "2": "noi nop",
+                "3": "thoi han",
+                "4": "le phi",
+                "5": "ket qua",
+                "6": "co so phap ly",
+            }
+
+            detail_text = detail_map.get(text_norm)
+            if detail_text:
+                ctx["last_route"] = "PROCEDURE_CONTEXT"
+                return answer_procedure_detail(procedure, detail_text), "PROCEDURE_CONTEXT", ctx, ""
 
     if text_norm.isdigit() and ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         reply, new_ctx = _need_select_procedure_message(ctx)
