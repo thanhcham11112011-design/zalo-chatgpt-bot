@@ -591,7 +591,7 @@ def build_ai_context(ctx):
             parts.append(format_thu_tuc(p))
 
     elif ctx.get("sheet"):
-        rows = list_procedures_by_sheet(ctx.get("sheet"), limit=7)
+        rows = list_procedures_by_sheet(ctx.get("sheet"), limit=5)
         if rows:
             names = [
                 get_first(r, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
