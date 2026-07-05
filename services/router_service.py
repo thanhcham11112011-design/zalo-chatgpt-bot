@@ -914,12 +914,13 @@ def route_message(user_text, context=None):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
         if procedure:
             detail_map = {
-                "1": "ho so",
-                "2": "noi nop",
-                "3": "thoi han",
-                "4": "le phi",
-                "5": "ket qua",
-                "6": "co so phap ly",
+                "1": "dieu kien"
+                "2": "ho so",
+                "3": "noi nop",
+                "4": "thoi han",
+                "5": "le phi",
+                "6": "ket qua",
+                "7": "co so phap ly",
             }
 
             detail_text = detail_map.get(text_norm)
