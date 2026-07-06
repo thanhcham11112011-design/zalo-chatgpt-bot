@@ -641,11 +641,29 @@ def _append_field(parts, icon, title, value, max_len=700):
 
 def format_thu_tuc(row):
     # Chức năng: Định dạng thông báo khi BOT xác định được một thủ tục hành chính.
-    # Vai trò: Tạo câu trả lời từ dữ liệu Google Sheets, không gắn cố định nội dung nghiệp vụ vào code.
+    # Vai trò: Tạo câu trả lời theo cấu hình SETTING_CHAT, không hardcode trường hiển thị.
+    from services.sheet_api import read_setting_chat
+
+    field_map = {
+        "DOI_TUONG": ("👤", "Đối tượng", ["DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG"]),
+        "DIEU_KIEN": ("✅", "Điều kiện", ["DIEU_KIEN", "ĐIỀU_KIỆN"]),
+        "HO_SO": ("📄", "Hồ sơ", ["HO_SO", "HỒ_SƠ"]),
+        "TRINH_TU": ("📝", "Trình tự thực hiện", ["TRINH_TU", "TRÌNH_TỰ"]),
+        "NOI_NOP": ("📍", "Nơi nộp", ["NOI_NOP", "NƠI_NỘP", "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN"]),
+        "THOI_HAN": ("⏱", "Thời hạn", ["THOI_HAN", "THỜI_HẠN"]),
+        "LE_PHI": ("💰", "Lệ phí", ["LE_PHI", "LỆ_PHÍ", "PHI"]),
+        "KET_QUA": ("✅", "Kết quả", ["KET_QUA", "KẾT_QUẢ"]),
+        "CO_SO_PHAP_LY": ("⚖️", "Cơ sở pháp lý", ["CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ"]),
+        "LINK_DVC": ("🔗", "Link dịch vụ công", ["LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG"]),
+        "GOI_Y_CAU_HOI": ("💬", "Có thể hỏi tiếp", ["GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI"]),
+    }
+
+    settings = read_setting_chat() or {}
+    display_fields = str(settings.get("THU_TUC_DISPLAY_FIELDS") or "DOI_TUONG,DIEU_KIEN,TRINH_TU").strip()
+    selected_fields = [x.strip().upper() for x in display_fields.split(",") if x.strip()]
+
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-    link_dvc = get_first(row, "LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG")
     tra_loi_ngan = get_first(row, "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "MO_TA", "MÔ_TẢ")
-    goi_y = get_first(row, "GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI")
 
     parts = []
 
@@ -655,30 +673,23 @@ def format_thu_tuc(row):
     if tra_loi_ngan:
         parts.append(compact(tra_loi_ngan, 900))
 
-    _append_field(parts, "👤", "Đối tượng", get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG"), 500)
-    _append_field(parts, "📄", "Hồ sơ", get_first(row, "HO_SO", "HỒ_SƠ"), 700)
-    _append_field(parts, "📝", "Quy trình thực hiện", get_first(row, "TRINH_TU", "TRÌNH_TỰ"), 900)
+    for field in selected_fields:
+        config = field_map.get(field)
+        if not config:
+            continue
 
-    if link_dvc:
-        parts.append(f"🔗 Link dịch vụ công:\n{link_dvc}")
+        icon, label, keys = config
+        value = get_first(row, *keys)
 
-    if goi_y:
-        parts.append(f"💬 Có thể hỏi tiếp:\n{compact(goi_y, 500)}")
+        if not value:
+            continue
+
+        if field == "LINK_DVC":
+            parts.append(f"{icon} {label}:\n{value}")
+        else:
+            _append_field(parts, icon, label, value, 900)
 
     return "\n\n".join([p for p in parts if p])
-
-def format_multiple_results(results, formatter, limit=3):
-    # Chức năng: Định dạng nhiều kết quả tìm kiếm thành một tin nhắn trả lời.
-    # Vai trò: Hiển thị danh sách kết quả liên hệ, FAQ hoặc thủ tục gần đúng.
-    texts = []
-
-    for i, row in enumerate(results[:limit], start=1):
-        val = formatter(row)
-        if val:
-            texts.append(f"{i}. {val}")
-
-    return "\n\n".join(texts)
-
 
 def find_lien_he_by_ten_co_quan(name):
     # Chức năng: Tìm thông tin liên hệ theo đúng tên cơ quan/cán bộ.
