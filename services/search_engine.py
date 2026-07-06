@@ -690,6 +690,18 @@ def format_thu_tuc(row):
             _append_field(parts, icon, label, value, 900)
 
     return "\n\n".join([p for p in parts if p])
+    
+def format_multiple_results(results, formatter, limit=3):
+    # Chức năng: Định dạng nhiều kết quả tìm kiếm thành một tin nhắn trả lời.
+    # Vai trò: Hiển thị danh sách kết quả liên hệ, FAQ hoặc thủ tục gần đúng.
+    texts = []
+
+    for i, row in enumerate(results[:limit], start=1):
+        val = formatter(row)
+        if val:
+            texts.append(f"{i}. {val}")
+
+    return "\n\n".join(texts)
 
 def find_lien_he_by_ten_co_quan(name):
     # Chức năng: Tìm thông tin liên hệ theo đúng tên cơ quan/cán bộ.
