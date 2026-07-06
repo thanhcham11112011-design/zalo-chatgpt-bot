@@ -1,5 +1,111 @@
-BOT CAP PHU LIEN - V3.0
-- Chuẩn hóa mẫu trả lời thủ tục: Đối tượng, Hồ sơ, Quy trình thực hiện, LINK DVC.
-- Chuẩn hóa lời nhắc hỏi tiếp.
-- Khi đang ở nhóm thủ tục mà hỏi chi tiết, BOT yêu cầu chọn thủ tục cụ thể, không tìm lệch sang nhóm khác.
-- Hỗ trợ nhóm PTGT/đăng ký xe hiển thị danh sách thủ tục trước khi hỏi nơi thực hiện/lệ phí.
+==========================================================
+BOT CAP PHÙ LIỄN
+Phiên bản: 3.1
+Trạng thái: STABLE
+Ngày phát hành: 06/07/2026
+==========================================================
+
+BOT CAP 3.1
+
+Kiến trúc:
+Người dân
+    ↓
+Zalo OA
+    ↓
+Flask/Python
+    ↓
+Router
+    ↓
+Search Engine
+    ↓
+Sheet API
+    ↓
+Google Sheets
+    ↓
+AI (Gemini)
+    ↓
+Zalo OA
+
+Nguyên tắc:
+
+1. Google Sheets là nguồn dữ liệu nghiệp vụ duy nhất.
+
+2. Không sử dụng knowledge.json làm nguồn dữ liệu.
+
+3. Không hardcode nghiệp vụ trong Python.
+
+4. Router chỉ điều phối.
+
+5. Search Engine chỉ tìm kiếm và chấm điểm.
+
+6. Sheet API là lớp truy cập dữ liệu duy nhất.
+
+7. AI chỉ tổng hợp và diễn đạt lại dữ liệu.
+
+8. Session chỉ lưu ngữ cảnh kỹ thuật.
+
+9. Logger ghi đầy đủ lịch sử và Unknown Log.
+
+10. Mọi mở rộng nghiệp vụ thực hiện trên Google Sheets.
+
+Các module đã chuẩn hóa:
+
+✓ app.py
+
+✓ config.py
+
+✓ sheet_api.py
+
+✓ router_service.py
+
+✓ search_engine.py
+
+✓ session_manager.py
+
+✓ gemini_service.py
+
+✓ contact_service.py
+
+✓ logger.py
+
+✓ zalo_service.py
+
+✓ text_utils.py
+
+Google Sheets:
+
+✓ MENU
+
+✓ SETTING_SYSTEM
+
+✓ SETTING_AI
+
+✓ SETTING_CHAT
+
+✓ PROMPT
+
+✓ THONGTIN
+
+✓ FAQ
+
+✓ TRA_CUU_LIEN_HE
+
+✓ BOT_SESSION
+
+✓ LICH_SU_CHAT
+
+✓ DATA_DICTIONARY
+
+✓ BOT_31_SCHEMA
+
+✓ THU_TUC_*
+
+Kết quả chuẩn hóa:
+
+✓ Loại bỏ knowledge.json.
+
+✓ Loại bỏ hardcode nghiệp vụ.
+
+✓ Chuẩn hóa kiến trúc BOT CAP 3.1.
+
+✓ Sẵn sàng bước TEST & FIX toàn cục.
