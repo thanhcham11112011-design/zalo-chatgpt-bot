@@ -1,5 +1,4 @@
-from config import DEFAULT_REPLY
-from services.sheet_api import read_menu, read_lien_he
+from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai
 from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.search_engine import (
     search_menu,
@@ -14,192 +13,235 @@ from services.search_engine import (
     format_multiple_results,
 )
 
-
 PAGE_SIZE = 5
+TECHNICAL_FALLBACK_REPLY = "Xin lỗi, hiện hệ thống chưa xử lý được yêu cầu này. Quý công dân vui lòng nhập menu hoặc hỏi rõ hơn."
 
 
-# Chức năng: Kiểm tra tin nhắn có phải lời chào, yêu cầu menu hoặc bắt đầu lại hay không.
-# Vai trò: Giúp BOT hiển thị menu chính khi người dân bắt đầu phiên chat.
-def is_greeting(text):
-    return normalize_text(text) in [
-        "xin chao",
-        "chao",
-        "chao ban",
-        "hello",
-        "hi",
-        "alo",
-        "menu",
-        "danh muc",
-        "bat dau",
-        "0",
-        "ket noi bot cap",
-        "#ket noi bot cap",
-        "ket_noi_bot_cap",
-        "#ket_noi_bot_cap",
-    ]
+# Chức năng: Lấy cấu hình hội thoại từ sheet SETTING_CHAT.
+# Vai trò: Không để nội dung trả lời nghiệp vụ nằm cứng trong Python.
+def _chat_setting(key, default=""):
+    data = read_setting_chat() or {}
+    return str(data.get(key) or default or "").strip()
 
 
-# Chức năng: Kiểm tra người dân có muốn kết thúc, hủy hoặc quay lại menu chính hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu là câu kết thúc/reset; False nếu không phải.
-# Vai trò: Giúp BOT xóa context cũ và trả lời thông điệp kết thúc lịch sự.
-def is_reset_question(text):
-    t = normalize_text(text)
-    return t in [
-        "huy", "thoat", "lam lai", "menu chinh", "quay lai",
-        "xoa", "reset", "xong", "xong roi", "da ro",
-        "toi hieu roi", "duoc roi", "ok roi",
-        "cam on", "cam on ban", "ok cam on",
-        "cam on nhe", "cam on nhieu",
-        "thank", "thanks", "thank you"
-    ]
+# Chức năng: Lấy câu trả lời mặc định từ SETTING_CHAT.
+# Vai trò: Không phụ thuộc DEFAULT_REPLY hardcode trong config.py.
+def get_default_reply():
+    return _chat_setting("UNKNOWN_MESSAGE", TECHNICAL_FALLBACK_REPLY)
 
 
-# Chức năng: Kiểm tra người dân có yêu cầu xem tiếp danh sách thủ tục hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu là yêu cầu xem tiếp; False nếu không phải.
-# Vai trò: Hỗ trợ phân trang danh sách thủ tục trong các sheet THU_TUC_*.
-def is_next_page_question(text):
-    return normalize_text(text) in [
-        "xem tiep", "xem them", "tiep", "trang tiep", "next"
-    ]
+# Chức năng: Lấy cấu hình AI từ sheet SETTING_AI.
+# Vai trò: Điều khiển AI Optional mà không hardcode trạng thái trong Python.
+def _ai_setting(key, default=""):
+    data = read_setting_ai() or {}
+    return str(data.get(key) or default or "").strip()
 
 
-# Chức năng: Tạo thông điệp kết thúc phiên hỗ trợ.
-# Đầu vào: Không có.
-# Đầu ra: Chuỗi tin nhắn cảm ơn/kết thúc.
-# Vai trò: Dùng khi người dân nhắn cảm ơn, xong, thoát hoặc reset.
-def get_end_message():
-    return (
-        "🙏 Cảm ơn Quý công dân đã sử dụng Trợ lý AI Công an phường Phù Liễn.\n\n"
-        "Rất hân hạnh được hỗ trợ Quý công dân.\n\n"
-        "Khi cần hỗ trợ thêm, Quý công dân chỉ cần nhắn:\n"
-        "• menu\n"
-        "hoặc nhập trực tiếp nội dung cần hỏi.\n\n"
-        "Kính chúc Quý công dân sức khỏe và nhiều điều tốt đẹp!"
-    )
+# Chức năng: Chuyển giá trị cấu hình sheet thành boolean.
+# Vai trò: Giúp router đọc đúng các cờ bật/tắt AI Optional.
+def _as_bool(value, default=False):
+    text = normalize_text(value)
+    if not text:
+        return default
+    return text in ["true", "1", "yes", "on", "bat", "bật", "enable", "enabled"]
 
 
-# Chức năng: Kiểm tra câu hỏi có ý định hỏi địa điểm, nơi nộp, nơi tiếp nhận hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu có ý định hỏi địa điểm; False nếu không phải.
-# Vai trò: Giúp BOT xử lý câu hỏi nối tiếp như “làm ở đâu”, “nộp ở đâu”, “địa chỉ”.
-def is_location_question(text):
-    t = normalize_text(text)
+# Chức năng: Kiểm tra AI có được phép hoạt động như lớp phụ trợ hay không.
+# Vai trò: Bảo đảm Gemini không trở thành luồng chính của BOT.
+def _ai_optional_enabled():
+    if normalize_text(_ai_setting("AI_IS_CORE", "FALSE")) in ["true", "1", "yes", "on"]:
+        return False
+    if normalize_text(_ai_setting("AI_MODE", "OPTIONAL")) not in ["optional", "tuy chon", "tùy chọn"]:
+        return False
+    return _as_bool(_ai_setting("AI_ENABLED", "TRUE"), True)
+
+
+# Chức năng: Kiểm tra câu hỏi có dấu hiệu là thủ tục/nghiệp vụ nhưng chưa có dữ liệu sheet.
+# Vai trò: Chặn AI tự suy diễn thủ tục khi Google Sheets không có căn cứ.
+def _looks_like_procedure_without_data(user_text):
+    t = normalize_text(user_text)
     keys = [
-        "o dau", "dia chi", "dia diem", "noi lam", "lam o dau",
-        "nop o dau", "co quan tiep nhan", "tiep nhan",
-        "noi tiep nhan", "co quan thuc hien", "noi thuc hien",
-        "noi nop", "den dau", "den dau lam", "di dau lam",
-        "toi dau lam", "lam cho nao", "nop cho nao",
-        "den cho nao", "o cho nao", "bo phan nao",
-        "vi tri", "ban do", "google map", "map"
+        "thu tuc", "ho so", "giay to", "dieu kien", "le phi", "thoi han",
+        "noi nop", "co quan thuc hien", "cap", "dang ky", "xac nhan",
+        "cap lai", "cap doi", "lam", "nop", "dich vu cong",
     ]
     return any(k in t for k in keys)
 
 
+# Chức năng: Quyết định có chuyển câu hỏi sang Gemini hay không.
+# Vai trò: Chỉ cho phép AI khi phù hợp cấu hình và không làm thay nghiệp vụ Google Sheets.
+def _should_use_ai(user_text, source, ai_context=""):
+    if not _ai_optional_enabled():
+        return False
 
-# Vai trò: Ưu tiên tra cứu TRA_CUU_LIEN_HE trước khi tìm thủ tục để tránh nhầm “số điện thoại” sang VNeID.
-# Chức năng: Nhận diện câu hỏi tra cứu liên hệ của người dân.
-# Vai trò: Xác định intent TRA_CUU_LIEN_HE trước khi chuyển sang xử lý thủ tục hoặc AI.
-def is_contact_question(text):
-    t = normalize_text(text)
-
-    contact_keys = [
-        "lien he",
-        "so dien thoai",
-        "sdt",
-        "dien thoai",
-        "truc ban",
-        "hotline",
-        "gap can bo",
-        "gap cskv",
-        "gap chi huy",
-        "chi huy",
-        "lanh dao",
-        "can bo truc",
-        "cskv",
-        "canh sat khu vuc",
-        "dong chi",
-        "ai la",
-        "quan ly",
-        "phu trach"
-    ]
-
-    agency_keys = [
-        "cong an phuong",
-        "cong an thanh pho",
-        "catp",
-        "pc08",
-        "pc07",
-        "phong canh sat",
-        "phong csgt",
-        "phong pccc",
-        "phong csqlhc",
-        "so tu phap",
-        "cuc c06",
-        "c06",
-        "bo cong an",
-        "phu lien",
-        "kien an"
-    ]
-
-    if any(k in t for k in contact_keys):
+    if ai_context and _as_bool(_ai_setting("ENABLE_AI_SUMMARIZE", "TRUE"), True):
         return True
 
-    if is_location_question(t) and any(k in t for k in agency_keys):
-        return True
+    if source in ["DEFAULT", "ROUTER_ERROR", "EMPTY"]:
+        if _looks_like_procedure_without_data(user_text):
+            return _as_bool(_ai_setting("ALLOW_AI_PROCEDURE_WITHOUT_DATA", "FALSE"), False)
+        return _as_bool(_ai_setting("ENABLE_AI_GENERAL_KNOWLEDGE", "FALSE"), False)
 
     return False
-def is_specific_contact_question(text):
+
+
+# Chức năng: Tách danh sách từ khóa từ một ô dữ liệu Google Sheets.
+# Vai trò: Dùng dữ liệu sheet thay cho hardcode từ khóa nghiệp vụ trong router.
+def _split_keywords(value):
+    raw = str(value or "").replace(";", ",").replace("|", ",")
+    return [x.strip() for x in raw.split(",") if x and x.strip()]
+
+
+# Chức năng: Kiểm tra một dòng dữ liệu có trạng thái hoạt động hay không.
+# Vai trò: Bảo đảm router chỉ xử lý các dòng đang bật trong Google Sheets.
+def _is_on(row):
+    status = normalize_text(get_first(row, "TRANG_THAI", "STATUS", "ACTIVE"))
+    return status not in ["off", "inactive", "false", "0", "no", "khong", "ngung", "dung"]
+
+
+# Chức năng: Lấy các dòng MENU đang hoạt động từ Google Sheets.
+# Vai trò: MENU là nguồn định tuyến nghiệp vụ duy nhất của router.
+def _menu_rows():
+    return [r for r in read_menu() if _is_on(r)]
+
+
+# Chức năng: Tính điểm khớp giữa câu hỏi và một dòng MENU.
+# Vai trò: Chọn nhóm nghiệp vụ bằng TEN_CHUC_NANG/TU_KHOA trong Google Sheets.
+def _score_menu_row(text, row):
     t = normalize_text(text)
-    agency_keys = [
-        "cong an phuong",
-        "cong an thanh pho",
-        "catp",
-        "pc08",
-        "pc07",
-        "phong canh sat",
-        "phong csgt",
-        "phong pccc",
-        "phong csqlhc",
-        "so tu phap",
-        "cuc c06",
-        "c06",
-        "bo cong an",
-        "phu lien",
-        "kien an",
+    t_box = f" {t} "
+    score = 0
+
+    title = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
+    desc = get_first(row, "MO_TA", "MÔ_TẢ")
+    sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
+    keywords = _split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS"))
+
+    for value, weight in [(title, 30), (desc, 8), (sheet, 5)]:
+        n = normalize_text(value)
+        if n and (t == n or f" {n} " in t_box or n in t):
+            score += weight
+
+    for kw in keywords:
+        n = normalize_text(kw)
+        if not n:
+            continue
+        if t == n:
+            score += 35
+        elif f" {n} " in t_box or n in t:
+            score += 15
+
+    return score
+
+
+# Chức năng: Tìm dòng MENU phù hợp nhất bằng dữ liệu trong sheet MENU.
+# Vai trò: Thay thế toàn bộ mapping nhóm thủ tục hardcode trong router cũ.
+def _match_menu_by_data(text):
+    best = None
+    best_score = 0
+    second_score = 0
+
+    for row in _menu_rows():
+        score = _score_menu_row(text, row)
+        if score > best_score:
+            second_score = best_score
+            best_score = score
+            best = row
+        elif score > second_score:
+            second_score = score
+
+    if best and best_score >= 25 and best_score >= second_score + 5:
+        return best
+    return None
+
+
+# Chức năng: Kiểm tra lệnh mở menu hoặc bắt đầu phiên chat.
+# Vai trò: Nhóm lệnh kỹ thuật được phép giữ trong Python.
+def is_greeting(text):
+    return normalize_text(text) in [
+        "xin chao", "chao", "chao ban", "hello", "hi", "alo",
+        "menu", "danh muc", "bat dau", "0",
+        "ket noi bot cap", "#ket noi bot cap", "ket_noi_bot_cap", "#ket_noi_bot_cap",
     ]
-    return is_contact_question(t) and any(k in t for k in agency_keys)
 
 
+# Chức năng: Kiểm tra lệnh kết thúc, reset hoặc quay lại.
+# Vai trò: Nhóm lệnh điều khiển phiên được phép giữ trong Python.
+def is_reset_question(text):
+    return normalize_text(text) in [
+        "huy", "thoat", "lam lai", "menu chinh", "quay lai", "back",
+        "xoa", "reset", "xong", "xong roi", "da ro", "toi hieu roi",
+        "duoc roi", "ok roi", "cam on", "cam on ban", "ok cam on",
+        "cam on nhe", "cam on nhieu", "thank", "thanks", "thank you",
+    ]
+
+
+# Chức năng: Kiểm tra yêu cầu xem tiếp danh sách.
+# Vai trò: Hỗ trợ phân trang kỹ thuật cho danh sách thủ tục.
+def is_next_page_question(text):
+    return normalize_text(text) in ["xem tiep", "xem them", "tiep", "trang tiep", "next"]
+
+
+# Chức năng: Tạo thông điệp kết thúc phiên từ SETTING_CHAT.
+# Vai trò: Loại bỏ lời chào/kết thúc hardcode theo đơn vị.
+def get_end_message():
+    default = "🙏 Cảm ơn Quý công dân đã sử dụng hệ thống. Khi cần hỗ trợ thêm, vui lòng nhắn 'menu'."
+    return _chat_setting("GOODBYE_MESSAGE", default)
+
+
+# Chức năng: Kiểm tra câu hỏi nối tiếp về nơi thực hiện hoặc địa chỉ.
+# Vai trò: Nhận diện ý định kỹ thuật để đọc cột địa điểm từ dữ liệu thủ tục/liên hệ.
+def is_location_question(text):
+    t = normalize_text(text)
+    keys = [
+        "o dau", "dia chi", "dia diem", "noi lam", "lam o dau", "nop o dau",
+        "co quan tiep nhan", "tiep nhan", "noi tiep nhan", "co quan thuc hien",
+        "noi thuc hien", "noi nop", "den dau", "den dau lam", "di dau lam",
+        "toi dau lam", "lam cho nao", "nop cho nao", "vi tri", "ban do", "google map", "map",
+    ]
+    return any(k in t for k in keys)
+
+
+# Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
+# Vai trò: Dùng ý định kỹ thuật và dữ liệu TRA_CUU_LIEN_HE, không hardcode bộ phận nghiệp vụ.
+def is_contact_question(text):
+    t = normalize_text(text)
+    intent_keys = ["lien he", "so dien thoai", "sdt", "dien thoai", "hotline", "gap", "ai la", "phu trach", "quan ly"]
+    if any(k in t for k in intent_keys):
+        return True
+
+    for row in read_lien_he():
+        values = [
+            get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+            get_first(row, "TDP"),
+            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+            get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"),
+            get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
+        ]
+        for value in values:
+            n = normalize_text(value)
+            if n and len(n) >= 3 and (n in t or t in n):
+                return True
+    return False
+
+
+# Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
+# Vai trò: Giữ đúng context thủ tục hiện tại khi người dân hỏi hồ sơ, lệ phí, thời hạn.
 def is_followup_detail_question(user_text):
-    # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
-    # Vai trò: Chỉ giữ context khi người dân hỏi tiếp về thủ tục hiện tại.
     text = normalize_text(user_text)
     detail_keywords = [
-        "ho so", "ho so chi tiet", "giay to", "can giay to gi", "can gi",
-        "dieu kien", "yeu cau", "yeu cau dieu kien",
-        "trinh tu", "quy trinh", "quy trinh thuc hien",
-        "cac buoc", "buoc thuc hien", "thu tuc thuc hien",
-        "co quan tiep nhan", "noi tiep nhan", "noi thuc hien",
-        "noi nop", "nop o dau", "lam o dau", "dia diem",
-        "o dau", "o cho nao", "den dau", "den dau lam",
-        "di dau lam", "toi dau lam",
-        "vi tri", "ban do", "google map", "map",
-        "thoi han", "bao lau", "may ngay",
-        "le phi", "phi", "mat phi", "co mat phi khong",
-        "co so phap ly", "can cu phap ly",
-        "link", "link dvc", "dich vu cong",
-        "ket qua", "luu y", "chi tiet",
+        "ho so", "giay to", "can gi", "dieu kien", "yeu cau", "trinh tu",
+        "quy trinh", "cac buoc", "buoc thuc hien", "co quan tiep nhan",
+        "noi tiep nhan", "noi thuc hien", "noi nop", "nop o dau", "lam o dau",
+        "dia diem", "o dau", "thoi han", "bao lau", "may ngay", "le phi",
+        "phi", "mat phi", "co so phap ly", "can cu phap ly", "link",
+        "dich vu cong", "ket qua", "luu y", "chi tiet",
     ]
-    return any(kw in text for kw in detail_keywords)
+    return any(kw in text for kw in detail_keywords) or is_location_question(text)
 
 
-# Chức năng: Tìm dòng liên hệ theo tên cơ quan hoặc họ tên cán bộ trong sheet TRA_CUU_LIEN_HE.
-# Đầu vào: name - tên cơ quan/cán bộ cần tìm.
-# Đầu ra: Một dòng dữ liệu liên hệ nếu tìm thấy; None nếu không có.
-# Vai trò: Bổ sung thông tin liên hệ khi thủ tục có cột cơ quan tiếp nhận/thực hiện.
+# Chức năng: Tìm liên hệ theo tên cơ quan/cán bộ từ TRA_CUU_LIEN_HE.
+# Vai trò: Bổ sung nơi tiếp nhận cho thủ tục bằng dữ liệu Google Sheets.
 def find_lien_he_by_ten_co_quan(name):
     if not name:
         return None
@@ -215,18 +257,17 @@ def find_lien_he_by_ten_co_quan(name):
     for row in rows:
         ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
         ten_norm = normalize_text(ten)
-        if name_norm in ten_norm or ten_norm in name_norm:
+        if ten_norm and (name_norm in ten_norm or ten_norm in name_norm):
             return row
 
     return None
 
 
-# Chức năng: Tạo tin nhắn chào mừng và danh mục hỗ trợ từ sheet MENU.
-# Đầu vào: Không có.
-# Đầu ra: Chuỗi menu chào mừng.
-# Vai trò: Hiển thị danh mục chức năng chính của BOT khi người dân nhắn menu/lời chào.
+# Chức năng: Tạo tin nhắn chào mừng và danh mục hỗ trợ từ MENU/SETTING_CHAT.
+# Vai trò: Không hardcode danh mục nghiệp vụ trong Python.
 def get_welcome_message():
-    rows = read_menu()
+    prefix = _chat_setting("WELCOME_MESSAGE", "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN")
+    rows = _menu_rows()
     lines = []
 
     for i, row in enumerate(rows, start=1):
@@ -235,18 +276,10 @@ def get_welcome_message():
             lines.append(f"{i}. {title}")
 
     if not lines:
-        lines = [
-            "1. Căn cước",
-            "2. Cư trú",
-            "3. VNeID / định danh điện tử",
-            "4. Phản ánh ANTT",
-            "5. Số điện thoại trực ban",
-            "6. Gặp cán bộ trực",
-        ]
+        return prefix
 
     return (
-        "🇻🇳 CHÀO MỪNG QUÝ CÔNG DÂN\n"
-        "Đến với Trợ lý AI Công an phường Phù Liễn, thành phố Hải Phòng.\n\n"
+        f"{prefix}\n\n"
         "📋 DANH MỤC HỖ TRỢ\n"
         + "\n".join(lines)
         + "\n\n💬 Quý công dân có thể nhập số thứ tự hoặc nhập trực tiếp nội dung cần hỏi."
@@ -254,28 +287,16 @@ def get_welcome_message():
 
 
 # Chức năng: Tạo context sau khi người dân chọn một mục trong MENU.
-# Đầu vào: row - dòng dữ liệu menu đã tìm thấy.
-# Đầu ra: Dict context mới.
-# Vai trò: Chuyển BOT sang nhóm thủ tục hoặc tra cứu liên hệ theo sheet được cấu hình trong MENU.
+# Vai trò: Chuyển BOT sang sheet được cấu hình tại MENU.SHEET_DU_LIEU.
 def menu_context(row):
     sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
     topic = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
-
-    if sheet == "TRA_CUU_LIEN_HE":
-        return {
-            "sheet": sheet,
-            "topic": topic,
-            "stage": "contact_lookup",
-            "procedure_id": "",
-            "procedure_name": "",
-            "page": 1,
-            "last_suggestions": [],
-        }
+    stage = "contact_lookup" if normalize_text(sheet) == "tra_cuu_lien_he" else "procedure_list"
 
     return {
         "sheet": sheet,
         "topic": topic,
-        "stage": "procedure_list",
+        "stage": stage,
         "procedure_id": "",
         "procedure_name": "",
         "page": 1,
@@ -283,8 +304,8 @@ def menu_context(row):
     }
 
 
-# Chức năng: Tạo danh sách thủ tục theo từng sheet THU_TUC_* có phân trang.
-# Vai trò: Hiển thị danh sách thủ tục để người dân chọn số thứ tự.
+# Chức năng: Tạo danh sách thủ tục theo sheet THU_TUC_* có phân trang.
+# Vai trò: Hiển thị lựa chọn thủ tục từ dữ liệu Google Sheets.
 def _make_procedure_list_reply(sheet, topic="", page=1):
     if not sheet or not sheet.startswith("THU_TUC_"):
         return None
@@ -299,39 +320,29 @@ def _make_procedure_list_reply(sheet, topic="", page=1):
     page_rows = all_rows[start:end]
 
     if not page_rows:
-        last_page = max(((len(all_rows) - 1) // PAGE_SIZE) + 1, 1)
-        page = last_page
+        page = max(((len(all_rows) - 1) // PAGE_SIZE) + 1, 1)
         start = (page - 1) * PAGE_SIZE
         end = start + PAGE_SIZE
         page_rows = all_rows[start:end]
 
     suggestions = []
     lines = []
-    start_index = start + 1
-
-    for i, row in enumerate(page_rows, start=start_index):
+    for i, row in enumerate(page_rows, start=start + 1):
         name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-        pid = get_first(row, "ID")
+        pid = get_first(row, "ID", "MA", "MÃ")
         suggestions.append({"index": i, "id": pid, "name": name})
         if name:
             lines.append(f"{i}. {name}")
 
     title = topic or sheet.replace("THU_TUC_", "")
-    total = len(all_rows)
-    has_next = end < total
-
+    has_next = end < len(all_rows)
     reply_parts = [
-        "Tôi chưa xác định được chính xác Quý công dân đang hỏi về thủ tục nào.",
-        f"Quý công dân vui lòng hỏi rõ hơn trong nhóm thủ tục: {title}.",
-        "📌 Danh sách thủ tục hiện có:",
+        f"📌 {title}",
+        "Quý công dân vui lòng chọn thủ tục:",
         "\n".join(lines),
-        "➡️ Quý công dân vui lòng:\n• Nhắn số thứ tự của thủ tục cần tra cứu; hoặc\n• Nhập rõ tên thủ tục trong nhóm trên để BOT hỗ trợ chính xác.",
+        "Nhắn số thứ tự để chọn thủ tục hoặc nhập từ khóa gần đúng của thủ tục cần hỏi.",
     ]
-
-    if has_next:
-        reply_parts.append("Nhắn \"xem tiếp\" để xem thêm thủ tục.")
-    else:
-        reply_parts.append("Đã hiển thị hết danh sách thủ tục trong nhóm này.")
+    reply_parts.append("Nhắn \"xem tiếp\" để xem thêm thủ tục." if has_next else "Đã hiển thị hết danh sách thủ tục trong nhóm này.")
 
     new_ctx = {
         "sheet": sheet,
@@ -342,14 +353,11 @@ def _make_procedure_list_reply(sheet, topic="", page=1):
         "page": page,
         "last_suggestions": suggestions,
     }
-
     return "\n\n".join(reply_parts), new_ctx
 
 
-# Chức năng: Tạo câu trả lời khi người dân chọn một dòng trong MENU.
-# Đầu vào: row - dòng MENU khớp với lựa chọn của người dân.
-# Đầu ra: Tuple(reply, suggestions).
-# Vai trò: Điều hướng từ MENU sang danh sách thủ tục hoặc nội dung mô tả theo sheet.
+# Chức năng: Tạo câu trả lời khi người dân chọn một dòng MENU.
+# Vai trò: MENU quyết định sheet, mô tả và hướng xử lý tiếp theo.
 def answer_from_menu(row):
     title = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
     desc = get_first(row, "MO_TA", "MÔ_TẢ")
@@ -363,11 +371,7 @@ def answer_from_menu(row):
         if grouped:
             reply, new_ctx = grouped
             if desc:
-                reply = reply.replace(
-                    f"📌 {title}\n\n",
-                    f"📌 {title}\n\n{desc}\n\n",
-                    1
-                )
+                reply = reply.replace(f"📌 {title}\n\n", f"📌 {title}\n\n{desc}\n\n", 1)
             return reply, new_ctx.get("last_suggestions", [])
 
     parts = []
@@ -376,185 +380,80 @@ def answer_from_menu(row):
     if desc:
         parts.append(str(desc))
     if sheet:
-        parts.append(f"Quý công dân vui lòng nhập nội dung cụ thể để tôi tra cứu trong nhóm: {sheet}")
-
+        parts.append(f"Quý công dân vui lòng nhập nội dung cụ thể để BOT tra cứu trong nhóm dữ liệu: {sheet}")
     return ("\n\n".join(parts) if parts else get_welcome_message()), []
 
 
-# Chức năng: Nhận diện nhóm thủ tục được nêu rõ trong câu hỏi.
-# Vai trò: Giúp BOT mở đúng danh sách thủ tục theo nhóm dữ liệu Google Sheets.
-# Chức năng: Nhận diện nhóm thủ tục khi người dân có ý định tra cứu thủ tục hành chính.
-# Vai trò: Ngăn BOT mở sai menu khi câu hỏi chỉ có từ khóa nhưng không phải hỏi thủ tục.
+# Chức năng: Nhận diện nhóm thủ tục bằng MENU thay vì mapping hardcode.
+# Vai trò: Giúp BOT mở đúng sheet THU_TUC_* theo Google Sheets.
 def detect_explicit_topic(text):
-    t = normalize_text(text)
-    t_check = f" {t} "
-
-    topic_map = {
-        "THU_TUC_CCCD": [
-            "can cuoc", "cccd", "the can cuoc", "lam can cuoc", "cap can cuoc"
-        ],
-        "THU_TUC_CUTRU": [
-            "cu tru", "tam tru", "thuong tru", "tam vang", "luu tru",
-            "xac nhan cu tru", "tach ho"
-        ],
-        "THU_TUC_VNEID": [
-            "vneid", "dinh danh", "muc 2", "kich hoat vneid"
-        ],
-        "THU_TUC_PTGT": [
-            "dang ky xe", "cap bien so", "doi bien so", "cap lai bien so",
-            "sang ten xe", "dang ky phuong tien", "dang ky xe may", "dang ky o to"
-        ],
-        "THU_TUC_PCCC": [
-            "pccc", "phong chay", "chua chay", "nghiem thu pccc", "tham duyet pccc"
-        ],
-        "THU_TUC_VKVLN": [
-            "vu khi", "vat lieu no", "cong cu ho tro", "phao"
-        ],
-        "THU_TUC_LLTP": [
-            "ly lich tu phap", "phieu ly lich", "lltp"
-        ],
-        "THU_TUC_ANTT": [
-            "nganh nghe", "antt", "kinh doanh co dieu kien",
-            "karaoke", "cam do", "dich vu bao ve"
-        ],
-    }
-
-    procedure_intent_keys = [
-        "thu tuc", "lam", "cap", "cap lai", "cap doi", "doi",
-        "dang ky", "xin", "nop", "ho so", "giay to", "can gi",
-        "o dau", "tai dau", "le phi", "thoi han", "ket qua",
-        "truc tuyen", "online", "dich vu cong", "huong dan"
-    ]
-
-    menu_only_keys = []
-    for keys in topic_map.values():
-        menu_only_keys.extend(keys)
-
-    has_procedure_intent = any(f" {k} " in t_check for k in procedure_intent_keys)
-    is_exact_menu_key = any(t == normalize_text(k) for k in menu_only_keys)
-
-    if not has_procedure_intent and not is_exact_menu_key:
+    row = _match_menu_by_data(text)
+    if not row:
         return None
 
-    for sheet, keys in topic_map.items():
-        if any(f" {normalize_text(k)} " in t_check for k in keys):
-            return {
-                "sheet": sheet,
-                "topic": sheet.replace("THU_TUC_", ""),
-                "stage": "procedure_list",
-            }
+    sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
+    if not sheet or not sheet.startswith("THU_TUC_"):
+        return None
 
-    return None
-# Chức năng: Tạo tiền tố ngữ cảnh dựa trên sheet thủ tục đang lưu trong context.
-# Đầu vào: ctx - dict ngữ cảnh hiện tại của phiên chat.
-# Đầu ra: Chuỗi tiền tố chủ đề hoặc chuỗi rỗng nếu không có sheet phù hợp.
-# Vai trò: Giúp BOT hiểu các câu hỏi nối tiếp như hồ sơ, lệ phí, thời hạn, trình tự.
+    return {
+        "sheet": sheet,
+        "topic": get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE") or sheet.replace("THU_TUC_", ""),
+        "stage": "procedure_list",
+    }
+
+
+# Chức năng: Lấy tiền tố ngữ cảnh từ tên nhóm MENU hiện tại.
+# Vai trò: Không dùng mapping sheet-nghiệp vụ hardcode.
 def context_prefix(ctx):
-    sheet = ctx.get("sheet", "")
-    mapping = {
-        "THU_TUC_CCCD": "căn cước ",
-        "THU_TUC_CUTRU": "cư trú ",
-        "THU_TUC_VNEID": "vneid ",
-        "THU_TUC_PTGT": "đăng ký xe ",
-        "THU_TUC_PCCC": "pccc ",
-        "THU_TUC_VKVLN": "vũ khí vật liệu nổ công cụ hỗ trợ ",
-        "THU_TUC_LLTP": "lý lịch tư pháp ",
-        "THU_TUC_ANTT": "ngành nghề antt ",
-    }
-    return mapping.get(sheet, "")
+    return (str(ctx.get("topic") or "") + " ") if ctx.get("topic") else ""
 
 
-# Chức năng: Kiểm tra người dân chỉ nhập tên nhóm thủ tục, chưa nhập tên thủ tục cụ thể.
-# Đầu vào: text - nội dung người dân gửi; explicit - kết quả nhận diện chủ đề.
-# Đầu ra: True nếu là yêu cầu mở lại danh sách nhóm; False nếu có khả năng là tên thủ tục cụ thể.
-# Vai trò: Giữ nguyên format danh sách 5 thủ tục khi người dân nhập lại tên nhóm như “căn cước”, “cư trú”, “đăng ký xe”.
+# Chức năng: Kiểm tra người dân chỉ nhập tên nhóm thủ tục.
+# Vai trò: Dùng TEN_CHUC_NANG/TU_KHOA trong MENU để mở danh sách nhóm.
 def is_group_only_topic_request(text, explicit):
+    if not explicit:
+        return False
+
     t = normalize_text(text)
-    sheet = explicit.get("sheet", "") if explicit else ""
-
-    group_keys = {
-        "THU_TUC_CCCD": [
-            "can cuoc", "cccd", "the can cuoc"
-        ],
-        "THU_TUC_CUTRU": [
-            "cu tru", "thu tuc cu tru", "dang ky cu tru"
-        ],
-        "THU_TUC_VNEID": [
-            "vneid", "dinh danh", "dinh danh dien tu"
-        ],
-        "THU_TUC_PTGT": [
-            "dang ky xe", "phuong tien", "phuong tien giao thong", "xe"
-        ],
-        "THU_TUC_PCCC": [
-            "pccc", "phong chay", "chua chay", "phong chay chua chay"
-        ],
-        "THU_TUC_VKVLN": [
-            "vkvln", "vu khi", "vat lieu no", "cong cu ho tro"
-        ],
-        "THU_TUC_LLTP": [
-            "lltp", "ly lich tu phap", "phieu ly lich", "phieu ly lich tu phap"
-        ],
-        "THU_TUC_ANTT": [
-            "antt", "nganh nghe antt", "nganh nghe dau tu kinh doanh co dieu kien ve antt",
-            "kinh doanh co dieu kien"
-        ],
-    }
-
-    return t in group_keys.get(sheet, [])
+    sheet = explicit.get("sheet", "")
+    for row in _menu_rows():
+        if get_first(row, "SHEET_DU_LIEU", "SHEET") != sheet:
+            continue
+        values = [get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")]
+        values.extend(_split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")))
+        if any(t == normalize_text(v) for v in values if v):
+            return True
+    return False
 
 
-# Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp của người dân.
-# Đầu vào: row - dòng thủ tục; user_text - câu hỏi nối tiếp.
-# Đầu ra: Chuỗi trả lời chi tiết theo trường dữ liệu phù hợp.
-# Vai trò: Khai thác các cột HO_SO, TRINH_TU, THOI_HAN, LE_PHI... trong sheet THU_TUC_*.
+# Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp.
+# Vai trò: Khai thác các cột HO_SO, NOI_NOP, TRINH_TU, THOI_HAN, LE_PHI trong sheet.
 def answer_procedure_detail(row, user_text):
-    # Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp của người dân.
-    # Vai trò: Khai thác các cột HO_SO, NOI_NOP, TRINH_TU, THOI_HAN, LE_PHI... trong sheet THU_TUC_*.
     t = normalize_text(user_text)
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+
     if "dieu kien" in t or "yeu cau" in t:
         value = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
         return f"✅ Điều kiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
     if is_location_question(t):
-        co_quan = get_first(
-            row,
-            "NOI_THUC_HIEN",
-            "NƠI_THỰC_HIỆN",
-            "CO_QUAN_TIEP_NHAN",
-            "CƠ_QUAN_TIẾP_NHẬN",
-            "CO_QUAN_THUC_HIEN",
-            "CƠ_QUAN_THỰC_HIỆN",
-        )
-
+        co_quan = get_first(row, "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "CO_QUAN_TIEP_NHAN", "CƠ_QUAN_TIẾP_NHẬN", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
         lien_he = find_lien_he_by_ten_co_quan(co_quan)
         if lien_he:
             return format_lien_he(lien_he)
-
         if co_quan:
             return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}"
-
-        return (
-            f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n"
-            "Quý công dân vui lòng liên hệ Công an phường để được hướng dẫn cụ thể."
-        )
+        return _chat_setting("ASK_LOCATION_DETAIL", f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\nChưa có dữ liệu nơi tiếp nhận trong Google Sheets.")
 
     if "ho so" in t or "giay to" in t or "can gi" in t or "chi tiet" in t:
         value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
         return f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
-    if (
-        "trinh tu" in t
-        or "quy trinh" in t
-        or "quy trinh thuc hien" in t
-        or "cac buoc" in t
-        or "buoc thuc hien" in t
-        or "thu tuc thuc hien" in t
-    ):
+    if "trinh tu" in t or "quy trinh" in t or "cac buoc" in t or "buoc thuc hien" in t:
         value = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
         return f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
-    if "bao lau" in t or "thoi han" in t:
+    if "bao lau" in t or "thoi han" in t or "may ngay" in t:
         value = get_first(row, "THOI_HAN", "THỜI_HẠN")
         return f"⏱ Thời hạn - {ten}\n\n{value}" if value else format_thu_tuc(row)
 
@@ -566,7 +465,7 @@ def answer_procedure_detail(row, user_text):
         value = get_first(row, "KET_QUA", "KẾT_QUẢ")
         return f"✅ Kết quả - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
-    if "co so phap ly" in t:
+    if "co so phap ly" in t or "can cu phap ly" in t:
         value = get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
         return f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
@@ -576,34 +475,8 @@ def answer_procedure_detail(row, user_text):
 
     return format_thu_tuc(row)
 
-# Chức năng: Tạo ngữ cảnh dữ liệu để chuyển sang AI fallback khi không tìm thấy câu trả lời trực tiếp.
-# Đầu vào: ctx - context hiện tại.
-# Đầu ra: Chuỗi thông tin thủ tục/danh sách thủ tục liên quan.
-# Vai trò: Giúp AI có dữ liệu nền khi BOT phải dùng AI_FALLBACK.
-def build_ai_context(ctx):
-    parts = []
-
-    if ctx.get("procedure_id"):
-        p = find_procedure_by_id(ctx.get("procedure_id"))
-        if p:
-            parts.append(format_thu_tuc(p))
-
-    elif ctx.get("sheet"):
-        rows = list_procedures_by_sheet(ctx.get("sheet"), limit=5)
-        if rows:
-            names = [
-                get_first(r, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-                for r in rows
-                if get_first(r, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-            ]
-            parts.append("Các thủ tục liên quan:\n" + "\n".join(names))
-
-    return "\n\n".join(parts)
-
 
 # Chức năng: Chọn thủ tục từ danh sách gợi ý bằng số thứ tự.
-# Đầu vào: text - số người dân nhập; ctx - context chứa last_suggestions.
-# Đầu ra: Dòng thủ tục đã chọn hoặc None.
 # Vai trò: Cho phép người dân chọn thủ tục sau khi BOT hiển thị danh sách.
 def _select_from_suggestions(text, ctx):
     t = normalize_text(text)
@@ -614,14 +487,11 @@ def _select_from_suggestions(text, ctx):
     for item in ctx.get("last_suggestions", []) or []:
         if int(item.get("index", -99)) == idx:
             return find_procedure_by_id(item.get("id"))
-
     return None
 
 
 # Chức năng: Tìm thủ tục phù hợp trong sheet thủ tục hiện tại.
-# Đầu vào: text - câu hỏi/từ khóa; ctx - context hiện tại.
-# Đầu ra: Dòng thủ tục phù hợp hoặc None.
-# Vai trò: Khi đang ở một nhóm thủ tục, BOT chỉ tìm trong đúng sheet hiện tại.
+# Vai trò: Khi đang ở một nhóm, BOT chỉ tìm trong đúng sheet hiện tại.
 def _find_procedure_in_current_sheet(text, ctx):
     sheet = ctx.get("sheet", "")
     if not sheet or not sheet.startswith("THU_TUC_"):
@@ -632,268 +502,84 @@ def _find_procedure_in_current_sheet(text, ctx):
         return None
 
     best = results[0]
-    best_score = best.get("_SCORE", 0)
-    second_score = results[1].get("_SCORE", 0) if len(results) > 1 else 0
-
+    best_score = safe_int(best.get("_SCORE", 0))
+    second_score = safe_int(results[1].get("_SCORE", 0)) if len(results) > 1 else 0
     if best_score >= 20 and best_score >= second_score + 8:
         return best
-
     return None
 
 
 # Chức năng: Tạo lại danh sách thủ tục dựa trên context hiện tại.
-# Đầu vào: ctx - context có sheet/topic/page.
-# Đầu ra: Tuple(reply, new_ctx) hoặc None.
-# Vai trò: Dùng khi cần nhắc người dân chọn lại thủ tục trong nhóm hiện tại.
+# Vai trò: Dùng khi phân trang hoặc yêu cầu người dân chọn lại thủ tục.
 def _procedure_list_reply_for_context(ctx):
-    sheet = ctx.get("sheet", "")
-    topic = ctx.get("topic", "")
-    page = ctx.get("page", 1)
-    return _make_procedure_list_reply(sheet, topic=topic, page=page)
+    return _make_procedure_list_reply(ctx.get("sheet", ""), topic=ctx.get("topic", ""), page=ctx.get("page", 1))
 
 
 # Chức năng: Tạo thông báo yêu cầu chọn thủ tục cụ thể.
-# Đầu vào: ctx - context hiện tại.
-# Đầu ra: Tuple(reply, new_ctx).
-# Vai trò: Tránh việc BOT đoán sai thủ tục khi người dân chưa chọn thủ tục rõ ràng.
+# Vai trò: Tránh BOT đoán sai thủ tục khi câu hỏi chưa đủ rõ.
 def _need_select_procedure_message(ctx):
     grouped = _procedure_list_reply_for_context(ctx)
     if grouped:
         reply, new_ctx = grouped
-        reply = (
-            "Tôi chưa xác định được thủ tục cần chọn trong nhóm này.\n\n"
-            + reply
-        )
-        return reply, new_ctx
+        return "Tôi chưa xác định được thủ tục cần chọn trong nhóm này.\n\n" + reply, new_ctx
 
-    return (
-        "Tôi chưa xác định được thủ tục cần chọn. Quý công dân vui lòng nhập 'menu' để xem danh mục hỗ trợ.",
-        ctx
-    )
+    return _chat_setting("UNKNOWN_MESSAGE", "Tôi chưa xác định được thủ tục cần chọn. Quý công dân vui lòng nhập 'menu'."), ctx
 
 
-# Chức năng: Tạo hướng dẫn tra cứu liên hệ theo từ khóa chuẩn.
-# Đầu vào: Không có.
-# Đầu ra: Chuỗi hướng dẫn tra cứu liên hệ.
-# Vai trò: Hỗ trợ người dân sử dụng đúng nhóm TRA_CUU_LIEN_HE trong Google Sheets.
+# Chức năng: Tạo hướng dẫn tra cứu liên hệ từ SETTING_CHAT hoặc MENU.
+# Vai trò: Không hardcode danh sách bộ phận liên hệ trong router.
 def get_contact_lookup_message():
-    return (
-        "📌 Tra cứu liên hệ\n\n"
-        "Bạn đang truy cập hệ thống thông tin liên lạc của Công an phường Phù Liễn.\n\n"
-        "Quý công dân vui lòng nhập đúng một trong các từ khóa chuẩn:\n"
-        "1. liên hệ chỉ huy CAP\n"
-        "2. liên hệ bộ phận CSKV\n"
-        "3. liên hệ bộ phận AN NINH\n"
-        "4. liên hệ bộ phận PCTP\n"
-        "5. liên hệ bộ phận CSTT"
-    )
+    configured = _chat_setting("CONTACT_GUIDE", "")
+    if configured:
+        return configured
+
+    for row in _menu_rows():
+        if normalize_text(get_first(row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
+            desc = get_first(row, "MO_TA", "MÔ_TẢ")
+            return str(desc or "📌 Tra cứu liên hệ\n\nQuý công dân vui lòng nhập nội dung liên hệ cần tra cứu.").strip()
+
+    return "📌 Tra cứu liên hệ\n\nQuý công dân vui lòng nhập nội dung liên hệ cần tra cứu."
 
 
-# Chức năng: Kiểm tra người dân có nhập đúng từ khóa chuẩn tra cứu liên hệ hay không.
-# Đầu vào: text - nội dung người dân gửi.
-# Đầu ra: True nếu là từ khóa chuẩn; False nếu không phải.
-# Vai trò: Cho phép tra cứu trực tiếp các nhóm liên hệ trong sheet TRA_CUU_LIEN_HE.
-def is_contact_lookup_keyword(text):
-    t = normalize_text(text)
-    keys = [
-        "lien he chi huy cap",
-        "lien he bo phan cskv",
-        "lien he bo phan an ninh",
-        "lien he bo phan pctp",
-        "lien he bo pctp",
-        "lien he bo phan cstt",
-    ]
-    return t in keys
+# Chức năng: Xử lý kết quả liên hệ và câu nhắc làm rõ khi có nhiều kết quả.
+# Vai trò: Chuẩn hóa trả lời TRA_CUU_LIEN_HE bằng dữ liệu sheet.
+def _reply_contact_results(text, limit=5, keep_context=False):
+    results = search_lien_he(text, limit=limit)
+    if not results:
+        return None
 
-def is_contact_hint_question(text):
-    # Chức năng: Nhận diện câu hỏi cần hỏi tiếp để xác định CSKV.
-    # Vai trò: Chỉ kích hoạt khi người dân hỏi chung chung về CSKV, không áp dụng cho chỉ huy hoặc lãnh đạo.
-    t = normalize_text(text)
+    reply = format_multiple_results(results, format_lien_he, limit=limit)
+    if len(results) > 1:
+        reply += "\n\nℹ️ Có nhiều kết quả phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
 
-    keys = [
-        "gap cskv",
-        "can gap cskv",
-        "so dien thoai cskv",
-        "lien he cskv",
-        "tim cskv",
-        "muon gap cskv",
-        "can tim cskv",
-    ]
+    ctx = {
+        "stage": "contact_lookup" if keep_context else "",
+        "sheet": "TRA_CUU_LIEN_HE",
+        "topic": "Tra cứu liên hệ",
+        "procedure_id": "",
+        "procedure_name": "",
+        "page": 1,
+        "last_suggestions": [],
+        "last_route": "TRA_CUU_LIEN_HE",
+    }
+    return reply, "TRA_CUU_LIEN_HE", ctx if keep_context else {}, ""
 
-    return any(k in t for k in keys)
 
-# Chức năng: Tạo thông báo hướng dẫn vào mục tra cứu liên hệ.
-# Đầu vào: Không có.
-# Đầu ra: Chuỗi hướng dẫn.
-# Vai trò: Giúp người dân dùng đúng MENU/TRA_CUU_LIEN_HE khi muốn tìm cán bộ hoặc bộ phận.
-def get_contact_hint_message():
-    return (
-        "Để bảo đảm tra cứu đúng thông tin liên hệ, Quý công dân vui lòng truy cập mục “Tra cứu liên hệ”.\n\n"
-        "Cách thực hiện:\n"
-        "• Nhắn “menu”\n"
-        "• Chọn mục Tra cứu liên hệ\n\n"
-        "Sau đó nhập đúng từ khóa chuẩn theo danh sách hướng dẫn."
-    )
-
+# Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
+# Vai trò: Router chỉ điều phối MENU, FAQ, TRA_CUU_LIEN_HE, THU_TUC_* và fallback.
 def route_message(user_text, context=None):
-    # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
-    # Vai trò: Bộ máy trung tâm xử lý MENU, TRA_CUU_LIEN_HE, THU_TUC_*, FAQ và AI fallback.
     ctx = dict(context or {})
     text = str(user_text or "").strip()
     text_norm = normalize_text(text)
 
     if not text:
-        return DEFAULT_REPLY, "EMPTY", ctx, ""
+        return get_default_reply(), "EMPTY", ctx, ""
 
     if is_reset_question(text):
         return get_end_message(), "RESET", {}, ""
 
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
-
-    if is_contact_lookup_keyword(text):
-        if normalize_text(text) == "lien he bo phan cskv":
-            return (
-                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
-                "Vui lòng nhập họ tên cán bộ nếu biết, hoặc nhập tên tổ dân phố công dân đang ở.\n\n"
-                "Ví dụ: Tổ Ngọc Sơn, Tổ Đồng Tử; Tổ Quy Tức; Tổ Khúc Trì...\n\n"
-                "Để thoát khỏi hệ thống tra cứu liên hệ, vui lòng nhập 'menu' hoặc gửi lời chào 'cảm ơn'.",
-                "CSKV_ASK_NAME",
-                {
-                    "stage": "cskv_lookup",
-                    "sheet": "TRA_CUU_LIEN_HE",
-                    "topic": "Tra cứu CSKV",
-                    "procedure_id": "",
-                    "procedure_name": "",
-                    "page": 1,
-                    "last_suggestions": [],
-                    "last_route": "CSKV_ASK_NAME",
-                },
-                "",
-            )
-
-        lien_he = search_lien_he(text, limit=20)
-        if lien_he:
-            return (
-                format_multiple_results(lien_he, format_lien_he, limit=20),
-                "TRA_CUU_LIEN_HE",
-                {},
-                "",
-            )
-
-    if is_contact_question(text):
-
-        if is_contact_hint_question(text):
-            return (
-                "Quý công dân cần liên hệ đồng chí CSKV nào?\n\n"
-                "Vui lòng nhập:\n"
-                "• Họ tên cán bộ (nếu biết)\n"
-                "hoặc\n"
-                "• Tổ dân phố/khu vực cư trú.\n\n"
-                "Ví dụ:\n"
-                "• Đồng Tử\n"
-                "• Quy Tức\n"
-                "• Hoàng Quốc Việt\n\n"
-                "Để thoát, vui lòng nhập 'menu' hoặc 'cảm ơn'.",
-                "CONTACT_HINT",
-                {
-                    "stage": "cskv_lookup",
-                    "sheet": "TRA_CUU_LIEN_HE",
-                    "topic": "Tra cứu CSKV",
-                    "procedure_id": "",
-                    "procedure_name": "",
-                    "page": 1,
-                    "last_suggestions": [],
-                    "last_route": "CSKV_ASK_NAME",
-                },
-                "",
-            )
-
-        lien_he = search_lien_he(text, limit=5)
-        if lien_he:
-            reply = format_multiple_results(lien_he, format_lien_he, limit=5)
-
-            if len(lien_he) > 1:
-                reply += (
-                    "\n\nℹ️ Có nhiều kết quả phù hợp với thông tin vừa nhập. "
-                    "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
-                )
-
-            return reply, "TRA_CUU_LIEN_HE", {}, ""
-    if ctx.get("stage") == "cskv_lookup":
-        explicit = detect_explicit_topic(text)
-        if explicit:
-            grouped = _make_procedure_list_reply(
-                explicit.get("sheet", ""),
-                topic=explicit.get("topic", ""),
-                page=1,
-            )
-            if grouped:
-                reply, new_ctx = grouped
-                return reply, "MENU_GROUP", new_ctx, ""
-
-        lien_he = search_lien_he(text, limit=5)
-        if lien_he:
-            reply = format_multiple_results(lien_he, format_lien_he, limit=5)
-
-            if len(lien_he) > 1:
-                reply += (
-                    "\n\nℹ️ Có nhiều cán bộ CSKV phù hợp với thông tin vừa nhập. "
-                    "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ hoặc địa bàn phụ trách để BOT tra cứu chính xác."
-                )
-
-            new_ctx = {
-                "stage": "cskv_lookup",
-                "sheet": "TRA_CUU_LIEN_HE",
-                "topic": "Tra cứu CSKV",
-                "procedure_id": "",
-                "procedure_name": "",
-                "page": 1,
-                "last_suggestions": [],
-                "last_route": "TRA_CUU_LIEN_HE_CSKV",
-            }
-
-            return (
-                reply + "\n\nQuý công dân có thể nhập tiếp tên cán bộ hoặc tổ dân phố khác để tra cứu CSKV.",
-                "TRA_CUU_LIEN_HE_CSKV",
-                new_ctx,
-                "",
-            )
-
-        return (
-            "Chưa tìm thấy cán bộ CSKV phù hợp với thông tin vừa nhập.\n\n"
-            "Quý công dân vui lòng nhập rõ hơn theo một trong các cách:\n"
-            "• Họ tên cán bộ CSKV nếu biết\n"
-            "• Tên tổ dân phố/khu vực cần liên hệ\n\n"
-            "Hoặc nhắn:\n"
-            "• menu để quay lại danh mục chính\n"
-            "• cảm ơn để kết thúc",
-            "CSKV_NOT_FOUND",
-            {
-                "stage": "cskv_lookup",
-                "sheet": "TRA_CUU_LIEN_HE",
-                "topic": "Tra cứu CSKV",
-                "procedure_id": "",
-                "procedure_name": "",
-                "page": 1,
-                "last_suggestions": [],
-                "last_route": "CSKV_NOT_FOUND",
-            },
-            "",
-        )
-
-    if is_specific_contact_question(text):
-        lien_he = search_lien_he(text, limit=3)
-        if lien_he:
-            reply = format_multiple_results(lien_he, format_lien_he, limit=3)
-
-            if len(lien_he) > 1:
-                reply += (
-                    "\n\nℹ️ Có nhiều kết quả phù hợp. "
-                    "Quý công dân vui lòng nhập rõ hơn họ tên đầy đủ, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
-                )
-
-            return reply, "TRA_CUU_LIEN_HE_EXPLICIT", {}, ""
 
     selected = _select_from_suggestions(text, ctx)
     if selected:
@@ -908,23 +594,13 @@ def route_message(user_text, context=None):
             "last_route": "THU_TUC_SELECT",
         }
         return format_thu_tuc(selected), "THU_TUC_SELECT", new_ctx, ""
+
     if text_norm.isdigit() and ctx.get("procedure_id"):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
-        if procedure:
-            detail_map = {
-                "1": "dieu kien",
-                "2": "ho so",
-                "3": "co quan thuc hien",
-                "4": "thoi han",
-                "5": "le phi",
-                "6": "ket qua",
-                "7": "co so phap ly",
-            }
-
-            detail_text = detail_map.get(text_norm)
-            if detail_text:
-                ctx["last_route"] = "PROCEDURE_CONTEXT"
-                return answer_procedure_detail(procedure, detail_text), "PROCEDURE_CONTEXT", ctx, ""
+        detail_map = {"1": "dieu kien", "2": "ho so", "3": "co quan thuc hien", "4": "thoi han", "5": "le phi", "6": "ket qua", "7": "co so phap ly"}
+        if procedure and detail_map.get(text_norm):
+            ctx["last_route"] = "PROCEDURE_CONTEXT"
+            return answer_procedure_detail(procedure, detail_map[text_norm]), "PROCEDURE_CONTEXT", ctx, ""
 
     if text_norm.isdigit() and ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         reply, new_ctx = _need_select_procedure_message(ctx)
@@ -937,17 +613,11 @@ def route_message(user_text, context=None):
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
             new_ctx["last_suggestions"] = suggestions
-            new_ctx["page"] = 1
             new_ctx["last_route"] = "MENU"
-
-            if new_ctx.get("sheet", "").startswith("THU_TUC_"):
-                new_ctx["stage"] = "procedure_list"
-
             return reply, "MENU", new_ctx, ""
 
     if ctx.get("procedure_id") and is_followup_detail_question(text):
         explicit = detect_explicit_topic(text)
-
         if explicit and explicit.get("sheet") != ctx.get("sheet"):
             ctx = {}
         else:
@@ -956,24 +626,42 @@ def route_message(user_text, context=None):
                 ctx["last_route"] = "PROCEDURE_CONTEXT"
                 return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
+    if ctx.get("stage") == "contact_lookup":
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
+        if contact_reply:
+            return contact_reply
+        ctx["last_route"] = "CONTACT_NOT_FOUND"
+        return _chat_setting("CONTACT_NOT_FOUND", "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."), "CONTACT_NOT_FOUND", ctx, ""
+
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
+
+    menu_row = _match_menu_by_data(text)
+    if menu_row and normalize_text(get_first(menu_row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
+        new_ctx = menu_context(menu_row)
+        new_ctx["last_route"] = "MENU"
+        return get_contact_lookup_message(), "MENU", new_ctx, ""
+
+    faq = search_faq(text, limit=3)
+    if faq:
+        ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+
     explicit = detect_explicit_topic(text)
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
         explicit_topic = explicit.get("topic", "")
 
         if is_group_only_topic_request(text, explicit):
-            grouped = _make_procedure_list_reply(
-                explicit_sheet,
-                topic=explicit_topic,
-                page=1,
-            )
+            grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
             if grouped:
                 reply, new_ctx = grouped
                 new_ctx["last_route"] = "MENU_GROUP"
                 return reply, "MENU_GROUP", new_ctx, ""
 
         procedure_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
-
         if procedure_results:
             best = procedure_results[0]
             best_score = safe_int(best.get("_SCORE", 0))
@@ -990,14 +678,12 @@ def route_message(user_text, context=None):
                     "last_suggestions": [],
                     "last_route": "THU_TUC_EXPLICIT",
                 }
-            if is_followup_detail_question(text):
-                return answer_procedure_detail(best, text), "THU_TUC_EXPLICIT", new_ctx, ""
-            
-            return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
-            
+                if is_followup_detail_question(text):
+                    return answer_procedure_detail(best, text), "THU_TUC_EXPLICIT", new_ctx, ""
+                return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
+
             suggestions = []
             lines = []
-
             for i, row in enumerate(procedure_results[:5], start=1):
                 name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
                 pid = get_first(row, "ID", "MA", "MÃ")
@@ -1005,39 +691,15 @@ def route_message(user_text, context=None):
                 if name:
                     lines.append(f"{i}. {name}")
 
-            new_ctx = {
-                "sheet": explicit_sheet,
-                "topic": explicit_topic,
-                "stage": "clarify_procedure",
-                "procedure_id": "",
-                "procedure_name": "",
-                "page": 1,
-                "last_suggestions": suggestions,
-                "last_route": "CLARIFY_THU_TUC_IN_GROUP",
-            }
+            new_ctx = {"sheet": explicit_sheet, "topic": explicit_topic, "stage": "clarify_procedure", "procedure_id": "", "procedure_name": "", "page": 1, "last_suggestions": suggestions, "last_route": "CLARIFY_THU_TUC_IN_GROUP"}
+            return "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC_IN_GROUP", new_ctx, ""
 
-            return (
-                "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. "
-                "Quý công dân vui lòng chọn số tương ứng:\n\n"
-                + "\n".join(lines),
-                "CLARIFY_THU_TUC_IN_GROUP",
-                new_ctx,
-                "",
-            )
-
-        grouped = _make_procedure_list_reply(
-            explicit_sheet,
-            topic=explicit_topic,
-            page=1,
-        )
+        grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
         if grouped:
             reply, new_ctx = grouped
             new_ctx["last_route"] = "MENU_GROUP"
             return reply, "MENU_GROUP", new_ctx, ""
 
-    # Đang ở ngữ cảnh danh sách thủ tục:
-    # - Nếu người dân hỏi tiếp về thủ tục => giữ ngữ cảnh.
-    # - Nếu người dân chuyển sang câu hỏi mới/không liên quan => thoát ngữ cảnh và quay về định tuyến từ đầu.
     if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
         if is_next_page_question(text):
             next_ctx = dict(ctx)
@@ -1048,95 +710,39 @@ def route_message(user_text, context=None):
                 new_ctx["last_route"] = "PROCEDURE_LIST_NEXT"
                 return reply, "PROCEDURE_LIST_NEXT", new_ctx, ""
 
-        if not is_followup_detail_question(text):
-            ctx = {}
-        else:
-            procedure = _find_procedure_in_current_sheet(text, ctx)
-            if procedure:
-                new_ctx = {
-                    "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
-                    "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                    "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
-                    "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                    "stage": "procedure",
-                    "page": ctx.get("page", 1),
-                    "last_suggestions": [],
-                    "last_route": "THU_TUC_IN_CONTEXT",
-                }
-                return format_thu_tuc(procedure), "THU_TUC_IN_CONTEXT", new_ctx, ""
+        procedure = _find_procedure_in_current_sheet(text, ctx)
+        if procedure:
+            new_ctx = {
+                "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
+                "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
+                "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
+                "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                "stage": "procedure",
+                "page": ctx.get("page", 1),
+                "last_suggestions": [],
+                "last_route": "THU_TUC_IN_CONTEXT",
+            }
+            return format_thu_tuc(procedure), "THU_TUC_IN_CONTEXT", new_ctx, ""
 
-            reply, new_ctx = _need_select_procedure_message(ctx)
-            new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
-            return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
-            
-    # Không có ngữ cảnh + câu hỏi địa điểm quá mơ hồ.
-    if (
-        not ctx.get("procedure_id")
-        and not explicit
-        and is_location_question(text)
-        and not is_specific_contact_question(text)
-    ):
-        lien_he = search_lien_he(text, limit=3)
+        reply, new_ctx = _need_select_procedure_message(ctx)
+        new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
+        return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
 
-        if lien_he and text_norm not in [
-            "o dau", "lam o dau", "den dau", "den dau lam",
-            "di dau lam", "toi dau lam", "vi tri", "map", "google map",
-        ]:
-            return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", {}, ""
+    menu = _match_menu_by_data(text)
+    if menu:
+        reply, suggestions = answer_from_menu(menu)
+        new_ctx = menu_context(menu)
+        new_ctx["last_suggestions"] = suggestions
+        new_ctx["last_route"] = "MENU"
+        return reply, "MENU", new_ctx, ""
 
-        return (
-            "Quý công dân vui lòng nêu rõ nội dung cần hỗ trợ.\n\n"
-            "Ví dụ:\n"
-            "• Làm căn cước ở đâu\n"
-            "• Đăng ký tạm trú ở đâu\n"
-            "• Công an phường Phù Liễn ở đâu\n\n"
-            "Hoặc nhập 'menu' để xem danh mục hỗ trợ.",
-            "ASK_TOPIC",
-            {},
-            "",
-        )
-
-    menu_keys = [
-        "can cuoc", "cu tru", "vneid", "phuong tien giao thong",
-        "dang ky xe", "ly lich tu phap", "pccc", "vkvln",
-        "lien he", "tra cuu lien he",
-    ]
-
-    if text_norm in menu_keys:
-        menu = search_menu(text)
-        if menu:
-            reply, suggestions = answer_from_menu(menu)
-            new_ctx = menu_context(menu)
-            new_ctx["last_suggestions"] = suggestions
-            new_ctx["page"] = 1
-            new_ctx["last_route"] = "MENU"
-
-            if new_ctx.get("sheet", "").startswith("THU_TUC_"):
-                new_ctx["stage"] = "procedure_list"
-
-            return reply, "MENU", new_ctx, ""
-
-    search_text = text
-
-    if is_contact_question(text) or is_location_question(text) or text_norm in [
-        "lien he",
-        "so dien thoai",
-        "truc ban",
-        "google map",
-        "ban do",
-    ]:
-        lien_he = search_lien_he(search_text, limit=3)
-        if lien_he:
-            return format_multiple_results(lien_he, format_lien_he, limit=3), "TRA_CUU_LIEN_HE", {}, ""
-
-    thu_tuc_results = search_thu_tuc(search_text, limit=5, sheet=None)
-
+    thu_tuc_results = search_thu_tuc(text, limit=5, sheet=None)
     if thu_tuc_results:
         best = thu_tuc_results[0]
         best_score = safe_int(best.get("_SCORE", 0))
         second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
 
-        if best_score >= 20 and best_score >= second_score + 8:
+        if best_score >= 28 and best_score >= second_score + 10:
             new_ctx = {
                 "sheet": best.get("_SHEET", ""),
                 "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
@@ -1147,19 +753,12 @@ def route_message(user_text, context=None):
                 "last_suggestions": [],
                 "last_route": "THU_TUC",
             }
-
             if is_followup_detail_question(text):
-                return (
-                    answer_procedure_detail(best, text),
-                    "THU_TUC",
-                    new_ctx,
-                    "",
-                )
-
+                return answer_procedure_detail(best, text), "THU_TUC", new_ctx, ""
             return format_thu_tuc(best), "THU_TUC", new_ctx, ""
+
         suggestions = []
         lines = []
-
         for i, row in enumerate(thu_tuc_results[:5], start=1):
             name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
             pid = get_first(row, "ID", "MA", "MÃ")
@@ -1170,96 +769,42 @@ def route_message(user_text, context=None):
         ctx["last_suggestions"] = suggestions
         ctx["stage"] = "clarify_global"
         ctx["last_route"] = "CLARIFY_THU_TUC"
-
-        return (
-            "Tôi tìm thấy một số thủ tục gần giống nhau. "
-            "Quý công dân vui lòng chọn số tương ứng:\n\n"
-            + "\n".join(lines),
-            "CLARIFY_THU_TUC",
-            ctx,
-            "",
-        )
-
-    faq = search_faq(search_text, limit=3)
-    if faq:
-        ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+        return "Tôi tìm thấy một số thủ tục gần giống nhau. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
-
-    return (
-        "Tôi chưa hiểu ý định Quý công dân đang hỏi về vấn đề gì.\n\n"
-        "Quý công dân vui lòng nhắn tin câu từ có đầy đủ chủ đề cụ thể !.\n\n"
-        "Ví dụ:\n"
-        "• Hồ sơ cấp lại thẻ căn cước\n"
-        "• Lệ phí đăng ký tạm trú\n"
-        "• Thời hạn đăng ký xe\n"
-        "• Đăng ký thường trú\n"
-        "• Cấp đổi giấy phép sử dụng công cụ hỗ trợ\n\n"
-        "Hoặc nhập 'menu' để xem danh mục hỗ trợ.",
-        "DEFAULT",
-        ctx,
-        "",
-    )
+    return get_default_reply(), "DEFAULT", ctx, ""
 
 
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
-# Vai trò: Là lớp trung gian để BOT quyết định trả lời từ Google Sheets hay chuyển sang AI.
+# Vai trò: Ưu tiên Google Sheets, chỉ bật Gemini như lớp phụ trợ tùy chọn.
 def route_message_for_ai(user_text, context=None):
     result = {
-        "reply": DEFAULT_REPLY,
+        "reply": get_default_reply(),
         "source": "DEFAULT",
-        "use_ai": True,
+        "use_ai": False,
         "context": dict(context or {}),
         "ai_context": "",
+        "ai_mode": _ai_setting("AI_MODE", "OPTIONAL"),
     }
 
     try:
-        reply, source, new_context, ai_context = route_message(
-            user_text=user_text,
-            context=context,
-        )
-
+        reply, source, new_context, ai_context = route_message(user_text=user_text, context=context)
         result["reply"] = reply
         result["source"] = source
         result["context"] = new_context
         result["ai_context"] = ai_context
+        result["use_ai"] = _should_use_ai(user_text, source, ai_context)
 
-        # Các nguồn đã có dữ liệu trong Google Sheets thì không gọi AI.
-        sheet_sources = {
-            "DEFAULT",
-            "WELCOME",
-            "RESET",
-            "MENU",
-            "MENU_GROUP",
-            "THU_TUC",
-            "THU_TUC_SELECT",
-            "THU_TUC_EXPLICIT",
-            "THU_TUC_IN_CONTEXT",
-            "PROCEDURE_CONTEXT",
-            "PROCEDURE_LIST_NEXT",
-            "NEED_PROCEDURE_SELECT",
-            "CLARIFY_THU_TUC",
-            "CLARIFY_THU_TUC_IN_GROUP",
-            "FAQ",
-            "TRA_CUU_LIEN_HE",
-            "TRA_CUU_LIEN_HE_CSKV",
-            "TRA_CUU_LIEN_HE_EXPLICIT",
-            "CONTACT_HINT",
-            "CSKV_ASK_NAME",
-            "CSKV_NOT_FOUND",
-            "ASK_TOPIC",
-        }
-
-        result["use_ai"] = source not in sheet_sources
+        if source == "DEFAULT" and not result["use_ai"]:
+            result["unknown_log"] = True
 
     except Exception as e:
         print(f"[ROUTER ERROR] {e}")
-
-        result["reply"] = DEFAULT_REPLY
+        result["reply"] = get_default_reply()
         result["source"] = "ROUTER_ERROR"
-        result["use_ai"] = True
+        result["use_ai"] = _should_use_ai(user_text, "ROUTER_ERROR", "")
         result["context"] = dict(context or {})
         result["ai_context"] = ""
+        result["unknown_log"] = not result["use_ai"]
 
     return result

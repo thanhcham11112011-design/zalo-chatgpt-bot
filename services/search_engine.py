@@ -22,41 +22,44 @@ def _sort_results(results):
     return results
 
 
-def _has_question_intent(user_text, intent_words):
-    # Chức năng: Kiểm tra câu hỏi có chứa ý định nghiệp vụ cụ thể hay không.
-    # Vai trò: Giúp BOT tránh bắt nhầm từ khóa rời rạc khi người dân hỏi ngoài luồng.
-    t = normalize_text(user_text)
-    return any(normalize_text(w) in t for w in intent_words)
+def _active_status(row):
+    # Chức năng: Kiểm tra trạng thái hoạt động của một dòng dữ liệu.
+    # Vai trò: Dùng chung cho các hàm tìm kiếm để chỉ xử lý dữ liệu đang bật.
+    trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI", "STATUS", "ACTIVE"))
+    return trang_thai not in ["off", "inactive", "false", "0", "no", "khong", "không", "ngung", "ngừng", "dung", "dừng"]
 
 
 def detect_bo_phan_contact(user_text):
-    # Chức năng: Nhận diện bộ phận liên hệ từ nội dung người dân nhập.
-    # Vai trò: Giúp BOT lọc đúng bộ phận trước khi chấm điểm, tránh trả lẫn cán bộ không liên quan.
-    t = normalize_text(user_text)
+    # Chức năng: Nhận diện bộ phận liên hệ bằng dữ liệu trong sheet TRA_CUU_LIEN_HE.
+    # Vai trò: Loại bỏ danh sách bộ phận hardcode, để Google Sheets quyết định nhóm liên hệ.
+    text_norm = normalize_text(user_text)
 
-    groups = [
-        ("TRUC_BAN", [
-            "so dien thoai cong an phuong", "dien thoai cong an phuong", "sdt cong an phuong",
-            "so truc ban", "dien thoai truc ban", "sdt truc ban", "truc ban", "hotline",
-            "duong day nong", "tiep nhan tin bao", "to giac toi pham", "phan anh antt", "bao tin",
-        ]),
-        ("CHI_HUY", ["chi huy", "lanh dao", "ban chi huy", "truong cap", "trưởng công an phường", "pho truong cap"]),
-        ("PCTP", ["pctp", "phong chong toi pham", "chong toi pham", "toi pham", "hinh su"]),
-        ("CSKV", ["cskv", "canh sat khu vuc", "can bo khu vuc", "phu trach dia ban"]),
-        ("AN_NINH", ["an ninh", "to an ninh", "can bo an ninh"]),
-        ("CSTT", ["cstt", "canh sat trat tu", "trat tu"]),
-        ("CNTT", ["cntt", "cong nghe thong tin", "chuyen doi so"]),
-        ("DOAN_THANH_NIEN", ["doan thanh nien", "dtn"]),
-        ("TH", ["tong hop", "to tong hop", "doi tong hop", "bo phan tong hop", "can bo tong hop"]),
-        ("CO_QUAN", ["dia chi", "google map", "ban do", "co quan", "co so 1", "co so 2"]),
-    ]
+    if not text_norm:
+        return ""
 
-    for code, keywords in groups:
-        if any(k in t for k in keywords):
-            return code
+    candidates = []
 
-    return ""
+    for row in read_lien_he():
+        if not _active_status(row):
+            continue
 
+        bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
+        if not bo_phan:
+            continue
+
+        score = 0
+        score += phrase_score(user_text, bo_phan, 6)
+        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
+        score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 2)
+
+        if score > 0:
+            candidates.append((score, safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999), bo_phan))
+
+    if not candidates:
+        return ""
+
+    candidates.sort(key=lambda item: (item[1], -item[0]))
+    return candidates[0][2]
 
 def keyword_score(user_text, keywords, weight=1):
     # Chức năng: Chấm điểm khớp từ khóa giữa câu hỏi và chuỗi từ khóa trong Sheet.
@@ -195,11 +198,7 @@ def search_lien_he(user_text, limit=3):
 
     phone_digits = re.sub(r"\D+", "", str(user_text or ""))
 
-    active_rows = []
-    for row in rows:
-        trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI"))
-        if trang_thai not in ["off", "inactive", "false", "0", "no", "khong", "không", "ngung", "ngừng", "dung", "dừng"]:
-            active_rows.append(row)
+    active_rows = [row for row in rows if _active_status(row)]
 
     if len(phone_digits) >= 9:
         phone_results = []
@@ -238,15 +237,7 @@ def search_lien_he(user_text, limit=3):
 
             if row_bo_phan_norm == bo_phan_norm:
                 search_rows.append(row)
-            elif bo_phan_norm == "th" and (
-                "tong hop" in row_chuc_nang_norm or "tong hop" in row_tu_khoa_norm
-            ):
-                search_rows.append(row)
-            elif bo_phan_norm == "co quan" and (
-                "co quan" in row_bo_phan_norm
-                or "cong an phuong" in row_tu_khoa_norm
-                or "dia chi" in row_tu_khoa_norm
-            ):
+            elif bo_phan_norm and (bo_phan_norm in row_chuc_nang_norm or bo_phan_norm in row_tu_khoa_norm):
                 search_rows.append(row)
 
     clean_text_raw = text_raw
@@ -278,9 +269,6 @@ def search_lien_he(user_text, limit=3):
 
     if area_results:
         _sort_results(area_results)
-
-        if bo_phan_norm == "cskv":
-            return area_results[:1]
 
         best_score = area_results[0].get("_SCORE", 0)
         same_score_results = [row for row in area_results if row.get("_SCORE", 0) == best_score]
@@ -476,22 +464,12 @@ def search_faq(user_text, limit=3):
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
     # Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
-    # Vai trò: Chỉ trả thủ tục khi câu hỏi có đối tượng nghiệp vụ khớp dữ liệu Google Sheets.
+    # Vai trò: Chấm điểm hoàn toàn theo dữ liệu Google Sheets, không dùng từ khóa nghiệp vụ hardcode.
     results = []
     user_norm = normalize_text(user_text)
 
     if not user_norm:
         return []
-
-    intent_words = [
-        "thu tuc", "ho so", "giay to", "can gi", "lam gi", "lam o dau",
-        "nop o dau", "noi nop", "thoi han", "le phi", "phi", "ket qua",
-        "cap", "cap lai", "cap doi", "dang ky", "xac nhan", "khai bao",
-        "tam tru", "thuong tru", "can cuoc", "cccd", "vneid", "dinh danh",
-        "dang ky xe", "bien so", "pccc", "vu khi", "vat lieu no", "ly lich tu phap",
-    ]
-
-    intent_norms = set(normalize_text(w) for w in intent_words)
 
     for row in read_all_thu_tuc():
         row_sheet = row.get("_SHEET", "")
@@ -501,30 +479,26 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
 
         keywords = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+        ma = get_first(row, "ID", "MA", "MÃ")
         mo_ta = get_first(row, "MO_TA", "MÔ_TẢ")
         chu_de = get_first(row, "CHU_DE", "CHỦ_ĐỀ")
         goi_y = get_first(row, "GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI")
         tra_loi_ngan = get_first(row, "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN")
         noi_nop = get_first(row, "NOI_NOP", "NƠI_NỘP", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
 
-        object_keywords = []
-        for kw in split_keywords(keywords):
-            kw_norm = normalize_text(kw)
-            if kw_norm and kw_norm not in intent_norms:
-                object_keywords.append(kw)
-
-        keyword_match = keyword_score(user_text, keywords, 9)
-        object_keyword_match = keyword_score(user_text, ", ".join(object_keywords), 9)
-        title_match = phrase_score(user_text, ten, 7)
+        keyword_match = keyword_score(user_text, keywords, 10)
+        title_match = phrase_score(user_text, ten, 8)
+        code_match = phrase_score(user_text, ma, 8)
         topic_match = phrase_score(user_text, chu_de, 3)
         desc_match = phrase_score(user_text, mo_ta, 2)
-        suggest_match = phrase_score(user_text, goi_y, 2)
+        suggest_match = keyword_score(user_text, goi_y, 4)
         short_answer_match = phrase_score(user_text, tra_loi_ngan, 1)
         place_match = phrase_score(user_text, noi_nop, 1)
 
         score = (
             keyword_match
             + title_match
+            + code_match
             + topic_match
             + desc_match
             + suggest_match
@@ -532,9 +506,11 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             + place_match
         )
 
-        if object_keyword_match <= 0:
+        has_direct_signal = keyword_match > 0 or title_match >= 30 or code_match >= 30 or suggest_match > 0
+
+        if not has_direct_signal:
             continue
-        
+
         if score < 35:
             continue
 
@@ -664,40 +640,32 @@ def _append_field(parts, icon, title, value, max_len=700):
         parts.append(f"{icon} {title}:\n{compact(value, max_len)}")
 
 def format_thu_tuc(row):
-    # Chức năng: Định dạng thông báo khi BOT đã xác định đúng thủ tục hành chính.
-    # Vai trò: Điều hướng người dân tra cứu từng nội dung chi tiết của thủ tục từ Google Sheets.
+    # Chức năng: Định dạng thông báo khi BOT xác định được một thủ tục hành chính.
+    # Vai trò: Tạo câu trả lời từ dữ liệu Google Sheets, không gắn cố định nội dung nghiệp vụ vào code.
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
     link_dvc = get_first(row, "LINK_DVC", "LINK", "DICH_VU_CONG", "DỊCH_VỤ_CÔNG")
+    tra_loi_ngan = get_first(row, "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "MO_TA", "MÔ_TẢ")
+    goi_y = get_first(row, "GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI")
 
     parts = []
 
-    parts.append("📌 BOT đã xác định Quý công dân đang hỏi về thủ tục:\n")
-
     if ten:
-        parts.append(ten.upper())
-    else:
-        parts.append("THỦ TỤC HÀNH CHÍNH")
+        parts.append(f"📌 {ten}")
 
-    parts.append("────────────────")
+    if tra_loi_ngan:
+        parts.append(compact(tra_loi_ngan, 900))
 
-    parts.append("📍 Công dân có thể tìm hiểu về thủ tục này và nộp hồ sơ trực tuyến trên Cổng Dịch vụ công Bộ Công an.")
+    _append_field(parts, "👤", "Đối tượng", get_first(row, "DOI_TUONG_AP_DUNG", "ĐỐI_TƯỢNG_ÁP_DỤNG"), 500)
+    _append_field(parts, "📄", "Hồ sơ", get_first(row, "HO_SO", "HỒ_SƠ"), 700)
+    _append_field(parts, "📝", "Quy trình thực hiện", get_first(row, "TRINH_TU", "TRÌNH_TỰ"), 900)
 
     if link_dvc:
-        parts.append(f"🔗 Dịch vụ công:\n{link_dvc}")
+        parts.append(f"🔗 Link dịch vụ công:\n{link_dvc}")
 
-    parts.append(
-        "────────────────\n"
-        "💬 Quý công dân có thể trực tiếp hỏi BOT các nội dung liên quan đến thủ tục này bằng cách nhập một trong các từ khóa sau:\n\n"
-        "1. Điều kiện\n"
-        "2. Hồ sơ cần chuẩn bị\n"
-        "3. Co quan thuc hien\n"
-        "4. Thời hạn giải quyết\n"
-        "5. Lệ phí\n"
-        "6. Kết quả giải quyết\n"
-        "7. Cơ sở pháp lý"
-    )
+    if goi_y:
+        parts.append(f"💬 Có thể hỏi tiếp:\n{compact(goi_y, 500)}")
 
-    return "\n\n".join(parts)
+    return "\n\n".join([p for p in parts if p])
 
 def format_multiple_results(results, formatter, limit=3):
     # Chức năng: Định dạng nhiều kết quả tìm kiếm thành một tin nhắn trả lời.

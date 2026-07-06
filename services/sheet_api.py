@@ -1,7 +1,7 @@
 """
-sheet_api.py - BOT CAP Phu Lien V2.2
-Nhiem vu: ket noi Google Sheets, doc du lieu cac sheet, ghi log va luu session.
-Luu y quan trong: file nay KHONG import router_service/search_engine/gemini/zalo de tranh circular import.
+sheet_api.py - BOT CAP 3.1
+Nhiệm vụ: kết nối Google Sheets, đọc dữ liệu chuẩn hóa, ghi log và lưu session.
+Nguyên tắc: Google Sheets là nguồn dữ liệu nghiệp vụ duy nhất; file này không chứa hardcode nghiệp vụ.
 """
 
 import json
@@ -26,8 +26,14 @@ from config import (
     SHEET_FAQ,
     SHEET_LICH_SU_CHAT,
     SHEET_SESSION,
-    THU_TUC_SHEETS,
 )
+
+try:
+    from config import SHEET_DATA_DICTIONARY, SHEET_BOT_31_SCHEMA
+except Exception:
+    SHEET_DATA_DICTIONARY = "DATA_DICTIONARY"
+    SHEET_BOT_31_SCHEMA = "BOT_31_SCHEMA"
+
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -40,8 +46,12 @@ _cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
 CACHE_TTL_SECONDS = int(os.getenv("SHEET_CACHE_TTL_SECONDS", "30"))
 
 
+# =========================
+# CLEAN DATA
+# =========================
+
 def _clean_value(value: Any) -> str:
-    # Chức năng: Chuẩn hóa giá trị đọc từ Google Sheets/Excel.
+    # Chức năng: Chuẩn hóa giá trị đọc từ Google Sheets.
     # Vai trò: Bảo đảm dữ liệu đầu vào ổn định trước khi BOT xử lý.
     if value is None:
         return ""
@@ -61,7 +71,7 @@ def _clean_value(value: Any) -> str:
 
 
 def _clean_key(key: Any) -> str:
-    # Chức năng: Chuẩn hóa tên cột đọc từ Google Sheets/Excel.
+    # Chức năng: Chuẩn hóa tên cột đọc từ Google Sheets.
     # Vai trò: Giúp BOT nhận đúng cột dữ liệu, tránh lỗi do thừa khoảng trắng hoặc sai chữ hoa/thường.
     return str(key or "").strip().upper()
 
@@ -77,6 +87,20 @@ def _clean_row(row: Dict[str, Any]) -> Dict[str, str]:
     return cleaned
 
 
+def _get_first(row: Dict[str, Any], keys: List[str], default: str = "") -> str:
+    # Chức năng: Lấy giá trị đầu tiên có dữ liệu theo danh sách tên cột.
+    # Vai trò: Hỗ trợ tương thích nhiều biến thể tên cột trong Google Sheets.
+    for key in keys:
+        value = _clean_value(row.get(_clean_key(key)))
+        if value:
+            return value
+    return default
+
+
+# =========================
+# GOOGLE CONNECTION
+# =========================
+
 def _credentials_from_env() -> Credentials:
     # Chức năng: Lấy thông tin xác thực Google API từ biến môi trường hoặc file credentials.
     # Vai trò: Kết nối BOT với Google Sheets.
@@ -86,16 +110,19 @@ def _credentials_from_env() -> Credentials:
             info = json.loads(raw)
         except json.JSONDecodeError:
             info = json.loads(raw.replace("\\n", "\n"))
+
         if "private_key" in info:
             info["private_key"] = str(info["private_key"]).replace("\\n", "\n")
+
         return Credentials.from_service_account_info(info, scopes=SCOPES)
 
     credentials_path = GOOGLE_CREDENTIALS_FILE or "credentials.json"
     if not os.path.exists(credentials_path):
         raise FileNotFoundError(
-            f"Khong tim thay file credentials: {credentials_path}. "
-            "Hay cau hinh GOOGLE_CREDENTIALS_JSON hoac GOOGLE_CREDENTIALS_FILE."
+            f"Không tìm thấy file credentials: {credentials_path}. "
+            "Hãy cấu hình GOOGLE_CREDENTIALS_JSON hoặc GOOGLE_CREDENTIALS_FILE."
         )
+
     return Credentials.from_service_account_file(credentials_path, scopes=SCOPES)
 
 
@@ -115,20 +142,20 @@ def get_spreadsheet():
     global _spreadsheet
     if _spreadsheet is None:
         if not GOOGLE_SHEET_ID:
-            raise ValueError("Thieu GOOGLE_SHEET_ID")
+            raise ValueError("Thiếu GOOGLE_SHEET_ID")
         _spreadsheet = get_client().open_by_key(GOOGLE_SHEET_ID)
     return _spreadsheet
 
 
 def get_worksheet(sheet_name: str):
     # Chức năng: Lấy worksheet theo tên sheet.
-    # Vai trò: Cung cấp dữ liệu từng bảng nghiệp vụ cho BOT.
+    # Vai trò: Cung cấp dữ liệu từng bảng cho BOT theo tên được cấu hình trong Google Sheets.
     return get_spreadsheet().worksheet(sheet_name)
 
 
 def ensure_worksheet(sheet_name: str, headers: Optional[List[str]] = None, rows: int = 1000, cols: int = 20):
     # Chức năng: Lấy worksheet, nếu chưa có thì tạo mới.
-    # Vai trò: Bảo đảm các sheet hệ thống/log luôn tồn tại khi BOT cần ghi dữ liệu.
+    # Vai trò: Bảo đảm các sheet hệ thống/log/session luôn tồn tại khi BOT cần ghi dữ liệu.
     ss = get_spreadsheet()
     try:
         ws = ss.worksheet(sheet_name)
@@ -154,7 +181,11 @@ def clear_cache(sheet_name: Optional[str] = None):
 
 def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
     # Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa.
-    # Vai trò: Là hàm đọc dữ liệu trung tâm cho các module nghiệp vụ của BOT.
+    # Vai trò: Là hàm đọc dữ liệu trung tâm cho toàn bộ BOT CAP 3.1.
+    sheet_name = _clean_value(sheet_name)
+    if not sheet_name:
+        return []
+
     now = time.time()
 
     if use_cache and sheet_name in _cache:
@@ -176,7 +207,7 @@ def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
         return [dict(r) for r in rows]
 
     except gspread.WorksheetNotFound:
-        print(f"[SHEET WARNING] Khong tim thay sheet: {sheet_name}")
+        print(f"[SHEET WARNING] Không tìm thấy sheet: {sheet_name}")
         return []
 
     except Exception as e:
@@ -187,17 +218,13 @@ def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
 def _is_active(row: Dict[str, Any]) -> bool:
     # Chức năng: Kiểm tra trạng thái hoạt động của một dòng dữ liệu.
     # Vai trò: Giúp BOT chỉ sử dụng dữ liệu đang bật trong Google Sheets.
-    status = _clean_value(
-        row.get("TRANG_THAI")
-        or row.get("TRẠNG_THÁI")
-        or row.get("STATUS")
-        or row.get("ACTIVE")
-    ).lower()
+    status = _get_first(row, ["TRANG_THAI", "TRẠNG_THÁI", "STATUS", "ACTIVE", "HIEN_THI", "HIỂN_THỊ"]).lower()
 
-    if status in ["off", "inactive", "false", "0", "no", "khong", "không", "ngung", "ngừng", "dung", "dừng"]:
-        return False
+    if not status:
+        return True
 
-    return True
+    inactive_values = {"off", "inactive", "false", "0", "no", "khong", "không", "ngung", "ngừng", "dung", "dừng"}
+    return status not in inactive_values
 
 
 def _read_active(sheet_name: str) -> List[Dict[str, str]]:
@@ -229,7 +256,7 @@ def read_faq() -> List[Dict[str, str]]:
 
 
 def read_thu_tuc_sheet(sheet_name: str) -> List[Dict[str, str]]:
-    # Chức năng: Đọc một sheet thủ tục hành chính.
+    # Chức năng: Đọc một sheet thủ tục theo tên sheet lấy từ dữ liệu MENU.
     # Vai trò: Gắn nguồn sheet vào từng thủ tục để BOT truy vết dữ liệu.
     rows = _read_active(sheet_name)
     for row in rows:
@@ -237,12 +264,34 @@ def read_thu_tuc_sheet(sheet_name: str) -> List[Dict[str, str]]:
     return rows
 
 
+def read_thu_tuc_sheet_names() -> List[str]:
+    # Chức năng: Lấy danh sách sheet thủ tục từ MENU.SHEET_DU_LIEU.
+    # Vai trò: Loại bỏ danh sách hardcode THU_TUC_* trong Python.
+    names: List[str] = []
+    seen = set()
+
+    for row in read_menu():
+        sheet_name = _get_first(row, ["SHEET_DU_LIEU", "SHEET DỮ LIỆU", "SHEET", "TEN_SHEET", "TÊN_SHEET"])
+        if not sheet_name:
+            continue
+
+        sheet_name_upper = sheet_name.upper()
+        if not sheet_name_upper.startswith("THU_TUC_"):
+            continue
+
+        if sheet_name_upper not in seen:
+            seen.add(sheet_name_upper)
+            names.append(sheet_name)
+
+    return names
+
+
 def read_all_thu_tuc() -> List[Dict[str, str]]:
-    # Chức năng: Đọc toàn bộ các sheet thủ tục hành chính.
-    # Vai trò: Tạo nguồn dữ liệu thủ tục tổng hợp cho BOT tìm kiếm và trả lời.
+    # Chức năng: Đọc toàn bộ sheet thủ tục được khai báo trong MENU.
+    # Vai trò: Tạo nguồn dữ liệu thủ tục tổng hợp mà không hardcode lĩnh vực nghiệp vụ trong Python.
     all_rows: List[Dict[str, str]] = []
 
-    for sheet_name in THU_TUC_SHEETS:
+    for sheet_name in read_thu_tuc_sheet_names():
         all_rows.extend(read_thu_tuc_sheet(sheet_name))
 
     return all_rows
@@ -250,32 +299,45 @@ def read_all_thu_tuc() -> List[Dict[str, str]]:
 
 def read_thongtin() -> Dict[str, str]:
     # Chức năng: Đọc sheet THONGTIN dạng key-value.
-    # Vai trò: Cung cấp thông tin đơn vị cho BOT.
+    # Vai trò: Cung cấp thông tin đơn vị cho BOT từ Google Sheets.
     return _key_value_sheet(SHEET_THONGTIN)
 
 
 def read_setting_system() -> Dict[str, str]:
     # Chức năng: Đọc sheet SETTING_SYSTEM dạng key-value.
-    # Vai trò: Cung cấp cấu hình hệ thống cho BOT.
+    # Vai trò: Cung cấp cấu hình hệ thống cho BOT từ Google Sheets.
     return _key_value_sheet(SHEET_SETTING_SYSTEM)
 
 
 def read_setting_ai() -> Dict[str, str]:
     # Chức năng: Đọc sheet SETTING_AI dạng key-value.
-    # Vai trò: Cung cấp cấu hình AI cho BOT.
+    # Vai trò: Cung cấp cấu hình AI cho BOT từ Google Sheets.
     return _key_value_sheet(SHEET_SETTING_AI)
 
 
 def read_setting_chat() -> Dict[str, str]:
     # Chức năng: Đọc sheet SETTING_CHAT dạng key-value.
-    # Vai trò: Cung cấp cấu hình nội dung hội thoại cho BOT.
+    # Vai trò: Cung cấp cấu hình nội dung hội thoại cho BOT từ Google Sheets.
     return _key_value_sheet(SHEET_SETTING_CHAT)
 
 
 def read_prompt() -> Dict[str, str]:
     # Chức năng: Đọc sheet PROMPT dạng key-value.
-    # Vai trò: Cung cấp prompt điều khiển AI cho BOT.
+    # Vai trò: Cung cấp prompt điều khiển AI cho BOT từ Google Sheets.
     return _key_value_sheet(SHEET_PROMPT)
+
+
+def read_data_dictionary() -> List[Dict[str, str]]:
+    # Chức năng: Đọc sheet DATA_DICTIONARY.
+    # Vai trò: Cung cấp tài liệu mô tả cấu trúc dữ liệu BOT CAP 3.1.
+    return _read_active(SHEET_DATA_DICTIONARY)
+
+
+def read_bot_31_schema() -> List[Dict[str, str]]:
+    # Chức năng: Đọc sheet BOT_31_SCHEMA.
+    # Vai trò: Cung cấp quy tắc khóa chuẩn kiến trúc BOT CAP 3.1.
+    return _read_active(SHEET_BOT_31_SCHEMA)
+
 
 # =========================
 # KEY/VALUE SETTINGS
@@ -290,28 +352,11 @@ def _key_value_sheet(sheet_name: str) -> Dict[str, str]:
         if not _is_active(row):
             continue
 
-        key = (
-            row.get("KEY")
-            or row.get("MA")
-            or row.get("MÃ")
-            or row.get("TEN")
-            or row.get("TÊN")
-            or row.get("ID")
-        )
+        key = _get_first(row, ["KEY", "MA", "MÃ", "TEN", "TÊN", "ID", "PROMPT_NAME", "SETTING_KEY"])
+        value = _get_first(row, ["VALUE", "GIA_TRI", "GIÁ_TRỊ", "NOI_DUNG", "NỘI_DUNG", "MO_TA", "MÔ_TẢ", "PROMPT", "TEXT"])
 
-        value = (
-            row.get("VALUE")
-            or row.get("GIA_TRI")
-            or row.get("GIÁ_TRỊ")
-            or row.get("NOI_DUNG")
-            or row.get("NỘI_DUNG")
-            or row.get("MO_TA")
-            or row.get("MÔ_TẢ")
-        )
-
-        key = _clean_value(key)
         if key:
-            data[key] = _clean_value(value)
+            data[key] = value
 
     return data
 
@@ -445,9 +490,19 @@ def ensure_session_sheet():
     # Vai trò: Chuẩn bị nơi lưu ngữ cảnh hội thoại theo từng người dùng.
     return ensure_worksheet(
         SHEET_SESSION,
-        headers=["USER_ID", "CONTEXT_JSON", "UPDATED_AT"],
+        headers=[
+            "USER_ID",
+            "CONTEXT_JSON",
+            "LAST_ROUTE",
+            "LAST_SHEET",
+            "LAST_RECORD_ID",
+            "LAST_MENU",
+            "LAST_PROCEDURE",
+            "PAGE",
+            "UPDATED_AT",
+        ],
         rows=2000,
-        cols=5,
+        cols=12,
     )
 
 
@@ -467,7 +522,12 @@ def read_session(user_id: str) -> Dict[str, Any]:
                     return {}
                 try:
                     data = json.loads(raw)
-                    return data if isinstance(data, dict) else {}
+                    if not isinstance(data, dict):
+                        return {}
+                    updated_at = _clean_value(row.get("UPDATED_AT") or row.get("UPDATED_TIME"))
+                    if updated_at and not data.get("updated_at"):
+                        data["updated_at"] = updated_at
+                    return data
                 except Exception:
                     return {}
         return {}
@@ -492,16 +552,28 @@ def save_session(user_id: str, context: Dict[str, Any], updated_at: str) -> bool
             ws.append_row(["USER_ID", "CONTEXT_JSON", "UPDATED_AT"])
             values = ws.get_all_values()
 
-        context_json = json.dumps(context or {}, ensure_ascii=False)
+        context = context or {}
+        context_json = json.dumps(context, ensure_ascii=False)
+        row_values = [
+            user_id,
+            context_json,
+            _clean_value(context.get("last_route") or context.get("route")),
+            _clean_value(context.get("sheet")),
+            _clean_value(context.get("procedure_id") or context.get("record_id") or context.get("row_id")),
+            _clean_value(context.get("topic") or context.get("last_menu")),
+            _clean_value(context.get("procedure_name") or context.get("last_procedure")),
+            _clean_value(context.get("page")),
+            _clean_value(updated_at),
+        ]
 
         for idx, row in enumerate(values[1:], start=2):
             current_user_id = _clean_value(row[0] if len(row) > 0 else "")
             if current_user_id == user_id:
-                ws.update(f"B{idx}:C{idx}", [[context_json, _clean_value(updated_at)]])
+                ws.update(f"A{idx}:I{idx}", [row_values])
                 clear_cache(SHEET_SESSION)
                 return True
 
-        ws.append_row([user_id, context_json, _clean_value(updated_at)])
+        ws.append_row(row_values)
         clear_cache(SHEET_SESSION)
         return True
 
@@ -530,7 +602,6 @@ def sheet_health() -> Dict[str, Any]:
     try:
         ss = get_spreadsheet()
         existing = {ws.title for ws in ss.worksheets()}
-
         check_sheets = [
             SHEET_MENU,
             SHEET_SETTING_SYSTEM,
@@ -542,7 +613,9 @@ def sheet_health() -> Dict[str, Any]:
             SHEET_FAQ,
             SHEET_LICH_SU_CHAT,
             SHEET_SESSION,
-            *THU_TUC_SHEETS,
+            SHEET_DATA_DICTIONARY,
+            SHEET_BOT_31_SCHEMA,
+            *read_thu_tuc_sheet_names(),
         ]
 
         for name in check_sheets:

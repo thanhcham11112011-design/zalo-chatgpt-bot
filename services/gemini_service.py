@@ -1,204 +1,226 @@
+import time
+
 from google import genai
-from config import GEMINI_API_KEY, GEMINI_MODEL, DEFAULT_REPLY
-from services.sheet_api import read_setting_system, read_setting_ai, read_prompt
+
+from config import GEMINI_API_KEY, GEMINI_MODEL
+from services.sheet_api import read_prompt, read_setting_ai, read_setting_chat
 
 _client = None
-_client_api_key = ""
+_client_key = ""
 
 
-DEFAULT_SYSTEM_PROMPT = """
-Bạn là Trợ lý AI của Công an phường Phù Liễn, thành phố Hải Phòng.
-Nhiệm vụ: hỗ trợ người dân tra cứu thủ tục hành chính, hồ sơ, trình tự, nơi nộp, thời hạn, lệ phí.
-Nguyên tắc:
-- Ưu tiên dữ liệu Google Sheets nếu có.
-- Không bịa thông tin.
-- Không tự tạo số điện thoại, địa chỉ, tên cán bộ, thủ tục hoặc căn cứ pháp lý.
-- Nếu không chắc chắn, hướng dẫn người dân liên hệ Công an phường để được hỗ trợ.
-- Trả lời ngắn gọn, dễ hiểu, lịch sự.
-"""
+# Chức năng: Lấy giá trị cấu hình theo nhiều biến thể tên khóa.
+# Vai trò: Giúp Gemini Service đọc linh hoạt dữ liệu từ Google Sheets.
+def _get_setting(data, *keys, default=""):
+    for key in keys:
+        value = str((data or {}).get(key) or "").strip()
+        if value:
+            return value
+    return str(default or "").strip()
 
 
+# Chức năng: Chuyển giá trị cấu hình dạng chuỗi về boolean.
+# Vai trò: Chuẩn hóa các cờ bật/tắt AI đọc từ Google Sheets.
+def _as_bool(value, default=False):
+    if value is None or str(value).strip() == "":
+        return default
+    return str(value).strip().lower() in {"1", "true", "yes", "on", "bat", "bật", "co", "có"}
+
+
+# Chức năng: Chuyển giá trị cấu hình dạng chuỗi về số nguyên.
+# Vai trò: Chuẩn hóa timeout, retry và giới hạn ký tự của AI.
+def _as_int(value, default=0):
+    try:
+        return int(str(value).strip())
+    except Exception:
+        return default
+
+
+# Chức năng: Lấy thông báo hội thoại từ SETTING_CHAT.
+# Vai trò: Không để câu trả lời mặc định nằm cứng trong Python.
+def _get_chat_message(key, default=""):
+    try:
+        return _get_setting(read_setting_chat(), key, default=default)
+    except Exception:
+        return str(default or "").strip()
+
+
+# Chức năng: Lấy prompt điều khiển AI từ sheet PROMPT.
+# Vai trò: Đưa toàn bộ prompt nghiệp vụ ra Google Sheets.
+def _get_prompt_value(key, default=""):
+    try:
+        return _get_setting(read_prompt(), key, default=default)
+    except Exception:
+        return str(default or "").strip()
+
+
+# Chức năng: Đọc toàn bộ cấu hình AI từ SETTING_AI.
+# Vai trò: Điều khiển Gemini theo mô hình AI Optional của BOT CAP 3.1.
+def _read_ai_settings():
+    try:
+        return read_setting_ai() or {}
+    except Exception:
+        return {}
+
+
+# Chức năng: Đọc cấu hình Gemini từ SETTING_AI và biến môi trường.
+# Vai trò: Tách cấu hình AI khỏi nghiệp vụ và cho phép điều chỉnh bằng Google Sheets.
 def _get_ai_config():
-    # Chức năng: Đọc cấu hình AI từ Google Sheets và biến môi trường.
-    # Vai trò: Giúp BOT ưu tiên cấu hình động trong SETTING_AI/SETTING_SYSTEM, hạn chế hardcode.
-    try:
-        system_settings = read_setting_system()
-    except Exception:
-        system_settings = {}
-
-    try:
-        ai_settings = read_setting_ai()
-    except Exception:
-        ai_settings = {}
-
-    api_key = str(
-        ai_settings.get("GEMINI_API_KEY")
-        or system_settings.get("GEMINI_API_KEY")
-        or GEMINI_API_KEY
-        or ""
-    ).strip()
-
-    model = str(
-        ai_settings.get("MODEL")
-        or ai_settings.get("GEMINI_MODEL")
-        or system_settings.get("GEMINI_MODEL")
-        or GEMINI_MODEL
-        or "gemini-2.0-flash"
-    ).strip()
-
+    settings = _read_ai_settings()
+    api_key = _get_setting(settings, "GEMINI_API_KEY", "API_KEY", default=GEMINI_API_KEY)
+    model = _get_setting(settings, "GEMINI_MODEL", "MODEL", default=GEMINI_MODEL or "gemini-2.0-flash")
     return api_key, model
 
 
-def _get_system_prompt():
-    # Chức năng: Đọc SYSTEM prompt từ sheet PROMPT.
-    # Vai trò: Cho phép điều chỉnh vai trò AI bằng Google Sheets mà không sửa code.
-    try:
-        prompts = read_prompt()
-    except Exception:
-        prompts = {}
+# Chức năng: Kiểm tra AI có được phép hoạt động không.
+# Vai trò: Bảo đảm Gemini chỉ là luồng phụ, có thể tắt mà không ảnh hưởng BOT chính.
+def _ai_allowed(context=""):
+    settings = _read_ai_settings()
+    ai_enabled = _as_bool(_get_setting(settings, "AI_ENABLED", default="TRUE"), True)
+    ai_mode = _get_setting(settings, "AI_MODE", default="OPTIONAL").upper()
+    ai_status = _get_setting(settings, "AI_STATUS", default="ONLINE").upper()
+    allow_without_context = _as_bool(_get_setting(settings, "ALLOW_AI_PROCEDURE_WITHOUT_DATA", default="FALSE"), False)
 
-    prompt = (
-        prompts.get("SYSTEM")
-        or prompts.get("DEFAULT")
-        or prompts.get("AI_SYSTEM")
-        or DEFAULT_SYSTEM_PROMPT
-    )
+    if not ai_enabled:
+        return False, "DISABLED"
+    if ai_mode not in {"OPTIONAL", "ON", "ENABLE", "ENABLED"}:
+        return False, "DISABLED"
+    if ai_status in {"OFF", "OFFLINE", "DISABLED", "QUOTA_EXCEEDED", "ERROR"}:
+        return False, ai_status
+    if not str(context or "").strip() and not allow_without_context:
+        return False, "NO_SHEET_CONTEXT"
+    return True, "ONLINE"
 
-    return str(prompt or DEFAULT_SYSTEM_PROMPT).strip()
 
-
+# Chức năng: Khởi tạo Gemini client theo API key đang cấu hình.
+# Vai trò: Cung cấp kết nối AI phụ trợ cho BOT khi AI được phép bật.
 def _get_client():
-    # Chức năng: Khởi tạo Gemini client theo API key hiện hành.
-    # Vai trò: Tái sử dụng client và tự làm mới khi API key thay đổi trong cấu hình.
-    global _client, _client_api_key
+    global _client, _client_key
 
     api_key, _ = _get_ai_config()
     if not api_key:
         return None
 
-    if _client and _client_api_key == api_key:
+    if _client and _client_key == api_key:
         return _client
 
     _client = genai.Client(api_key=api_key)
-    _client_api_key = api_key
+    _client_key = api_key
     return _client
 
 
-# Chức năng: Xây dựng Prompt gửi tới Gemini.
-# Vai trò: Kết hợp SYSTEM Prompt, dữ liệu Google Sheets và câu hỏi người dân để AI chỉ trả lời trong phạm vi được phép.
+# Chức năng: Lấy câu fallback từ SETTING_CHAT.
+# Vai trò: Bảo đảm Gemini Service không hardcode nội dung trả lời nghiệp vụ.
+def _fallback_reply(status="AI_FALLBACK"):
+    if status in {"DISABLED", "OFFLINE", "QUOTA_EXCEEDED", "TIMEOUT", "API_ERROR"}:
+        msg = _get_chat_message("AI_UNAVAILABLE_MESSAGE", "")
+        if msg:
+            return msg
+    return _get_chat_message(
+        "UNKNOWN_MESSAGE",
+        "Xin lỗi, hiện hệ thống chưa có đủ dữ liệu phù hợp để trả lời. Quý công dân vui lòng nhắn 'menu' để xem danh mục hỗ trợ.",
+    )
+
+
+# Chức năng: Phân loại lỗi Gemini thành trạng thái kỹ thuật.
+# Vai trò: Giúp BOT ghi log AI và tự fallback khi hết quota, timeout hoặc lỗi API.
+def _classify_error(error):
+    text = str(error or "").lower()
+    if "quota" in text or "resource exhausted" in text or "429" in text or "billing" in text:
+        return "QUOTA_EXCEEDED"
+    if "timeout" in text or "timed out" in text or "deadline" in text:
+        return "TIMEOUT"
+    if "api key" in text or "permission" in text or "unauthorized" in text:
+        return "API_ERROR"
+    return "API_ERROR"
+
+
+# Chức năng: Tạo prompt gửi Gemini từ PROMPT và dữ liệu tham khảo.
+# Vai trò: AI chỉ tổng hợp theo dữ liệu Google Sheets, không tự sinh nghiệp vụ.
 def build_prompt(question, context=""):
-    system_prompt = _get_system_prompt()
+    system_prompt = _get_prompt_value(
+        "SYSTEM",
+        "Bạn là trợ lý AI hỗ trợ người dân. Chỉ trả lời theo dữ liệu được cung cấp; không suy diễn nghiệp vụ khi không có căn cứ.",
+    )
+    ai_policy = _get_prompt_value(
+        "AI_POLICY",
+        "Không sử dụng knowledge.json. Không bịa thủ tục, số điện thoại, địa chỉ, cán bộ, lệ phí, thời hạn hoặc căn cứ pháp lý.",
+    )
+    response_rule = _get_prompt_value(
+        "RESPONSE_RULE",
+        "Trả lời ngắn gọn, lịch sự, dễ hiểu; ưu tiên nội dung có trong dữ liệu tham khảo.",
+    )
 
     question = str(question or "").strip()
     context = str(context or "").strip()
 
+    parts = [system_prompt, "", "QUY TẮC BOT CAP 3.1:", ai_policy, response_rule]
+
     if context:
-        return f"""
-{system_prompt}
+        parts.extend([
+            "",
+            "DỮ LIỆU THAM KHẢO TỪ GOOGLE SHEETS:",
+            context,
+            "",
+            "YÊU CẦU:",
+            "Chỉ tổng hợp theo dữ liệu tham khảo. Không tự bổ sung thông tin ngoài Google Sheets.",
+        ])
+    else:
+        parts.extend([
+            "",
+            "YÊU CẦU:",
+            "Không có dữ liệu tham khảo từ Google Sheets. Không suy diễn nghiệp vụ.",
+        ])
 
-========================
-DỮ LIỆU GOOGLE SHEETS
-========================
-
-{context}
-
-========================
-CÂU HỎI CỦA NGƯỜI DÂN
-========================
-
-{question}
-
-========================
-YÊU CẦU
-========================
-
-1. Ưu tiên tuyệt đối dữ liệu Google Sheets ở trên.
-2. Không được tự tạo thêm thông tin ngoài dữ liệu nếu dữ liệu đã đầy đủ.
-3. Nếu dữ liệu còn thiếu thì chỉ bổ sung kiến thức pháp luật phổ thông, không suy diễn.
-4. Không được tự tạo:
-- tên cán bộ;
-- số điện thoại;
-- địa chỉ;
-- thời hạn;
-- lệ phí;
-- căn cứ pháp lý;
-- biểu mẫu.
-5. Nếu không đủ căn cứ thì hướng dẫn người dân liên hệ Công an phường để được hỗ trợ.
-6. Trả lời bằng tiếng Việt.
-7. Văn phong ngắn gọn, lịch sự, dễ hiểu.
-8. Độ dài tối đa khoảng 1.500 ký tự.
-"""
-
-    return f"""
-{system_prompt}
-
-========================
-CÂU HỎI CỦA NGƯỜI DÂN
-========================
-
-{question}
-
-========================
-YÊU CẦU
-========================
-
-1. Nếu không có dữ liệu Google Sheets thì chỉ trả lời theo kiến thức pháp luật phổ thông.
-2. Không được bịa thông tin.
-3. Không được tự tạo tên cán bộ, số điện thoại, địa chỉ hoặc thủ tục hành chính.
-4. Nếu không chắc chắn thì trả lời rằng chưa có đủ thông tin và hướng dẫn người dân liên hệ Công an phường.
-5. Trả lời bằng tiếng Việt.
-6. Văn phong ngắn gọn, lịch sự, dễ hiểu.
-7. Độ dài tối đa khoảng 1.500 ký tự.
-"""
+    parts.extend(["", "CÂU HỎI CỦA NGƯỜI DÂN:", question, "", "GIỚI HẠN:", "Không quá 1500 ký tự."])
+    return "\n".join(parts).strip()
 
 
-# Chức năng: Gửi câu hỏi tới Gemini và nhận kết quả trả lời.
-# Vai trò: Chỉ gọi AI khi Router xác định cần AI fallback; ưu tiên dữ liệu Google Sheets và xử lý lỗi an toàn.
-def ask_gemini(question, context=""):
+# Chức năng: Gửi câu hỏi tới Gemini và trả về cả nội dung lẫn trạng thái AI.
+# Vai trò: Hỗ trợ app/logger nhận biết ONLINE, DISABLED, QUOTA_EXCEEDED, TIMEOUT, API_ERROR.
+def ask_gemini_status(question, context=""):
+    allowed, status = _ai_allowed(context=context)
+    if not allowed:
+        return {"ok": False, "text": _fallback_reply(status), "ai_status": status, "error": ""}
+
+    settings = _read_ai_settings()
+    retry_count = max(_as_int(_get_setting(settings, "AI_RETRY_COUNT", default="1"), 1), 1)
+    max_output_chars = max(_as_int(_get_setting(settings, "AI_MAX_OUTPUT_CHARS", default="1500"), 1500), 300)
+
     try:
         client = _get_client()
-        api_key, model = _get_ai_config()
-
+        _, model = _get_ai_config()
         if not client:
-            print("[GEMINI ERROR] Thiếu GEMINI_API_KEY")
-            return DEFAULT_REPLY
+            return {"ok": False, "text": _fallback_reply("DISABLED"), "ai_status": "DISABLED", "error": "MISSING_API_KEY"}
 
-        prompt = build_prompt(question, context)
-
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt,
-        )
-
-        if not response:
-            print("[GEMINI ERROR] Empty response")
-            return DEFAULT_REPLY
-
-        text = getattr(response, "text", None)
-
-        if text:
-            text = str(text).strip()
-
-            if text:
-                return text
-
-        candidates = getattr(response, "candidates", None)
-        if candidates:
+        last_error = ""
+        for attempt in range(retry_count):
             try:
-                parts = candidates[0].content.parts
-                answer = "".join(
-                    getattr(part, "text", "")
-                    for part in parts
-                    if getattr(part, "text", "")
-                ).strip()
+                response = client.models.generate_content(model=model, contents=build_prompt(question, context))
+                text = str(getattr(response, "text", "") or "").strip()
+                if text:
+                    return {"ok": True, "text": text[:max_output_chars], "ai_status": "ONLINE", "error": ""}
+                last_error = "EMPTY_RESPONSE"
+            except Exception as e:
+                last_error = str(e)
+                status = _classify_error(e)
+                if status == "QUOTA_EXCEEDED":
+                    break
+                if attempt < retry_count - 1:
+                    time.sleep(0.5)
 
-                if answer:
-                    return answer
-            except Exception:
-                pass
-
-        return DEFAULT_REPLY
+        final_status = _classify_error(last_error)
+        print(f"[GEMINI ERROR] {final_status}: {last_error}")
+        return {"ok": False, "text": _fallback_reply(final_status), "ai_status": final_status, "error": last_error}
 
     except Exception as e:
-        print(f"[GEMINI ERROR] {type(e).__name__}: {e}")
-        return DEFAULT_REPLY
+        final_status = _classify_error(e)
+        print(f"[GEMINI ERROR] {final_status}: {e}")
+        return {"ok": False, "text": _fallback_reply(final_status), "ai_status": final_status, "error": str(e)}
+
+
+# Chức năng: Gửi câu hỏi tới Gemini khi router cần AI phụ trợ.
+# Vai trò: Giữ tương thích với app.py cũ, chỉ trả về nội dung văn bản.
+def ask_gemini(question, context=""):
+    result = ask_gemini_status(question, context=context)
+    return result.get("text") or _fallback_reply(result.get("ai_status", "AI_FALLBACK"))
