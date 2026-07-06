@@ -566,7 +566,7 @@ def _reply_contact_results(text, limit=5, keep_context=False):
 
 
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
-# Vai trò: Router chỉ điều phối MENU, FAQ, TRA_CUU_LIEN_HE, THU_TUC_* và fallback.
+# Vai trò: Router chỉ điều phối MENU, THU_TUC_*, TRA_CUU_LIEN_HE, FAQ và fallback.
 def route_message(user_text, context=None):
     ctx = dict(context or {})
     text = str(user_text or "").strip()
@@ -644,11 +644,6 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return get_contact_lookup_message(), "MENU", new_ctx, ""
 
-    faq = search_faq(text, limit=3)
-    if faq:
-        ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
-
     explicit = detect_explicit_topic(text)
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
@@ -667,7 +662,7 @@ def route_message(user_text, context=None):
             best_score = safe_int(best.get("_SCORE", 0))
             second_score = safe_int(procedure_results[1].get("_SCORE", 0)) if len(procedure_results) > 1 else 0
 
-            if best_score >= 35 and best_score >= second_score + 15:
+            if best_score >= 28 and best_score >= second_score + 8:
                 new_ctx = {
                     "sheet": best.get("_SHEET", explicit_sheet),
                     "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
@@ -770,6 +765,11 @@ def route_message(user_text, context=None):
         ctx["stage"] = "clarify_global"
         ctx["last_route"] = "CLARIFY_THU_TUC"
         return "Tôi tìm thấy một số thủ tục gần giống nhau. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC", ctx, ""
+
+    faq = search_faq(text, limit=3)
+    if faq:
+        ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
     return get_default_reply(), "DEFAULT", ctx, ""
