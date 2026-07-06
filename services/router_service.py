@@ -731,13 +731,18 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return reply, "MENU", new_ctx, ""
 
+    faq = search_faq(text, limit=3)
+    if faq:
+        ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+
     thu_tuc_results = search_thu_tuc(text, limit=5, sheet=None)
     if thu_tuc_results:
         best = thu_tuc_results[0]
         best_score = safe_int(best.get("_SCORE", 0))
         second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
 
-        if best_score >= 28 and best_score >= second_score + 10:
+        if best_score >= 35 and best_score >= second_score + 15:
             new_ctx = {
                 "sheet": best.get("_SHEET", ""),
                 "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
@@ -751,25 +756,6 @@ def route_message(user_text, context=None):
             if is_followup_detail_question(text):
                 return answer_procedure_detail(best, text), "THU_TUC", new_ctx, ""
             return format_thu_tuc(best), "THU_TUC", new_ctx, ""
-
-        suggestions = []
-        lines = []
-        for i, row in enumerate(thu_tuc_results[:5], start=1):
-            name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-            pid = get_first(row, "ID", "MA", "MÃ")
-            suggestions.append({"index": i, "id": pid, "name": name})
-            if name:
-                lines.append(f"{i}. {name}")
-
-        ctx["last_suggestions"] = suggestions
-        ctx["stage"] = "clarify_global"
-        ctx["last_route"] = "CLARIFY_THU_TUC"
-        return "Tôi tìm thấy một số thủ tục gần giống nhau. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC", ctx, ""
-
-    faq = search_faq(text, limit=3)
-    if faq:
-        ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
     return get_default_reply(), "DEFAULT", ctx, ""
