@@ -780,24 +780,20 @@ def route_message(user_text, context=None):
 
     faq = search_faq(text, limit=3)
     if faq:
-        best_faq = faq[0]
-        related_procedure = _procedure_from_faq_related_id(best_faq)
-
-        if related_procedure:
-            new_ctx = {
-                "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
-                "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
-                "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                "stage": "procedure",
-                "page": ctx.get("page", 1),
-                "last_suggestions": [],
-                "last_route": "FAQ_RELATED_THU_TUC",
-            }
-            return format_thu_tuc(related_procedure), "FAQ_RELATED_THU_TUC", new_ctx, ""
-
-        ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+        for faq_row in faq:
+            related_procedure = _procedure_from_faq_related_id(faq_row)
+            if related_procedure:
+                new_ctx = {
+                    "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
+                    "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
+                    "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
+                    "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                    "stage": "procedure",
+                    "page": ctx.get("page", 1),
+                    "last_suggestions": [],
+                    "last_route": "FAQ_RELATED_THU_TUC",
+                }
+                return format_thu_tuc(related_procedure), "FAQ_RELATED_THU_TUC", new_ctx, ""
 
     thu_tuc_results = search_thu_tuc(text, limit=5, sheet=None)
     if thu_tuc_results:
@@ -819,6 +815,10 @@ def route_message(user_text, context=None):
             if is_followup_detail_question(text):
                 return answer_procedure_detail(best, text), "THU_TUC", new_ctx, ""
             return format_thu_tuc(best), "THU_TUC", new_ctx, ""
+
+    if faq:
+        ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
     return get_default_reply(), "DEFAULT", ctx, ""
