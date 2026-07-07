@@ -355,6 +355,9 @@ def api_chat():
 # Chức năng: Nhận webhook từ Zalo OA.
 # Vai trò: Chuyển tin nhắn người dân vào luồng xử lý BOT CAP 3.1.
 @app.route("/webhook", methods=["GET", "POST"])
+# Chức năng: Nhận webhook từ Zalo OA.
+# Vai trò: Chuyển tin nhắn người dân vào luồng xử lý BOT CAP 3.1.
+@app.route("/webhook", methods=["GET", "POST"])
 def webhook():
     if request.method == "GET":
         return jsonify({"status": "ok", "message": "Webhook OK"}), 200
@@ -386,18 +389,6 @@ def webhook():
         answer, source = build_answer(user_id=user_id, question=question)
         send_zalo_text(user_id=user_id, message=answer)
 
-        try:
-            from datetime import datetime
-            log_chat(
-                thoi_gian=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                user_id=user_id,
-                user_message=question,
-                bot_reply=answer,
-                source=source,
-            )
-        except Exception as log_e:
-            print("[CHAT LOG ERROR]", log_e)
-
         return jsonify({"success": True, "source": source}), 200
 
     except Exception as e:
@@ -405,6 +396,7 @@ def webhook():
         error_message = f"Lỗi xử lý webhook: {e}"
         print("[WEBHOOK ERROR]", error_message)
         print(traceback.format_exc())
+
         try:
             user_id = data.get("sender", {}).get("id", "")
             question = data.get("message", {}).get("text", "")
@@ -413,6 +405,7 @@ def webhook():
             log_error(user_id=user_id, user_message=question, error_message=error_message)
         except Exception as log_e:
             print("[WEBHOOK LOG ERROR]", log_e)
+
         return jsonify({"success": False, "message": str(e)}), 200
 
 
