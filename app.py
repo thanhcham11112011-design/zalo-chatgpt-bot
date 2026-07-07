@@ -383,6 +383,9 @@ def webhook():
             send_zalo_text(user_id=user_id, message=get_welcome_message())
             return jsonify({"success": True, "message": "Empty text handled"}), 200
 
+        answer, source = build_answer(user_id=user_id, question=question)
+        send_zalo_text(user_id=user_id, message=answer)
+
         try:
             from datetime import datetime
             log_chat(
@@ -390,10 +393,12 @@ def webhook():
                 user_id=user_id,
                 user_message=question,
                 bot_reply=answer,
-                source=source
+                source=source,
             )
         except Exception as log_e:
             print("[CHAT LOG ERROR]", log_e)
+
+        return jsonify({"success": True, "source": source}), 200
 
     except Exception as e:
         import traceback
