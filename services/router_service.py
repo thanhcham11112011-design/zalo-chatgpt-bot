@@ -605,6 +605,8 @@ def _reply_contact_results(text, limit=5, keep_context=False):
         "last_route": "TRA_CUU_LIEN_HE",
     }
     return reply, "TRA_CUU_LIEN_HE", ctx if keep_context else {}, ""
+
+
 # Chức năng: Tìm thủ tục liên kết từ FAQ bằng RELATED_ID.
 # Vai trò: Biến FAQ thành lớp hiểu ý định và dẫn về đúng thủ tục trong Google Sheets.
 def _procedure_from_faq_related_id(faq_row):
@@ -805,8 +807,14 @@ def route_message(user_text, context=None):
 
     faq = search_faq(text, limit=3)
     if faq:
-        for faq_row in faq:
-            related_procedure = _procedure_from_faq_related_id(faq_row)
+        best_faq = faq[0]
+    
+        thongtin_reply = _reply_thongtin_from_faq(best_faq)
+        if thongtin_reply:
+            ctx["last_route"] = "FAQ_THONGTIN"
+            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+    
+        related_procedure = _procedure_from_faq_related_id(best_faq)
             if related_procedure:
                 new_ctx = {
                     "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
