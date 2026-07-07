@@ -474,6 +474,12 @@ def answer_procedure_detail(row, user_text):
         value = get_first(row, "LINK_DVC", "LINK")
         return f"🔗 Link dịch vụ công - {ten}\n\n{value}" if value else format_thu_tuc(row)
 
+    if "buu dien" in t or "buu chinh" in t or "chuyen phat" in t or "gui ve nha" in t or "nhan tai nha" in t or "nhan ket qua" in t:
+        value = get_first(row, "LUU_Y", "LƯU_Ý", "KET_QUA", "KẾT_QUẢ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
+        if value:
+            return f"📦 Nhận kết quả - {ten}\n\n{compact(value, 1800)}"
+        return f"📦 Nhận kết quả - {ten}\n\nChưa có dữ liệu riêng về nhận kết quả qua bưu điện trong Google Sheets."
+
     return format_thu_tuc(row)
 
 
