@@ -252,6 +252,8 @@ def is_followup_detail_question(user_text):
         "dich vu cong", "ket qua", "luu y", "chi tiet", "buu dien",
         "buu chinh", "chuyen phat", "gui ve nha", "nhan tai nha",
         "nhan ket qua","lam truc tuyen", "truc tuyen",
+        "online", "lam online", "làm online", "nop online", "nộp online",
+        "lam truc tuyen", "nop truc tuyen", "co lam online duoc khong",
     ]
     return any(kw in text for kw in detail_keywords) or is_location_question(text)
 
@@ -484,9 +486,9 @@ def answer_procedure_detail(row, user_text):
         value = get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
         return f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
-    if "link" in t or "dich vu cong" in t:
+    if "link" in t or "dich vu cong" in t or "online" in t or "truc tuyen" in t:
         value = get_first(row, "LINK_DVC", "LINK")
-        return f"🔗 Link dịch vụ công - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        return f"🔗 Làm trực tuyến - {ten}\n\nQuý công dân có thể thực hiện trực tuyến qua Cổng Dịch vụ công nếu thủ tục được hỗ trợ.\n\n{value}" if value else format_thu_tuc(row)
 
     if "buu dien" in t or "buu chinh" in t or "chuyen phat" in t or "gui ve nha" in t or "nhan tai nha" in t or "nhan ket qua" in t:
         value = get_first(row, "LUU_Y", "LƯU_Ý", "KET_QUA", "KẾT_QUẢ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
