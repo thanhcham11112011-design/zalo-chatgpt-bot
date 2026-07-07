@@ -235,10 +235,11 @@ def is_followup_detail_question(user_text):
         "noi tiep nhan", "noi thuc hien", "noi nop", "nop o dau", "lam o dau",
         "dia diem", "o dau", "thoi han", "bao lau", "may ngay", "le phi",
         "phi", "mat phi", "co so phap ly", "can cu phap ly", "link",
-        "dich vu cong", "ket qua", "luu y", "chi tiet",
+        "dich vu cong", "ket qua", "luu y", "chi tiet", "buu dien",
+        "buu chinh", "chuyen phat", "gui ve nha", "nhan tai nha",
+        "nhan ket qua","lam truc tuyen", "truc tuyen",
     ]
     return any(kw in text for kw in detail_keywords) or is_location_question(text)
-
 
 # Chức năng: Tìm liên hệ theo tên cơ quan/cán bộ từ TRA_CUU_LIEN_HE.
 # Vai trò: Bổ sung nơi tiếp nhận cho thủ tục bằng dữ liệu Google Sheets.
