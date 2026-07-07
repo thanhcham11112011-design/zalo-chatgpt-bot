@@ -1,5 +1,6 @@
 from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai
 from services.text_utils import normalize_text, get_first, safe_int, compact
+from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin
 from services.search_engine import (
     search_menu,
     search_lien_he,
@@ -611,6 +612,30 @@ def _procedure_from_faq_related_id(faq_row):
     if not related_id:
         return None
     return find_procedure_by_id(related_id)
+
+# Chức năng: Trả lời thông tin đơn vị theo NGU_CANH và RELATED_ID của FAQ.
+# Vai trò: Đọc các KEY trong sheet THONGTIN, không hardcode nghiệp vụ trong router.
+def _reply_thongtin_from_faq(faq_row):
+    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+    if ngu_canh != "thongtin":
+        return None
+
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
+    if not related_ids:
+        return None
+
+    data = read_thongtin() or {}
+    lines = []
+
+    for key in related_ids:
+        value = data.get(key)
+        if value:
+            lines.append(str(value).strip())
+
+    if not lines:
+        return None
+
+    return "\n".join(lines)
 
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
 # Vai trò: Router chỉ điều phối MENU, THU_TUC_*, TRA_CUU_LIEN_HE, FAQ và fallback.
