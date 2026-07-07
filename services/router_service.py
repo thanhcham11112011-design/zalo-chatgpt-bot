@@ -95,7 +95,7 @@ def _split_keywords(value):
 # Chức năng: Kiểm tra một dòng dữ liệu có trạng thái hoạt động hay không.
 # Vai trò: Bảo đảm router chỉ xử lý các dòng đang bật trong Google Sheets.
 def _is_on(row):
-    status = normalize_text(get_first(row, "TRANG_THAI", "STATUS", "ACTIVE"))
+    status = normalize_text(get_first(row, "TRANG_THAI", "STATUS", default="ACTIVE"))
     return status not in ["off", "inactive", "false", "0", "no", "khong", "ngung", "dung"]
 
 
@@ -152,6 +152,24 @@ def _match_menu_by_data(text):
 
     if best and best_score >= 25 and best_score >= second_score + 5:
         return best
+    return None
+
+
+# Chức năng: Chọn dòng MENU theo số thứ tự hoặc ID trong Google Sheets.
+# Vai trò: Bảo đảm người dân nhập số menu vẫn định tuyến đúng theo dữ liệu MENU.
+def _match_menu_by_number(text):
+    t = normalize_text(text)
+    if not t.isdigit():
+        return None
+
+    number = safe_int(t, default=-1)
+    rows = _menu_rows()
+
+    for index, row in enumerate(rows, start=1):
+        row_id = safe_int(get_first(row, "ID", "MA", "MÃ"), default=index)
+        if number == index or number == row_id:
+            return row
+
     return None
 
 
@@ -454,7 +472,7 @@ def answer_procedure_detail(row, user_text):
         return f"✅ Điều kiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
 
     if is_location_question(t):
-        co_quan = get_first(row, "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "CO_QUAN_TIEP_NHAN", "CƠ_QUAN_TIẾP_NHẬN", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN")
+        co_quan = get_first(row, "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "CO_QUAN_TIEP_NHAN", "CƠ_QUAN_TIẾP_NHẬN", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "DON_VI_GIAI_QUYET", "ĐƠN_VỊ_GIẢI_QUYẾT")
         lien_he = find_lien_he_by_ten_co_quan(co_quan)
         if lien_he:
             return format_lien_he(lien_he)
@@ -631,7 +649,7 @@ def route_message(user_text, context=None):
         return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
 
     if text_norm.isdigit():
-        menu = search_menu(text)
+        menu = _match_menu_by_number(text) or search_menu(text)
         if menu:
             reply, suggestions = answer_from_menu(menu)
             new_ctx = menu_context(menu)
