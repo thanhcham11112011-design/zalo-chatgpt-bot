@@ -604,7 +604,13 @@ def _reply_contact_results(text, limit=5, keep_context=False):
         "last_route": "TRA_CUU_LIEN_HE",
     }
     return reply, "TRA_CUU_LIEN_HE", ctx if keep_context else {}, ""
-
+# Chức năng: Tìm thủ tục liên kết từ FAQ bằng RELATED_ID.
+# Vai trò: Biến FAQ thành lớp hiểu ý định và dẫn về đúng thủ tục trong Google Sheets.
+def _procedure_from_faq_related_id(faq_row):
+    related_id = get_first(faq_row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
+    if not related_id:
+        return None
+    return find_procedure_by_id(related_id)
 
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
 # Vai trò: Router chỉ điều phối MENU, THU_TUC_*, TRA_CUU_LIEN_HE, FAQ và fallback.
@@ -774,6 +780,22 @@ def route_message(user_text, context=None):
 
     faq = search_faq(text, limit=3)
     if faq:
+        best_faq = faq[0]
+        related_procedure = _procedure_from_faq_related_id(best_faq)
+
+        if related_procedure:
+            new_ctx = {
+                "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
+                "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
+                "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
+                "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                "stage": "procedure",
+                "page": ctx.get("page", 1),
+                "last_suggestions": [],
+                "last_route": "FAQ_RELATED_THU_TUC",
+            }
+            return format_thu_tuc(related_procedure), "FAQ_RELATED_THU_TUC", new_ctx, ""
+
         ctx["last_route"] = "FAQ"
         return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
 
