@@ -203,25 +203,39 @@ def is_location_question(text):
 
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
-# Vai trò: Dùng ý định kỹ thuật và dữ liệu TRA_CUU_LIEN_HE, không hardcode bộ phận nghiệp vụ.
+# Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi người dân có ý định hỏi liên hệ rõ ràng.
 def is_contact_question(text):
     t = normalize_text(text)
-    intent_keys = ["lien he", "so dien thoai", "sdt", "dien thoai", "hotline", "gap", "ai la", "phu trach", "quan ly"]
-    if any(k in t for k in intent_keys):
+
+    contact_intent_keys = [
+        "lien he", "so dien thoai", "sdt", "dien thoai",
+        "hotline", "gap can bo", "gap dong chi", "gap dc",
+        "can bo phu trach", "ai phu trach", "truc ban"
+    ]
+
+    agency_location_keys = [
+        "dia chi", "ban do", "map", "o dau", "vi tri",
+        "tru so", "co quan nao", "don vi nao"
+    ]
+
+    if any(k in t for k in contact_intent_keys):
         return True
+
+    if not any(k in t for k in agency_location_keys):
+        return False
 
     for row in read_lien_he():
         values = [
             get_first(row, "BO_PHAN", "BỘ_PHẬN"),
             get_first(row, "TDP"),
-            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
             get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"),
-            get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
         ]
+
         for value in values:
             n = normalize_text(value)
             if n and len(n) >= 3 and (n in t or t in n):
                 return True
+
     return False
 
 
