@@ -707,11 +707,6 @@ def route_message(user_text, context=None):
         ctx["last_route"] = "CONTACT_NOT_FOUND"
         return _chat_setting("CONTACT_NOT_FOUND", "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."), "CONTACT_NOT_FOUND", ctx, ""
 
-    if is_contact_question(text):
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
-        if contact_reply:
-            return contact_reply
-
     menu_row = _match_menu_by_data(text)
     if menu_row and normalize_text(get_first(menu_row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
         new_ctx = menu_context(menu_row)
@@ -760,7 +755,16 @@ def route_message(user_text, context=None):
                 if name:
                     lines.append(f"{i}. {name}")
 
-            new_ctx = {"sheet": explicit_sheet, "topic": explicit_topic, "stage": "clarify_procedure", "procedure_id": "", "procedure_name": "", "page": 1, "last_suggestions": suggestions, "last_route": "CLARIFY_THU_TUC_IN_GROUP"}
+            new_ctx = {
+                "sheet": explicit_sheet,
+                "topic": explicit_topic,
+                "stage": "clarify_procedure",
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": suggestions,
+                "last_route": "CLARIFY_THU_TUC_IN_GROUP",
+            }
             return "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC_IN_GROUP", new_ctx, ""
 
         grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
@@ -805,28 +809,36 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return reply, "MENU", new_ctx, ""
 
-        faq = search_faq(text, limit=3)
-        if faq:
-            best_faq = faq[0]
-        
-            thongtin_reply = _reply_thongtin_from_faq(best_faq)
-            if thongtin_reply:
-                ctx["last_route"] = "FAQ_THONGTIN"
-                return thongtin_reply, "FAQ_THONGTIN", ctx, ""
-        
-            related_procedure = _procedure_from_faq_related_id(best_faq)
-            if related_procedure:
-                new_ctx = {
-                    "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
-                    "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                    "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
-                    "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                    "stage": "procedure",
-                    "page": ctx.get("page", 1),
-                    "last_suggestions": [],
-                    "last_route": "FAQ_RELATED_THU_TUC",
-                }
-                return format_thu_tuc(related_procedure), "FAQ_RELATED_THU_TUC", new_ctx, ""
+    faq = search_faq(text, limit=3)
+    if faq:
+        best_faq = faq[0]
+
+        thongtin_reply = _reply_thongtin_from_faq(best_faq)
+        if thongtin_reply:
+            ctx["last_route"] = "FAQ_THONGTIN"
+            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+
+        related_procedure = _procedure_from_faq_related_id(best_faq)
+        if related_procedure:
+            new_ctx = {
+                "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
+                "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
+                "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
+                "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                "stage": "procedure",
+                "page": ctx.get("page", 1),
+                "last_suggestions": [],
+                "last_route": "FAQ_RELATED_THU_TUC",
+            }
+            return format_thu_tuc(related_procedure), "FAQ_RELATED_THU_TUC", new_ctx, ""
+
+        ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
 
     thu_tuc_results = search_thu_tuc(text, limit=5, sheet=None)
     if thu_tuc_results:
