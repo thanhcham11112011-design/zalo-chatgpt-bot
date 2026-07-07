@@ -5,6 +5,7 @@ from config import PORT, check_config
 from services.router_service import route_message_for_ai, get_welcome_message
 from services.gemini_service import ask_gemini_status
 from services.zalo_service import send_zalo_text
+from services.logger import log_chat
 from services.logger import (
     write_log,
     log_error,
@@ -384,6 +385,12 @@ def webhook():
 
         answer, source = build_answer(user_id=user_id, question=question)
         send_zalo_text(user_id=user_id, message=answer)
+
+        try:
+            log_chat(user_id=user_id, user_message=question, bot_reply=answer, source=source)
+        except Exception as log_e:
+            print("[CHAT LOG ERROR]", log_e)
+
         return jsonify({"success": True, "source": source}), 200
 
     except Exception as e:
