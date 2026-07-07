@@ -805,16 +805,16 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return reply, "MENU", new_ctx, ""
 
-    faq = search_faq(text, limit=3)
-    if faq:
-        best_faq = faq[0]
-    
-        thongtin_reply = _reply_thongtin_from_faq(best_faq)
-        if thongtin_reply:
-            ctx["last_route"] = "FAQ_THONGTIN"
-            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
-    
-        related_procedure = _procedure_from_faq_related_id(best_faq)
+        faq = search_faq(text, limit=3)
+        if faq:
+            best_faq = faq[0]
+        
+            thongtin_reply = _reply_thongtin_from_faq(best_faq)
+            if thongtin_reply:
+                ctx["last_route"] = "FAQ_THONGTIN"
+                return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+        
+            related_procedure = _procedure_from_faq_related_id(best_faq)
             if related_procedure:
                 new_ctx = {
                     "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
