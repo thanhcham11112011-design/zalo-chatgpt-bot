@@ -449,7 +449,8 @@ def search_lien_he(user_text, limit=3):
                 for r in keyword_results[:5]
             ]
         )
-                return keyword_results[:limit]
+
+        return keyword_results[:limit]
         debug_print(
             "CONTACT",
             f"QUESTION: {user_text}",
@@ -497,14 +498,16 @@ def search_faq(user_text, limit=3):
             safe_int(r.get("_UU_TIEN", 999)),
         )
     )
-        debug_print(
-            "FAQ",
-            f"USER_TEXT: {user_text}",
-            *[
-                f"{get_first(r,'ID')} SCORE={r.get('_SCORE')} PRIORITY={r.get('_UU_TIEN')} QUESTION={get_first(r,'CAU_HOI','CÂU_HỎI')} RELATED={get_first(r,'RELATED_ID')}"
-                for r in results[:5]
-            ]
-        )
+
+    debug_print(
+        "FAQ",
+        f"USER_TEXT: {user_text}",
+        *[
+            f"{get_first(r,'ID')} SCORE={r.get('_SCORE')} PRIORITY={r.get('_UU_TIEN')} QUESTION={get_first(r,'CAU_HOI','CÂU_HỎI')} RELATED={get_first(r,'RELATED_ID')}"
+            for r in results[:5]
+        ]
+    )
+
     return results[:limit]
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
@@ -575,8 +578,9 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
                 for r in results[:5]
             ]
         )
-    _sort_results(results)
-    return results[:limit]
+        
+        _sort_results(results)
+        return results[:limit]
 
 def list_procedures_by_sheet(sheet, limit=10):
     # Chức năng: Liệt kê các thủ tục trong một sheet THU_TUC_*.
