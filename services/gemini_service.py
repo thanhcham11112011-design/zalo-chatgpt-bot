@@ -1,7 +1,7 @@
 import time
 
 from google import genai
-
+from services.logger import debug_print
 from config import GEMINI_API_KEY, GEMINI_MODEL
 from services.sheet_api import read_prompt, read_setting_ai, read_setting_chat
 
