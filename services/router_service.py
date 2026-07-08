@@ -906,10 +906,11 @@ def route_message(user_text, context=None):
             new_ctx["last_suggestions"] = suggestions
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
-
+        
+    explicit = detect_explicit_topic(text)
     if is_followup_detail_question(text) and not is_contact_question(text):
         candidate_results = []
-        explicit = detect_explicit_topic(text)
+        
 
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
