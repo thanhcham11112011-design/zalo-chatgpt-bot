@@ -224,31 +224,19 @@ def is_location_question(text):
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
 # Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi người dân hỏi rõ về liên hệ, số điện thoại, cán bộ hoặc bộ phận.
-
 def is_contact_question(text):
-    # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
-    # Vai trò: Nhận diện tín hiệu liên hệ chung, không hardcode cán bộ hoặc đơn vị cụ thể.
     t = normalize_text(text)
-    t_box = f" {t} "
 
-    if not t:
-        return False
-
-    location_only_keys = [
-        "dia chi", "ban do", "google map", "map", "vi tri",
-        "o dau", "tru so", "gio lam viec", "thoi gian lam viec", "mo cua",
-    ]
-    contact_strong_keys = [
-        "lien he", "so dien thoai", "sdt", "dien thoai", "hotline",
-        "gap", "can bo", "dong chi", "phu trach", "truc ban",
-        "lanh dao", "chi huy", "bo phan", "to dan pho", "tdp",
-        "canh sat khu vuc", "cskv", "la ai",
+    contact_intent_keys = [
+        "lien he", "so dien thoai", "sdt", "dien thoai",
+        "hotline", "gap can bo", "gap dong chi", "gap dc",
+        "can bo phu trach", "ai phu trach", "truc ban",
+        "cskv", "canh sat khu vuc", "to dan pho", "tdp",
+        "bo phan", "to an ninh", "to cstt", "to pctp", "to tong hop",
+        "chi huy", "lanh dao", "truong CAP","truong cong an phuong","pho cap","pho cong an phuong", "pho truong cap","pho truong cong an phuong",
     ]
 
-    if any(k in t for k in location_only_keys):
-        return any(k in t for k in contact_strong_keys)
-
-    return any(k in t for k in contact_strong_keys)
+    return any(k in t for k in contact_intent_keys)
 
 
 # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
@@ -1073,36 +1061,49 @@ def _faq_has_action(faq_row, ctx=None):
 
     return False
 
+# Chức năng: Tạo context sạch khi BOT trả lời FAQ thường.
+# Vai trò: Khi người dân đổi chủ đề sang FAQ, không giữ procedure_id của thủ tục cũ.
+def _faq_plain_context(ctx, route="FAQ"):
+    new_ctx = dict(ctx or {})
+    new_ctx["last_route"] = route
+    new_ctx["sheet"] = ""
+    new_ctx["topic"] = ""
+    new_ctx["procedure_id"] = ""
+    new_ctx["procedure_name"] = ""
+    new_ctx["stage"] = ""
+    new_ctx["page"] = 1
+    new_ctx["last_suggestions"] = []
+    return new_ctx
+
+
+# Chức năng: Kiểm tra có nên giữ ngữ cảnh thủ tục hiện tại hay không.
+# Vai trò: Chỉ giữ context khi câu hỏi là chi tiết nối tiếp, không khóa chặt khi người dân đổi chủ đề.
+def _should_keep_procedure_context(text, ctx, explicit=None):
+    if not dict(ctx or {}).get("procedure_id"):
+        return False
+    if is_contact_question(text):
+        return False
+    if explicit:
+        return False
+    return is_followup_detail_question(text)
+
+
 # Chức năng: Định tuyến danh sách FAQ theo NGU_CANH và RELATED_ID.
 # Vai trò: Tập trung xử lý FAQ trước khi rơi về câu trả lời FAQ thường.
-
 def _route_from_faq_rows(user_text, faq_rows, ctx):
-    # Chức năng: Định tuyến danh sách FAQ theo NGU_CANH và RELATED_ID.
-    # Vai trò: Ưu tiên FAQ liên hệ khi câu hỏi có ý định liên hệ, tránh THONGTIN cướp luồng.
-    rows = list(faq_rows or [])
-
-    if is_contact_question(user_text):
-        rows.sort(
-            key=lambda row: 0
-            if normalize_text(get_first(row, "NGU_CANH", "NGỮ_CẢNH")) == "tra_cuu_lien_he"
-            else 1
-        )
-
-    for faq_row in rows:
+    for faq_row in faq_rows or []:
         routed = _route_from_single_faq(user_text, faq_row, ctx)
         if routed:
             return routed
 
-    normal_faq = _normal_faq_rows(rows)
+    normal_faq = _normal_faq_rows(faq_rows)
     if normal_faq:
-        new_ctx = dict(ctx or {})
-        new_ctx["last_route"] = "FAQ"
+        new_ctx = _faq_plain_context(ctx, "FAQ")
         return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
-    if rows:
-        new_ctx = dict(ctx or {})
-        new_ctx["last_route"] = "FAQ"
-        return format_multiple_results(rows[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+    if faq_rows:
+        new_ctx = _faq_plain_context(ctx, "FAQ")
+        return format_multiple_results(faq_rows[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
     return None
 
@@ -1173,10 +1174,13 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
-    if is_contact_question(text):
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
-        if contact_reply:
-            return contact_reply
+    explicit = detect_explicit_topic(text)
+
+    if _should_keep_procedure_context(text, ctx, explicit):
+        procedure = find_procedure_by_id(ctx.get("procedure_id"))
+        if procedure:
+            ctx["last_route"] = "PROCEDURE_CONTEXT"
+            return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     faq = search_faq(text, limit=3)
     actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
@@ -1185,7 +1189,12 @@ def route_message(user_text, context=None):
         if faq_routed and faq_routed[1] != "FAQ":
             return faq_routed
 
-    explicit = detect_explicit_topic(text)
+    if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
+        normal_faq = _normal_faq_rows(faq)
+        if normal_faq:
+            new_ctx = _faq_plain_context(ctx, "FAQ")
+            return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+
     if is_followup_detail_question(text) and not is_contact_question(text):
         candidate_results = []
         
@@ -1225,7 +1234,7 @@ def route_message(user_text, context=None):
                 }
                 return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
 
-    if ctx.get("procedure_id"):
+    if _should_keep_procedure_context(text, ctx, explicit):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
         if procedure:
             ctx["last_route"] = "PROCEDURE_CONTEXT"
