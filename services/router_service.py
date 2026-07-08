@@ -947,24 +947,11 @@ def route_message(user_text, context=None):
                 }
                 return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
 
-        if ctx.get("procedure_id"):
-            procedure = find_procedure_by_id(ctx.get("procedure_id"))
-            if procedure:
-                ctx["last_route"] = "PROCEDURE_CONTEXT"
-                return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
-
-    if ctx.get("stage") == "contact_lookup":
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
-        if contact_reply:
-            return contact_reply
-        ctx["last_route"] = "CONTACT_NOT_FOUND"
-        return _chat_setting("CONTACT_NOT_FOUND", "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."), "CONTACT_NOT_FOUND", ctx, ""
-
-    if is_contact_question(text):
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
-        if contact_reply:
-            ctx["last_route"] = "CONTACT_LOOKUP"
-            return contact_reply
+    if ctx.get("procedure_id"):
+        procedure = find_procedure_by_id(ctx.get("procedure_id"))
+        if procedure:
+            ctx["last_route"] = "PROCEDURE_CONTEXT"
+            return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     faq = search_faq(text, limit=3)
     print("===== DEBUG ROUTER FAQ =====")
@@ -977,6 +964,21 @@ def route_message(user_text, context=None):
         if thongtin_reply:
             ctx["last_route"] = "FAQ_THONGTIN"
             return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+
+    if ctx.get("stage") == "contact_lookup":
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
+        if contact_reply:
+            return contact_reply
+        ctx["last_route"] = "CONTACT_NOT_FOUND"
+        return _chat_setting(
+            "CONTACT_NOT_FOUND",
+            "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."
+        ), "CONTACT_NOT_FOUND", ctx, ""
+
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
     menu_row = _match_menu_by_data(text)
     if menu_row and normalize_text(get_first(menu_row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
         new_ctx = menu_context(menu_row)
