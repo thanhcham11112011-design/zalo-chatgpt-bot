@@ -232,7 +232,8 @@ def is_contact_question(text):
         "hotline", "gap can bo", "gap dong chi", "gap dc",
         "can bo phu trach", "ai phu trach", "truc ban",
         "cskv", "canh sat khu vuc", "to dan pho", "tdp",
-        "bo phan", "to an", "to cstt", "to pctp", "to tong hop"
+        "bo phan", "to an ninh", "to cstt", "to pctp", "to tong hop"
+        "chi huy", "lanh dao", "truong CAP","truong cong an phuong","pho cap","pho cong an phuong", "pho truong cap","pho truong cong an phuong"
     ]
 
     return any(k in t for k in contact_intent_keys)
