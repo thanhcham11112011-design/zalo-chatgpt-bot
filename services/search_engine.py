@@ -1,7 +1,12 @@
 import re
 from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
-
+from services.logger import debug_print
+debug_print(
+    "FAQ",
+    "USER_TEXT: " + str(user_text),
+    "FAQ_COUNT: " + str(len(results))
+)
 
 def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
     # Chức năng: Gắn metadata tìm kiếm vào một dòng kết quả.
