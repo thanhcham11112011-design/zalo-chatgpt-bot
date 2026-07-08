@@ -781,11 +781,73 @@ def get_contact_lookup_message():
 
     return "📌 Tra cứu liên hệ\n\nQuý công dân vui lòng nhập nội dung liên hệ cần tra cứu."
 
+# Chức năng: Tính điểm khớp liên hệ theo dữ liệu TRA_CUU_LIEN_HE.
+# Vai trò: Ưu tiên cột TU_KHOA, BO_PHAN, CHUC_NANG, không hardcode nghiệp vụ trong Python.
+def _score_lien_he_by_data(text, row):
+    t = normalize_text(text)
+    t_box = f" {t} "
+    score = 0
+
+    keywords = _split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS"))
+    for kw in keywords:
+        n = normalize_text(kw)
+        if not n:
+            continue
+        if t == n:
+            score += 80
+        elif f" {n} " in t_box or n in t:
+            score += 55
+        else:
+            parts = [p for p in n.split() if len(p) >= 3]
+            if parts and all(p in t for p in parts):
+                score += 30
+
+    for value in [
+        get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+        get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
+        get_first(row, "HO_TEN", "HỌ_TÊN", "TEN", "TÊN"),
+    ]:
+        n = normalize_text(value)
+        if not n:
+            continue
+        if t == n:
+            score += 70
+        elif f" {n} " in t_box or n in t:
+            score += 45
+        else:
+            parts = [p for p in n.split() if len(p) >= 3]
+            if parts and all(p in t for p in parts):
+                score += 25
+
+    return score
+
+
+# Chức năng: Tìm liên hệ ưu tiên theo cột dữ liệu trong TRA_CUU_LIEN_HE.
+# Vai trò: Cho phép router tra cứu cán bộ/bộ phận bằng Google Sheets trước khi rơi sang FAQ.
+def _search_lien_he_by_data(text, limit=5):
+    scored = []
+
+    for row in read_lien_he():
+        if not _is_on(row):
+            continue
+
+        score = _score_lien_he_by_data(text, row)
+        if score > 0:
+            item = dict(row)
+            item["_SCORE"] = score
+            scored.append(item)
+
+    scored.sort(key=lambda x: safe_int(x.get("_SCORE", 0)), reverse=True)
+    return scored[:limit]
 
 # Chức năng: Xử lý kết quả liên hệ và câu nhắc làm rõ khi có nhiều kết quả.
 # Vai trò: Chuẩn hóa trả lời TRA_CUU_LIEN_HE bằng dữ liệu sheet.
 def _reply_contact_results(text, limit=5, keep_context=False):
-    results = search_lien_he(text, limit=limit)
+    results = _search_lien_he_by_data(text, limit=limit)
+
+    if not results:
+        results = search_lien_he(text, limit=limit)
+
     if not results:
         return None
 
@@ -952,6 +1014,10 @@ def route_message(user_text, context=None):
         if procedure:
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
+
+    contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+    if contact_reply:
+        return contact_reply
 
     faq = search_faq(text, limit=3)
     print("===== DEBUG ROUTER FAQ =====")
