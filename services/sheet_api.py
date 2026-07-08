@@ -8,7 +8,6 @@ import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
-from services.logger import debug_print
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -202,11 +201,7 @@ def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
             cleaned = _clean_row(row)
             if any(str(v).strip() for v in cleaned.values()):
                 rows.append(cleaned)
-        debug_print(
-            "SHEET",
-            f"SHEET={sheet_name}",
-            f"ROWS={len(rows)}"
-        )
+
         _cache[sheet_name] = (now, rows)
         return [dict(r) for r in rows]
 
