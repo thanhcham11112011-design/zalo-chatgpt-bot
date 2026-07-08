@@ -459,7 +459,12 @@ def search_faq(user_text, limit=3):
             note="FAQ_MATCH",
         ))
 
-    _sort_results(results)
+    results.sort(
+        key=lambda r: (
+            -safe_int(r.get("_SCORE", 0)),
+            safe_int(r.get("_UU_TIEN", 999)),
+        )
+    )
     return results[:limit]
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
