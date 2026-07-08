@@ -4,8 +4,10 @@ from services.text_utils import normalize_text, get_first, safe_int, split_keywo
 from services.logger import debug_print
 debug_print(
     "FAQ",
-    "USER_TEXT: " + str(user_text),
-    "FAQ_COUNT: " + str(len(results))
+    f"USER_TEXT: {user_text}",
+    f"FAQ_ID: {faq_id}",
+    f"SCORE: {score}",
+    f"RELATED_ID: {related_id}"
 )
 
 def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
