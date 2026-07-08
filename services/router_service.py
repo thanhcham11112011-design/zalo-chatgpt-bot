@@ -960,7 +960,13 @@ def route_message(user_text, context=None):
     if faq:
         print("FIRST_FAQ:", get_first(faq[0], "ID"))
     print("============================")
+
     if faq:
+        normal_faq = _normal_faq_rows(faq)
+        if normal_faq:
+            ctx["last_route"] = "FAQ"
+            return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", ctx, ""
+
         thongtin_reply = _reply_thongtin_from_faq_rows(faq)
         if thongtin_reply:
             ctx["last_route"] = "FAQ_THONGTIN"
