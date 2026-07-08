@@ -64,7 +64,7 @@ def _clean_value(value: Any) -> str:
     if text.endswith(".0") and text.replace(".0", "", 1).isdigit():
         text = text[:-2]
 
-    if text.isdigit() and len(text) == 9:
+    if text.isdigit() and len(text) in [9, 10]:
         text = "0" + text
 
     return text
