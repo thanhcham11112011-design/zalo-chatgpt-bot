@@ -849,6 +849,44 @@ def _reply_lien_he_from_faq(faq_row):
 
     return format_multiple_results(results, format_lien_he, limit=5)
 
+# Chức năng: Trả lời dữ liệu theo NGU_CANH và RELATED_ID của FAQ.
+# Vai trò: Cho phép FAQ hiểu ý định và điều hướng sang sheet phù hợp bằng Google Sheets.
+def _reply_by_faq_context(faq_row):
+    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
+
+    if not ngu_canh or not related_ids:
+        return None
+
+    if ngu_canh == "thongtin":
+        return _reply_thongtin_from_faq(faq_row)
+
+    if ngu_canh == "tra_cuu_lien_he":
+        results = []
+        for row in read_lien_he():
+            if not _is_on(row):
+                continue
+
+            values = [
+                get_first(row, "ID", "MA", "MÃ"),
+                get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+                get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+                get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
+            ]
+
+            values_norm = [normalize_text(v) for v in values if v]
+
+            for rid in related_ids:
+                rid_norm = normalize_text(rid)
+                if rid_norm and any(rid_norm == v or rid_norm in v for v in values_norm):
+                    results.append(row)
+                    break
+
+        if results:
+            return format_multiple_results(results, format_lien_he, limit=5)
+
+    return None
+    
 # Chức năng: Trả lời thông tin đơn vị theo NGU_CANH và RELATED_ID của FAQ.
 # Vai trò: Đọc các KEY trong sheet THONGTIN, không hardcode nghiệp vụ trong router.
 def _reply_thongtin_from_faq(faq_row):
@@ -1044,15 +1082,15 @@ def route_message(user_text, context=None):
 
         if normalize_text(explicit_sheet) in ["faq", "thu_tuc_vneid"]:
             if faq:
+                context_reply = _reply_by_faq_context(faq[0])
+                if context_reply:
+                    ctx["last_route"] = "FAQ_CONTEXT"
+                    return context_reply, "FAQ_CONTEXT", ctx, ""
+
                 normal_faq = _normal_faq_rows(faq)
                 if normal_faq:
                     ctx["last_route"] = "FAQ"
                     return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", ctx, ""
-
-                thongtin_reply = _reply_thongtin_from_faq_rows(faq)
-                if thongtin_reply:
-                    ctx["last_route"] = "FAQ_THONGTIN"
-                    return thongtin_reply, "FAQ_THONGTIN", ctx, ""
 
                 related_procedure = _procedure_from_faq_related_id(faq[0])
                 if related_procedure:
