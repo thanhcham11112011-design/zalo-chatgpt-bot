@@ -853,6 +853,7 @@ def route_message(user_text, context=None):
     ctx = dict(context or {})
     text = str(user_text or "").strip()
     text_norm = normalize_text(text)
+    explicit = None
 
     if not text:
         return get_default_reply(), "EMPTY", ctx, ""
