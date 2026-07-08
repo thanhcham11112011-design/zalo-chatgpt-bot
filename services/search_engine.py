@@ -186,6 +186,42 @@ def _keyword_exact_match(user_text, keywords):
 
     return False
 
+
+def _expand_contact_role_terms(value):
+    # Chức năng: Mở rộng cách gọi chức vụ chỉ huy Công an phường.
+    # Vai trò: Giúp TRA_CUU_LIEN_HE khớp Trưởng CAP/Trưởng Công an phường bằng dữ liệu sheet.
+    text = normalize_text(value)
+    if not text:
+        return ""
+
+    terms = [text]
+
+    if "truong cong an phuong" in text and "truong cap" not in text:
+        terms.append("truong cap")
+
+    if "truong cap" in text and "truong cong an phuong" not in text:
+        terms.append("truong cong an phuong")
+
+    if "pho truong cong an phuong" in text and "pho cap" not in text:
+        terms.append("pho cap")
+
+    if "pho cap" in text and "pho truong cong an phuong" not in text:
+        terms.append("pho truong cong an phuong")
+
+    return " ".join(terms)
+
+
+def _contact_role_conflict(user_text, role_text):
+    # Chức năng: Loại trừ kết quả Phó trưởng khi người dân hỏi rõ Trưởng Công an phường.
+    # Vai trò: Hạn chế trả nhầm lãnh đạo trong tra cứu liên hệ.
+    user_norm = _expand_contact_role_terms(user_text)
+    role_norm = _expand_contact_role_terms(role_text)
+
+    asks_chief = ("truong cong an phuong" in user_norm or "truong cap" in user_norm) and "pho" not in user_norm
+    role_is_deputy = "pho" in role_norm
+
+    return asks_chief and role_is_deputy
+
 def search_lien_he(user_text, limit=3):
     # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE.
     # Vai trò: Tra cứu cán bộ, bộ phận, cơ quan, trực ban, địa chỉ, số điện thoại từ Google Sheets.
@@ -380,6 +416,46 @@ def search_lien_he(user_text, limit=3):
             return same_score_results[:1]
 
         return same_score_results[:limit]
+    role_results = []
+
+    for row in search_rows:
+        role_text = get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ")
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+
+        if not role_text:
+            continue
+
+        if _contact_role_conflict(user_text, role_text):
+            continue
+
+        role_match = phrase_score(
+            _expand_contact_role_terms(user_text),
+            _expand_contact_role_terms(role_text),
+            8,
+        )
+        keyword_match = keyword_score(user_text, tu_khoa, 6)
+
+        if role_match <= 0 and keyword_match <= 0:
+            continue
+
+        role_results.append(_add_meta(
+            row=row,
+            route="LIEN_HE",
+            score=70000 + role_match + keyword_match,
+            sheet="TRA_CUU_LIEN_HE",
+            row_id=get_first(row, "ID", "MA", "MÃ"),
+            note="ROLE_MATCH",
+        ))
+
+    if role_results:
+        _sort_results(role_results)
+        best_score = role_results[0].get("_SCORE", 0)
+        same_score_results = [
+            row for row in role_results
+            if row.get("_SCORE", 0) == best_score
+        ]
+        return same_score_results[:limit]
+
     exact_keyword_results = []
 
     for row in search_rows:
@@ -412,19 +488,27 @@ def search_lien_he(user_text, limit=3):
         tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
         ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ")
         row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
+
+        if _contact_role_conflict(user_text, chuc_nang):
+            continue
 
         keyword_match = keyword_score(user_text, tu_khoa, 4)
         area_match = phrase_score(user_text, tdp, 2)
         name_match = phrase_score(user_text, ten, 1)
-        function_match = phrase_score(user_text, chuc_nang, 1)
+        function_match = phrase_score(
+            _expand_contact_role_terms(user_text),
+            _expand_contact_role_terms(chuc_nang),
+            2,
+        )
         department_match = phrase_score(user_text, row_bo_phan, 3) if row_bo_phan else 0
 
         has_direct_contact_signal = (
             keyword_match > 0
             or area_match > 0
             or name_match > 0
+            or function_match > 0
             or department_match > 0
         )
 
