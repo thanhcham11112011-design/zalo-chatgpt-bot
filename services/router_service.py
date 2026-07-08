@@ -1,6 +1,6 @@
-from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai
+
 from services.text_utils import normalize_text, get_first, safe_int, compact
-from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin
+from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin, read_thu_tuc_sheet_names, read_thu_tuc_sheet
 from services.search_engine import (
     search_menu,
     search_lien_he,
@@ -461,63 +461,174 @@ def is_group_only_topic_request(text, explicit):
             return True
     return False
 
+# Chức năng: Kiểm tra sheet thủ tục có phải nhóm VNeID hay không.
+# Vai trò: Tách luồng VNeID khỏi nguyên tắc định tuyến thủ tục bằng TU_KHOA.
+def _is_vneid_sheet(sheet_name):
+    return normalize_text(sheet_name) == "thu_tuc_vneid"
+
+
+# Chức năng: Lấy mã thủ tục chuẩn từ một dòng thủ tục.
+# Vai trò: Dùng RELATED_ID của FAQ để bổ sung đúng thủ tục đã xác định.
+def _procedure_id(row):
+    return get_first(row, "ID", "MA", "MÃ")
+
+
+# Chức năng: Tính điểm khớp thủ tục chỉ bằng cột TU_KHOA.
+# Vai trò: Bảo đảm THU_TUC_* thường được định tuyến bằng TU_KHOA, không bị FAQ cướp luồng.
+def _score_procedure_by_tu_khoa(text, row):
+    t = normalize_text(text)
+    t_box = f" {t} "
+    score = 0
+
+    pid = normalize_text(_procedure_id(row))
+    if pid and pid in t:
+        score += 80
+
+    keywords = _split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS"))
+    for kw in keywords:
+        n = normalize_text(kw)
+        if not n:
+            continue
+        if t == n:
+            score += 70
+        elif f" {n} " in t_box or n in t:
+            score += 45
+        else:
+            parts = [p for p in n.split() if len(p) >= 3]
+            if parts and all(p in t for p in parts):
+                score += 25
+
+    return score
+
+
+# Chức năng: Tìm thủ tục theo TU_KHOA trong các sheet THU_TUC_*.
+# Vai trò: Dùng Google Sheets làm nguồn định tuyến chính cho thủ tục thường.
+def _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5, include_vneid=False):
+    rows = []
+
+    if sheet:
+        if _is_vneid_sheet(sheet) and not include_vneid:
+            return []
+        rows = read_thu_tuc_sheet(sheet)
+    else:
+        for sheet_name in read_thu_tuc_sheet_names():
+            if _is_vneid_sheet(sheet_name) and not include_vneid:
+                continue
+            rows.extend(read_thu_tuc_sheet(sheet_name))
+
+    scored = []
+    for row in rows:
+        score = _score_procedure_by_tu_khoa(text, row)
+        if score > 0:
+            item = dict(row)
+            item["_SCORE"] = score
+            scored.append(item)
+
+    scored.sort(key=lambda x: safe_int(x.get("_SCORE", 0)), reverse=True)
+    return scored[:limit]
+
+
+# Chức năng: Tìm FAQ bổ sung theo NGU_CANH và RELATED_ID của thủ tục đã xác định.
+# Vai trò: FAQ chỉ bổ sung ý định chi tiết, không thay thế dữ liệu chính trong THU_TUC_*.
+def _faq_supplement_for_procedure(row, user_text, ngu_canh):
+    pid = normalize_text(_procedure_id(row))
+    if not pid:
+        return ""
+
+    target_context = normalize_text(ngu_canh)
+    faq_rows = search_faq(user_text, limit=5) or []
+
+    for faq_row in faq_rows:
+        faq_context = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+        if faq_context != target_context:
+            continue
+
+        related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC"))
+        if not any(normalize_text(x) == pid for x in related_ids):
+            continue
+
+        extra = format_faq(faq_row)
+        if extra:
+            return "\n\nℹ️ Thông tin bổ sung:\n" + compact(extra, 700)
+
+    return ""
+
+
+# Chức năng: Lọc FAQ thường không có RELATED_ID và không phải THONGTIN.
+# Vai trò: Không để FAQ có RELATED_ID trả danh sách khi chưa đúng luồng.
+def _normal_faq_rows(faq_rows):
+    results = []
+    for row in faq_rows or []:
+        ngu_canh = normalize_text(get_first(row, "NGU_CANH", "NGỮ_CẢNH"))
+        related_id = get_first(row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
+        if ngu_canh == "thongtin":
+            continue
+        if related_id:
+            continue
+        results.append(row)
+    return results
 
 # Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp.
-# Vai trò: Khai thác các cột HO_SO, NOI_NOP, TRINH_TU, THOI_HAN, LE_PHI trong sheet.
+# Vai trò: Ưu tiên cột dữ liệu của THU_TUC_*, chỉ bổ sung FAQ khi NGU_CANH và RELATED_ID khớp.
 def answer_procedure_detail(row, user_text):
     t = normalize_text(user_text)
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
 
     if "dieu kien" in t or "yeu cau" in t:
         value = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
-        return f"✅ Điều kiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        reply = f"✅ Điều kiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "DIEU_KIEN")
 
     if is_location_question(t):
         co_quan = get_first(row, "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "CO_QUAN_TIEP_NHAN", "CƠ_QUAN_TIẾP_NHẬN", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "DON_VI_GIAI_QUYET", "ĐƠN_VỊ_GIẢI_QUYẾT")
         lien_he = find_lien_he_by_ten_co_quan(co_quan)
         if lien_he:
             return format_lien_he(lien_he)
-        if co_quan:
-            return f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}"
-        return _chat_setting("ASK_LOCATION_DETAIL", f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\nChưa có dữ liệu nơi tiếp nhận trong Google Sheets.")
+        reply = f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}" if co_quan else _chat_setting("ASK_LOCATION_DETAIL", f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\nChưa có dữ liệu nơi tiếp nhận trong Google Sheets.")
+        return reply + _faq_supplement_for_procedure(row, user_text, "NOI_NOP")
 
     if "ho so" in t or "giay to" in t or "can gi" in t or "chi tiet" in t:
         value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
-        return f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        reply = f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "HO_SO")
 
     if "trinh tu" in t or "quy trinh" in t or "cac buoc" in t or "buoc thuc hien" in t:
         value = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
-        return f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        reply = f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "TRINH_TU")
 
     if "bao lau" in t or "thoi han" in t or "may ngay" in t:
         value = get_first(row, "THOI_HAN", "THỜI_HẠN")
-        return f"⏱ Thời hạn - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        reply = f"⏱ Thời hạn - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "THOI_HAN")
 
     if "le phi" in t or "mat phi" in t or t == "phi":
         value = get_first(row, "LE_PHI", "LỆ_PHÍ", "PHI")
-        return f"💰 Lệ phí - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        reply = f"💰 Lệ phí - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "LE_PHI")
 
     if "ket qua" in t:
         value = get_first(row, "KET_QUA", "KẾT_QUẢ")
-        return f"✅ Kết quả - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        reply = f"✅ Kết quả - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "KET_QUA")
 
     if "co so phap ly" in t or "can cu phap ly" in t:
         value = get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
-        return f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        reply = f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "CO_SO_PHAP_LY")
 
     if "link" in t or "dich vu cong" in t or "online" in t or "truc tuyen" in t:
         value = get_first(row, "LINK_DVC", "LINK")
-        return f"🔗 Làm trực tuyến - {ten}\n\nQuý công dân có thể thực hiện trực tuyến qua Cổng Dịch vụ công nếu thủ tục được hỗ trợ.\n\n{value}" if value else format_thu_tuc(row)
+        reply = f"🔗 Làm trực tuyến - {ten}\n\nQuý công dân có thể thực hiện trực tuyến qua Cổng Dịch vụ công nếu thủ tục được hỗ trợ.\n\n{value}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "LINK_DVC")
 
     if "buu dien" in t or "buu chinh" in t or "chuyen phat" in t or "gui ve nha" in t or "nhan tai nha" in t or "nhan ket qua" in t:
         value = get_first(row, "LUU_Y", "LƯU_Ý", "KET_QUA", "KẾT_QUẢ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
-        if value:
-            return f"📦 Nhận kết quả - {ten}\n\n{compact(value, 1800)}"
-        return f"📦 Nhận kết quả - {ten}\n\nChưa có dữ liệu riêng về nhận kết quả qua bưu điện trong Google Sheets."
+        reply = f"📦 Nhận kết quả - {ten}\n\n{compact(value, 1800)}" if value else f"📦 Nhận kết quả - {ten}\n\nChưa có dữ liệu riêng về nhận kết quả qua bưu điện trong Google Sheets."
+        return reply + _faq_supplement_for_procedure(row, user_text, "KET_QUA")
 
     return format_thu_tuc(row)
-
-
+    
 # Chức năng: Chọn thủ tục từ danh sách gợi ý bằng số thứ tự.
 # Vai trò: Cho phép người dân chọn thủ tục sau khi BOT hiển thị danh sách.
 def _select_from_suggestions(text, ctx):
@@ -640,7 +751,7 @@ def _reply_thongtin_from_faq(faq_row):
     return "\n".join(lines)
 
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
-# Vai trò: Router chỉ điều phối MENU, THU_TUC_*, TRA_CUU_LIEN_HE, FAQ và fallback.
+# Vai trò: Ưu tiên THU_TUC_* theo TU_KHOA, FAQ chỉ bổ sung ý định trừ luồng VNeID/THONGTIN.
 def route_message(user_text, context=None):
     ctx = dict(context or {})
     text = str(user_text or "").strip()
@@ -671,7 +782,15 @@ def route_message(user_text, context=None):
 
     if text_norm.isdigit() and ctx.get("procedure_id"):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
-        detail_map = {"1": "dieu kien", "2": "ho so", "3": "co quan thuc hien", "4": "thoi han", "5": "le phi", "6": "ket qua", "7": "co so phap ly"}
+        detail_map = {
+            "1": "dieu kien",
+            "2": "ho so",
+            "3": "co quan thuc hien",
+            "4": "thoi han",
+            "5": "le phi",
+            "6": "ket qua",
+            "7": "co so phap ly",
+        }
         if procedure and detail_map.get(text_norm):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, detail_map[text_norm]), "PROCEDURE_CONTEXT", ctx, ""
@@ -700,6 +819,13 @@ def route_message(user_text, context=None):
                 ctx["last_route"] = "PROCEDURE_CONTEXT"
                 return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
+    faq = search_faq(text, limit=3)
+    if faq:
+        thongtin_reply = _reply_thongtin_from_faq(faq[0])
+        if thongtin_reply:
+            ctx["last_route"] = "FAQ_THONGTIN"
+            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+
     if ctx.get("stage") == "contact_lookup":
         contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
         if contact_reply:
@@ -713,6 +839,11 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return get_contact_lookup_message(), "MENU", new_ctx, ""
 
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
+
     explicit = detect_explicit_topic(text)
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
@@ -725,13 +856,39 @@ def route_message(user_text, context=None):
                 new_ctx["last_route"] = "MENU_GROUP"
                 return reply, "MENU_GROUP", new_ctx, ""
 
-        procedure_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
+        if _is_vneid_sheet(explicit_sheet):
+            if faq:
+                thongtin_reply = _reply_thongtin_from_faq(faq[0])
+                if thongtin_reply:
+                    ctx["last_route"] = "FAQ_THONGTIN"
+                    return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+
+                related_procedure = _procedure_from_faq_related_id(faq[0])
+                if related_procedure:
+                    new_ctx = {
+                        "sheet": related_procedure.get("_SHEET", explicit_sheet),
+                        "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
+                        "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
+                        "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                        "stage": "procedure",
+                        "page": 1,
+                        "last_suggestions": [],
+                        "last_route": "FAQ_RELATED_VNEID",
+                    }
+                    if is_followup_detail_question(text):
+                        return answer_procedure_detail(related_procedure, text), "FAQ_RELATED_VNEID", new_ctx, ""
+                    return format_thu_tuc(related_procedure), "FAQ_RELATED_VNEID", new_ctx, ""
+
+            procedure_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
+        else:
+            procedure_results = _search_thu_tuc_by_tu_khoa(text, sheet=explicit_sheet, limit=5)
+
         if procedure_results:
             best = procedure_results[0]
             best_score = safe_int(best.get("_SCORE", 0))
             second_score = safe_int(procedure_results[1].get("_SCORE", 0)) if len(procedure_results) > 1 else 0
 
-            if best_score >= 28 and best_score >= second_score + 8:
+            if best_score >= 35 and best_score >= second_score + 8:
                 new_ctx = {
                     "sheet": best.get("_SHEET", explicit_sheet),
                     "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
@@ -740,11 +897,11 @@ def route_message(user_text, context=None):
                     "stage": "procedure",
                     "page": 1,
                     "last_suggestions": [],
-                    "last_route": "THU_TUC_EXPLICIT",
+                    "last_route": "THU_TUC_TU_KHOA" if not _is_vneid_sheet(explicit_sheet) else "THU_TUC_VNEID",
                 }
                 if is_followup_detail_question(text):
-                    return answer_procedure_detail(best, text), "THU_TUC_EXPLICIT", new_ctx, ""
-                return format_thu_tuc(best), "THU_TUC_EXPLICIT", new_ctx, ""
+                    return answer_procedure_detail(best, text), new_ctx["last_route"], new_ctx, ""
+                return format_thu_tuc(best), new_ctx["last_route"], new_ctx, ""
 
             suggestions = []
             lines = []
@@ -763,9 +920,9 @@ def route_message(user_text, context=None):
                 "procedure_name": "",
                 "page": 1,
                 "last_suggestions": suggestions,
-                "last_route": "CLARIFY_THU_TUC_IN_GROUP",
+                "last_route": "CLARIFY_THU_TUC_TU_KHOA",
             }
-            return "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC_IN_GROUP", new_ctx, ""
+            return "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC_TU_KHOA", new_ctx, ""
 
         grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
         if grouped:
@@ -783,7 +940,13 @@ def route_message(user_text, context=None):
                 new_ctx["last_route"] = "PROCEDURE_LIST_NEXT"
                 return reply, "PROCEDURE_LIST_NEXT", new_ctx, ""
 
-        procedure = _find_procedure_in_current_sheet(text, ctx)
+        sheet = ctx.get("sheet", "")
+        if _is_vneid_sheet(sheet):
+            procedure = _find_procedure_in_current_sheet(text, ctx)
+        else:
+            results = _search_thu_tuc_by_tu_khoa(text, sheet=sheet, limit=5)
+            procedure = results[0] if results and safe_int(results[0].get("_SCORE", 0)) >= 35 else None
+
         if procedure:
             new_ctx = {
                 "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
@@ -795,6 +958,8 @@ def route_message(user_text, context=None):
                 "last_suggestions": [],
                 "last_route": "THU_TUC_IN_CONTEXT",
             }
+            if is_followup_detail_question(text):
+                return answer_procedure_detail(procedure, text), "THU_TUC_IN_CONTEXT", new_ctx, ""
             return format_thu_tuc(procedure), "THU_TUC_IN_CONTEXT", new_ctx, ""
 
         reply, new_ctx = _need_select_procedure_message(ctx)
@@ -809,44 +974,13 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return reply, "MENU", new_ctx, ""
 
-    faq = search_faq(text, limit=3)
-    if faq:
-        best_faq = faq[0]
-
-        thongtin_reply = _reply_thongtin_from_faq(best_faq)
-        if thongtin_reply:
-            ctx["last_route"] = "FAQ_THONGTIN"
-            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
-
-        related_procedure = _procedure_from_faq_related_id(best_faq)
-        if related_procedure:
-            new_ctx = {
-                "sheet": related_procedure.get("_SHEET", ctx.get("sheet", "")),
-                "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
-                "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                "stage": "procedure",
-                "page": ctx.get("page", 1),
-                "last_suggestions": [],
-                "last_route": "FAQ_RELATED_THU_TUC",
-            }
-            return format_thu_tuc(related_procedure), "FAQ_RELATED_THU_TUC", new_ctx, ""
-
-        ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
-
-    if is_contact_question(text):
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
-        if contact_reply:
-            return contact_reply
-
-    thu_tuc_results = search_thu_tuc(text, limit=5, sheet=None)
+    thu_tuc_results = _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5)
     if thu_tuc_results:
         best = thu_tuc_results[0]
         best_score = safe_int(best.get("_SCORE", 0))
         second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
 
-        if best_score >= 35 and best_score >= second_score + 15:
+        if best_score >= 45 and best_score >= second_score + 15:
             new_ctx = {
                 "sheet": best.get("_SHEET", ""),
                 "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
@@ -855,20 +989,20 @@ def route_message(user_text, context=None):
                 "stage": "procedure",
                 "page": 1,
                 "last_suggestions": [],
-                "last_route": "THU_TUC",
+                "last_route": "THU_TUC_TU_KHOA_GLOBAL",
             }
             if is_followup_detail_question(text):
-                return answer_procedure_detail(best, text), "THU_TUC", new_ctx, ""
-            return format_thu_tuc(best), "THU_TUC", new_ctx, ""
+                return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
+            return format_thu_tuc(best), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
 
-    if faq:
+    normal_faq = _normal_faq_rows(faq)
+    if normal_faq:
         ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq, format_faq, limit=3), "FAQ", ctx, ""
+        return format_multiple_results(normal_faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
     return get_default_reply(), "DEFAULT", ctx, ""
-
-
+    
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
 # Vai trò: Ưu tiên Google Sheets, chỉ bật Gemini như lớp phụ trợ tùy chọn.
 def route_message_for_ai(user_text, context=None):
