@@ -957,7 +957,7 @@ def route_message(user_text, context=None):
         print("FIRST_FAQ:", get_first(faq[0], "ID"))
     print("============================")
     if faq:
-        thongtin_reply = _reply_thongtin_from_faq(faq[0])
+        thongtin_reply = _reply_thongtin_from_faq_rows(faq)
         if thongtin_reply:
             ctx["last_route"] = "FAQ_THONGTIN"
             return thongtin_reply, "FAQ_THONGTIN", ctx, ""
