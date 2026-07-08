@@ -912,7 +912,7 @@ def route_message(user_text, context=None):
 
         if explicit:
             explicit_sheet = explicit.get("sheet", "")
-            if _is_vneid_sheet(explicit_sheet):
+            ):
                 candidate_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
             else:
                 candidate_results = _search_thu_tuc_by_tu_khoa(text, sheet=explicit_sheet, limit=5)
@@ -980,20 +980,22 @@ def route_message(user_text, context=None):
         explicit_sheet = explicit.get("sheet", "")
         explicit_topic = explicit.get("topic", "")
 
-        if is_group_only_topic_request(text, explicit):
-            grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
-            if grouped:
-                reply, new_ctx = grouped
-                new_ctx["last_route"] = "MENU_GROUP"
-                return reply, "MENU_GROUP", new_ctx, ""
+        if normalize_text(explicit_sheet) not in ["faq", "thu_tuc_vneid"]:
+            if is_group_only_topic_request(text, explicit):
+                grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
+                if grouped:
+                    reply, new_ctx = grouped
+                    new_ctx["last_route"] = "MENU_GROUP"
+                    return reply, "MENU_GROUP", new_ctx, ""
 
-        if _is_vneid_sheet(explicit_sheet):
+        if normalize_text(explicit_sheet) in ["faq", "thu_tuc_vneid"]:
             if faq:
                 normal_faq = _normal_faq_rows(faq)
                 if normal_faq:
                     ctx["last_route"] = "FAQ"
                     return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", ctx, ""
-                thongtin_reply = _reply_thongtin_from_faq(faq[0])
+
+                thongtin_reply = _reply_thongtin_from_faq_rows(faq)
                 if thongtin_reply:
                     ctx["last_route"] = "FAQ_THONGTIN"
                     return thongtin_reply, "FAQ_THONGTIN", ctx, ""
@@ -1008,11 +1010,15 @@ def route_message(user_text, context=None):
                         "stage": "procedure",
                         "page": 1,
                         "last_suggestions": [],
-                        "last_route": "FAQ_RELATED_VNEID",
+                        "last_route": "FAQ_RELATED",
                     }
                     if is_followup_detail_question(text):
-                        return answer_procedure_detail(related_procedure, text), "FAQ_RELATED_VNEID", new_ctx, ""
-                    return format_thu_tuc(related_procedure), "FAQ_RELATED_VNEID", new_ctx, ""
+                        return answer_procedure_detail(related_procedure, text), "FAQ_RELATED", new_ctx, ""
+                    return format_thu_tuc(related_procedure), "FAQ_RELATED", new_ctx, ""
+
+            if normalize_text(explicit_sheet) == "faq":
+                ctx["last_route"] = "FAQ_NOT_FOUND"
+                return get_default_reply(), "FAQ_NOT_FOUND", ctx, ""
 
             procedure_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
         else:
