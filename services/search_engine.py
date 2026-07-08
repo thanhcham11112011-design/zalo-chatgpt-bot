@@ -486,18 +486,35 @@ def search_lien_he(user_text, limit=3):
 
 def search_faq(user_text, limit=3):
     # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
-    # Vai trò: Tra cứu FAQ từ Google Sheets để BOT trả lời các câu hỏi phổ biến.
+    # Vai trò: Chặn FAQ liên kết thủ tục cướp câu hỏi chi tiết ngắn khi chưa đủ căn cứ.
     results = []
     user_norm = normalize_text(user_text)
 
     if not user_norm:
         return []
 
+    detail_keys = [
+        "ho so", "giay to", "can gi", "gom gi", "le phi", "phi",
+        "thoi han", "bao lau", "may ngay", "o dau", "lam o dau",
+        "nop o dau", "noi nop", "noi lam", "dia chi", "link",
+        "online", "truc tuyen", "ket qua", "nhan ket qua",
+    ]
+    user_tokens = [x for x in user_norm.split() if x]
+    is_short_detail_question = len(user_tokens) <= 5 and any(k in user_norm for k in detail_keys)
+
     for row in read_faq():
+        if not _active_status(row):
+            continue
+
         keywords = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         question = get_first(row, "CAU_HOI", "CÂU_HỎI")
         ways = get_first(row, "CAC_CACH_HOI", "CÁC_CÁCH_HỎI")
         answer = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
+        related_id = get_first(row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
+        ngu_canh = normalize_text(get_first(row, "NGU_CANH", "NGỮ_CẢNH"))
+
+        if is_short_detail_question and related_id and ngu_canh not in ["procedure_context"]:
+            continue
 
         keyword_match = keyword_score(user_text, keywords, 6)
         question_match = phrase_score(user_text, question, 5)
@@ -505,7 +522,27 @@ def search_faq(user_text, limit=3):
 
         score = keyword_match + question_match + ways_match
 
+        if related_id:
+            related_norm = normalize_text(related_id)
+            specific_signal = False
+            for value in [keywords, question, ways]:
+                value_norm = normalize_text(value)
+                if not value_norm:
+                    continue
+                value_tokens = [x for x in value_norm.split() if len(x) >= 3]
+                matched_tokens = [x for x in value_tokens if x in user_norm]
+                if len(matched_tokens) >= 2 and any(x not in detail_keys for x in matched_tokens):
+                    specific_signal = True
+                    break
+            if related_norm and related_norm in user_norm:
+                specific_signal = True
+            if not specific_signal and score < 120:
+                continue
+
         if score < 35:
+            continue
+
+        if not answer and not related_id:
             continue
 
         results.append(_add_meta(
@@ -537,7 +574,7 @@ def search_faq(user_text, limit=3):
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
     # Chức năng: Tìm thủ tục hành chính phù hợp trong các sheet THU_TUC_*.
-    # Vai trò: Chấm điểm hoàn toàn theo dữ liệu Google Sheets, không dùng từ khóa nghiệp vụ hardcode.
+    # Vai trò: Chấm điểm toàn bộ dữ liệu trước khi sắp xếp, không trả sớm trong vòng lặp.
     results = []
     user_norm = normalize_text(user_text)
 
@@ -595,9 +632,9 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             row_id=get_first(row, "ID", "MA", "MÃ"),
             note="PROCEDURE_MATCH",
         ))
-        
-        _sort_results(results)
-        return results[:limit]
+
+    _sort_results(results)
+    return results[:limit]
 
 def list_procedures_by_sheet(sheet, limit=10):
     # Chức năng: Liệt kê các thủ tục trong một sheet THU_TUC_*.
