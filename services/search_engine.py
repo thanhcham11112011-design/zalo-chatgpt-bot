@@ -428,7 +428,7 @@ def search_lien_he(user_text, limit=3):
 
 def search_faq(user_text, limit=3):
     # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
-    # Vai trò: Chấm điểm FAQ theo dữ liệu Google Sheets, không hardcode nghiệp vụ trong router.
+    # Vai trò: Tra cứu FAQ từ Google Sheets để BOT trả lời các câu hỏi phổ biến.
     results = []
     user_norm = normalize_text(user_text)
 
@@ -440,14 +440,12 @@ def search_faq(user_text, limit=3):
         question = get_first(row, "CAU_HOI", "CÂU_HỎI")
         ways = get_first(row, "CAC_CACH_HOI", "CÁC_CÁCH_HỎI")
         answer = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
-        related_id = get_first(row, "RELATED_ID", "RELATED")
 
-        keyword_match = keyword_score(user_text, keywords, 10)
-        question_match = phrase_score(user_text, question, 8)
-        ways_match = keyword_score(user_text, ways, 8)
-        related_match = keyword_score(user_text, related_id, 6)
+        keyword_match = keyword_score(user_text, keywords, 6)
+        question_match = phrase_score(user_text, question, 5)
+        ways_match = keyword_score(user_text, ways, 5)
 
-        score = keyword_match + question_match + ways_match + related_match
+        score = keyword_match + question_match + ways_match
 
         if score < 35:
             continue
