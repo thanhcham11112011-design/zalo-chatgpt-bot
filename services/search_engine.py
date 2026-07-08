@@ -380,7 +380,32 @@ def search_lien_he(user_text, limit=3):
             return same_score_results[:1]
 
         return same_score_results[:limit]
+    exact_keyword_results = []
 
+    for row in search_rows:
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+
+        if _keyword_exact_match(user_text, tu_khoa):
+            exact_keyword_results.append(_add_meta(
+                row=row,
+                route="LIEN_HE",
+                score=90000,
+                sheet="TRA_CUU_LIEN_HE",
+                row_id=get_first(row, "ID", "MA", "MÃ"),
+                note="EXACT_KEYWORD_MATCH",
+            ))
+
+    if exact_keyword_results:
+        _sort_results(exact_keyword_results)
+
+        best_score = exact_keyword_results[0].get("_SCORE", 0)
+        same_score_results = [
+            row for row in exact_keyword_results
+            if row.get("_SCORE", 0) == best_score
+        ]
+
+        return same_score_results[:limit]
+    
     keyword_results = []
 
     for row in search_rows:
