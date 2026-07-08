@@ -8,7 +8,7 @@ import json
 import os
 import time
 from typing import Any, Dict, List, Optional, Tuple
-
+from services.logger import debug_print
 import gspread
 from google.oauth2.service_account import Credentials
 
