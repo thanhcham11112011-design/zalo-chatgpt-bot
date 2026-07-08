@@ -2,11 +2,6 @@
 from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin, read_thu_tuc_sheet_names, read_thu_tuc_sheet
 from services.logger import debug_print
-debug_print(
-    "ROUTER",
-    "QUESTION: " + str(user_text),
-    "SOURCE: " + str(source)
-)
 from services.search_engine import (
     search_menu,
     search_lien_he,
