@@ -814,6 +814,40 @@ def _procedure_from_faq_related_id(faq_row):
     if not related_id:
         return None
     return find_procedure_by_id(related_id)
+# Chức năng: Trả lời liên hệ theo NGU_CANH và RELATED_ID của FAQ.
+# Vai trò: Cho phép FAQ điều hướng sang TRA_CUU_LIEN_HE bằng dữ liệu Google Sheets.
+def _reply_lien_he_from_faq(faq_row):
+    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+    if ngu_canh != "tra_cuu_lien_he":
+        return None
+
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
+    if not related_ids:
+        return None
+
+    results = []
+
+    for rid in related_ids:
+        rid_norm = normalize_text(rid)
+
+        for row in read_lien_he():
+            if not _is_on(row):
+                continue
+
+            row_values = [
+                get_first(row, "ID", "MA", "MÃ"),
+                get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+                get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+                get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
+            ]
+
+            if any(rid_norm == normalize_text(v) or rid_norm in normalize_text(v) for v in row_values if v):
+                results.append(row)
+
+    if not results:
+        return None
+
+    return format_multiple_results(results, format_lien_he, limit=5)
 
 # Chức năng: Trả lời thông tin đơn vị theo NGU_CANH và RELATED_ID của FAQ.
 # Vai trò: Đọc các KEY trong sheet THONGTIN, không hardcode nghiệp vụ trong router.
@@ -962,6 +996,11 @@ def route_message(user_text, context=None):
     print("============================")
 
     if faq:
+        lien_he_reply = _reply_lien_he_from_faq(faq[0])
+        if lien_he_reply:
+            ctx["last_route"] = "FAQ_TRA_CUU_LIEN_HE"
+            return lien_he_reply, "FAQ_TRA_CUU_LIEN_HE", ctx, ""
+
         thongtin_reply = _reply_thongtin_from_faq_rows(faq)
         if thongtin_reply:
             ctx["last_route"] = "FAQ_THONGTIN"
