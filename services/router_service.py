@@ -983,6 +983,10 @@ def route_message(user_text, context=None):
 
         if _is_vneid_sheet(explicit_sheet):
             if faq:
+                normal_faq = _normal_faq_rows(faq)
+                if normal_faq:
+                    ctx["last_route"] = "FAQ"
+                    return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", ctx, ""
                 thongtin_reply = _reply_thongtin_from_faq(faq[0])
                 if thongtin_reply:
                     ctx["last_route"] = "FAQ_THONGTIN"
