@@ -272,6 +272,15 @@ def search_lien_he(user_text, limit=3):
 
         best_score = area_results[0].get("_SCORE", 0)
         same_score_results = [row for row in area_results if row.get("_SCORE", 0) == best_score]
+debug_print(
+    "CONTACT",
+    f"QUESTION: {user_text}",
+    f"AREA_MATCH={len(same_score_results)}",
+    *[
+        f"{get_first(r,'HO_TEN','HỌ_TÊN')} SCORE={r.get('_SCORE')}"
+        for r in same_score_results[:5]
+    ]
+)
         return same_score_results[:limit]
 
     full_name_results = []
@@ -431,8 +440,21 @@ def search_lien_he(user_text, limit=3):
 
         if best_score >= second_score + 10:
             return keyword_results[:1]
-
+debug_print(
+    "CONTACT",
+    f"QUESTION: {user_text}",
+    f"KEYWORD_MATCH={len(keyword_results)}",
+    *[
+        f"{get_first(r,'HO_TEN','HỌ_TÊN')} SCORE={r.get('_SCORE')}"
+        for r in keyword_results[:5]
+    ]
+)
         return keyword_results[:limit]
+debug_print(
+    "CONTACT",
+    f"QUESTION: {user_text}",
+    "NO MATCH"
+)
 
     return []
 
@@ -475,17 +497,14 @@ def search_faq(user_text, limit=3):
             safe_int(r.get("_UU_TIEN", 999)),
         )
     )
-    print("===== DEBUG SEARCH FAQ =====")
-    print("USER_TEXT:", user_text)
-    for r in results[:5]:
-        print(
-            get_first(r, "ID"),
-            "SCORE=", r.get("_SCORE"),
-            "UU_TIEN=", r.get("_UU_TIEN"),
-            "QUESTION=", get_first(r, "CAU_HOI", "CÂU_HỎI"),
-            "RELATED_ID=", get_first(r, "RELATED_ID", "RELATED")
-        )
-    print("============================")
+debug_print(
+    "FAQ",
+    f"USER_TEXT: {user_text}",
+    *[
+        f"{get_first(r,'ID')} SCORE={r.get('_SCORE')} PRIORITY={r.get('_UU_TIEN')} QUESTION={get_first(r,'CAU_HOI','CÂU_HỎI')} RELATED={get_first(r,'RELATED_ID')}"
+        for r in results[:5]
+    ]
+)
     return results[:limit]
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
@@ -548,6 +567,14 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             row_id=get_first(row, "ID", "MA", "MÃ"),
             note="PROCEDURE_MATCH",
         ))
+debug_print(
+    "PROCEDURE",
+    f"USER_TEXT: {user_text}",
+    *[
+        f"{get_first(r,'ID')} SCORE={r.get('_SCORE')} PRIORITY={r.get('_UU_TIEN')} NAME={get_first(r,'TEN_THU_TUC','TÊN_THỦ_TỤC')}"
+        for r in results[:5]
+    ]
+)
     _sort_results(results)
     return results[:limit]
 
