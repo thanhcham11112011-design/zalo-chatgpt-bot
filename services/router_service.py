@@ -821,7 +821,6 @@ def _score_lien_he_by_data(text, row):
 
     return score
 
-
 # Chức năng: Tìm liên hệ ưu tiên theo cột dữ liệu trong TRA_CUU_LIEN_HE.
 # Vai trò: Cho phép router tra cứu cán bộ/bộ phận bằng Google Sheets trước khi rơi sang FAQ.
 def _search_lien_he_by_data(text, limit=5):
@@ -832,12 +831,22 @@ def _search_lien_he_by_data(text, limit=5):
             continue
 
         score = _score_lien_he_by_data(text, row)
-        if score > 0:
+        if score >= 45:
             item = dict(row)
             item["_SCORE"] = score
             scored.append(item)
 
     scored.sort(key=lambda x: safe_int(x.get("_SCORE", 0)), reverse=True)
+
+    if not scored:
+        return []
+
+    best_score = safe_int(scored[0].get("_SCORE", 0))
+    second_score = safe_int(scored[1].get("_SCORE", 0)) if len(scored) > 1 else 0
+
+    if best_score >= 70 and best_score >= second_score + 15:
+        return scored[:1]
+
     return scored[:limit]
 
 # Chức năng: Xử lý kết quả liên hệ và câu nhắc làm rõ khi có nhiều kết quả.
