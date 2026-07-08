@@ -196,11 +196,6 @@ def search_lien_he(user_text, limit=3):
     if not text_norm:
         return []
 
-    print("===== DEBUG CONTACT =====")
-    print("CONTACT_QUERY:", user_text)
-    print("TEXT_NORM:", text_norm)
-    print("=========================")
-
     phone_digits = re.sub(r"\D+", "", str(user_text or ""))
 
     active_rows = [row for row in rows if _active_status(row)]
@@ -391,6 +386,16 @@ def search_lien_he(user_text, limit=3):
         name_match = phrase_score(user_text, ten, 1)
         function_match = phrase_score(user_text, chuc_nang, 1)
         department_match = phrase_score(user_text, row_bo_phan, 3) if row_bo_phan else 0
+
+        has_direct_contact_signal = (
+            keyword_match > 0
+            or area_match > 0
+            or name_match > 0
+            or department_match > 0
+        )
+
+        if not has_direct_contact_signal:
+            continue
 
         score = keyword_match + area_match + name_match + function_match + department_match
 
