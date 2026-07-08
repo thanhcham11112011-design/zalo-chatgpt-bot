@@ -946,7 +946,7 @@ def route_message(user_text, context=None):
 
     faq = search_faq(text, limit=3)
     if faq:
-         thongtin_reply = _reply_thongtin_from_faq(faq[0])
+        thongtin_reply = _reply_thongtin_from_faq(faq[0])
         if thongtin_reply:
             ctx["last_route"] = "FAQ_THONGTIN"
             return thongtin_reply, "FAQ_THONGTIN", ctx, ""
