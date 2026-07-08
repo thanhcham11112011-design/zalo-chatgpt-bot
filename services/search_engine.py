@@ -548,7 +548,19 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             row_id=get_first(row, "ID", "MA", "MÃ"),
             note="PROCEDURE_MATCH",
         ))
-
+    print("===== DEBUG THU TUC =====")
+    print("USER_TEXT:", user_text)
+    print("SHEET_FILTER:", sheet)
+    for r in results[:10]:
+        print(
+            get_first(r, "ID", "MA", "MÃ"),
+            get_first(r, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+            "SCORE=", r.get("_SCORE"),
+            "UU_TIEN=", r.get("_UU_TIEN"),
+            "SHEET=", r.get("_SHEET"),
+            "TU_KHOA=", get_first(r, "TU_KHOA", "TỪ_KHÓA")
+        )
+    print("=========================")
     _sort_results(results)
     return results[:limit]
 
