@@ -1150,23 +1150,11 @@ def route_message(user_text, context=None):
             return reply, "MENU", new_ctx, ""
 
     faq = search_faq(text, limit=3)
-
-    if ctx.get("procedure_id") and is_followup_detail_question(text) and not is_contact_question(text):
-        procedure = find_procedure_by_id(ctx.get("procedure_id"))
-        if procedure:
-            ctx["last_route"] = "PROCEDURE_CONTEXT"
-            return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
-
     actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
     if actionable_faq:
         faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
         if faq_routed and faq_routed[1] != "FAQ":
             return faq_routed
-
-    normal_faq = _normal_faq_rows(faq)
-    if normal_faq:
-        new_ctx = {"last_route": "FAQ"}
-        return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
     explicit = detect_explicit_topic(text)
     if is_followup_detail_question(text) and not is_contact_question(text):
