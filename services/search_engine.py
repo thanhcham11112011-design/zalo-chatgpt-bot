@@ -196,6 +196,11 @@ def search_lien_he(user_text, limit=3):
     if not text_norm:
         return []
 
+    print("===== DEBUG CONTACT =====")
+    print("CONTACT_QUERY:", user_text)
+    print("TEXT_NORM:", text_norm)
+    print("=========================")
+
     phone_digits = re.sub(r"\D+", "", str(user_text or ""))
 
     active_rows = [row for row in rows if _active_status(row)]
