@@ -750,6 +750,15 @@ def _reply_thongtin_from_faq(faq_row):
 
     return "\n".join(lines)
 
+# Chức năng: Tìm câu trả lời THONGTIN trong nhiều dòng FAQ.
+# Vai trò: Bảo đảm câu hỏi thông tin đơn vị không bị TRA_CUU_LIEN_HE cướp luồng.
+def _reply_thongtin_from_faq_rows(faq_rows):
+    for faq_row in faq_rows or []:
+        reply = _reply_thongtin_from_faq(faq_row)
+        if reply:
+            return reply
+    return None
+
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
 # Vai trò: Ưu tiên THU_TUC_* theo TU_KHOA, FAQ chỉ bổ sung ý định trừ luồng VNeID/THONGTIN.
 def route_message(user_text, context=None):
@@ -809,11 +818,40 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
-    if ctx.get("procedure_id") and is_followup_detail_question(text):
+    if is_followup_detail_question(text) and not is_contact_question(text):
+        candidate_results = []
         explicit = detect_explicit_topic(text)
-        if explicit and explicit.get("sheet") != ctx.get("sheet"):
-            ctx = {}
-        else:
+
+        if explicit:
+            explicit_sheet = explicit.get("sheet", "")
+            if _is_vneid_sheet(explicit_sheet):
+                candidate_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
+            else:
+                candidate_results = _search_thu_tuc_by_tu_khoa(text, sheet=explicit_sheet, limit=5)
+
+        if not candidate_results:
+            candidate_results = _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5)
+
+        if candidate_results:
+            best = candidate_results[0]
+            best_score = safe_int(best.get("_SCORE", 0))
+            current_id = normalize_text(ctx.get("procedure_id"))
+            best_id = normalize_text(get_first(best, "ID", "MA", "MÃ"))
+
+            if best_score >= 45 and best_id and best_id != current_id:
+                new_ctx = {
+                    "sheet": best.get("_SHEET", ""),
+                    "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
+                    "procedure_id": get_first(best, "ID", "MA", "MÃ"),
+                    "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                    "stage": "procedure",
+                    "page": 1,
+                    "last_suggestions": [],
+                    "last_route": "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT",
+                }
+                return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
+
+        if ctx.get("procedure_id"):
             procedure = find_procedure_by_id(ctx.get("procedure_id"))
             if procedure:
                 ctx["last_route"] = "PROCEDURE_CONTEXT"
@@ -833,16 +871,16 @@ def route_message(user_text, context=None):
         ctx["last_route"] = "CONTACT_NOT_FOUND"
         return _chat_setting("CONTACT_NOT_FOUND", "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."), "CONTACT_NOT_FOUND", ctx, ""
 
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
+
     menu_row = _match_menu_by_data(text)
     if menu_row and normalize_text(get_first(menu_row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
         new_ctx = menu_context(menu_row)
         new_ctx["last_route"] = "MENU"
         return get_contact_lookup_message(), "MENU", new_ctx, ""
-
-    if is_contact_question(text):
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
-        if contact_reply:
-            return contact_reply
 
     explicit = detect_explicit_topic(text)
     if explicit:
