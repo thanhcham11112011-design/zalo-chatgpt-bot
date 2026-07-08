@@ -3,7 +3,35 @@ from typing import Any, Optional
 
 from config import DEBUG_MODE
 from services.sheet_api import log_chat, log_unknown
+from services.sheet_api import read_setting_system
 
+
+# Chức năng: Kiểm tra một nhóm DEBUG có đang được bật trong SETTING_SYSTEM hay không.
+# Vai trò: Cho phép bật/tắt log kiểm thử từ Google Sheets mà không cần sửa code.
+def _debug_enabled(group=""):
+    settings = read_setting_system() or {}
+
+    debug_mode = str(settings.get("DEBUG_MODE") or "OFF").strip().upper()
+    if debug_mode != "ON":
+        return False
+
+    if not group:
+        return True
+
+    key = f"DEBUG_{str(group).strip().upper()}"
+    return str(settings.get(key) or "OFF").strip().upper() == "ON"
+
+
+# Chức năng: In log DEBUG theo nhóm khi được bật trong SETTING_SYSTEM.
+# Vai trò: Dùng chung cho router, search, FAQ, thủ tục, liên hệ, AI và webhook.
+def debug_print(group, *values):
+    if not _debug_enabled(group):
+        return
+
+    print(f"===== DEBUG {str(group).upper()} =====")
+    for value in values:
+        print(value)
+    print("=" * 30)
 
 # Chức năng: Lấy thời gian hiện tại theo định dạng chuẩn ghi log.
 # Vai trò: Thống nhất mốc thời gian cho lịch sử hội thoại, unknown log và lỗi hệ thống.
