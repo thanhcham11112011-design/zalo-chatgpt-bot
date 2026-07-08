@@ -465,6 +465,17 @@ def search_faq(user_text, limit=3):
             safe_int(r.get("_UU_TIEN", 999)),
         )
     )
+    print("===== DEBUG SEARCH FAQ =====")
+    print("USER_TEXT:", user_text)
+    for r in results[:5]:
+        print(
+            get_first(r, "ID"),
+            "SCORE=", r.get("_SCORE"),
+            "UU_TIEN=", r.get("_UU_TIEN"),
+            "QUESTION=", get_first(r, "CAU_HOI", "CÂU_HỎI"),
+            "RELATED_ID=", get_first(r, "RELATED_ID", "RELATED")
+        )
+    print("============================")
     return results[:limit]
 
 def search_thu_tuc(user_text, limit=5, sheet=None):
