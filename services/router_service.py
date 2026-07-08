@@ -810,90 +810,135 @@ def _reply_contact_results(text, limit=5, keep_context=False):
 # Chức năng: Tìm thủ tục liên kết từ FAQ bằng RELATED_ID.
 # Vai trò: Biến FAQ thành lớp hiểu ý định và dẫn về đúng thủ tục trong Google Sheets.
 def _procedure_from_faq_related_id(faq_row):
-    related_id = get_first(faq_row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
-    if not related_id:
-        return None
-    return find_procedure_by_id(related_id)
-# Chức năng: Trả lời liên hệ theo NGU_CANH và RELATED_ID của FAQ.
-# Vai trò: Cho phép FAQ điều hướng sang TRA_CUU_LIEN_HE bằng dữ liệu Google Sheets.
-def _reply_lien_he_from_faq(faq_row):
-    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
-    if ngu_canh != "tra_cuu_lien_he":
-        return None
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC"))
+    for related_id in related_ids:
+        procedure = find_procedure_by_id(related_id)
+        if procedure:
+            return procedure
+    return None
 
+
+# Chức năng: Tìm MENU theo RELATED_ID hoặc dữ liệu mô tả của FAQ.
+# Vai trò: Cho phép FAQ điều hướng về MENU.MO_TA khi NGU_CANH là MENU.
+def _menu_from_faq(faq_row):
     related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
-    if not related_ids:
-        return None
-
-    results = []
 
     for rid in related_ids:
         rid_norm = normalize_text(rid)
+        for row in _menu_rows():
+            values = [
+                get_first(row, "ID", "MA", "MÃ"),
+                get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE"),
+                get_first(row, "SHEET_DU_LIEU", "SHEET"),
+            ]
+            values.extend(_split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")))
 
-        for row in read_lien_he():
-            if not _is_on(row):
+            if any(rid_norm and rid_norm == normalize_text(v) for v in values if v):
+                return row
+
+    lookup_text = " ".join([
+        get_first(faq_row, "CHU_DE", "CHỦ_ĐỀ"),
+        get_first(faq_row, "CAU_HOI", "CÂU_HỎI"),
+        get_first(faq_row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS"),
+    ]).strip()
+
+    return _match_menu_by_data(lookup_text) if lookup_text else None
+
+
+# Chức năng: Trả lời MENU theo NGU_CANH và RELATED_ID của FAQ.
+# Vai trò: Trả về nội dung mô tả trong MENU, không hardcode nhóm phản ánh.
+def _reply_menu_from_faq(faq_row):
+    row = _menu_from_faq(faq_row)
+    if not row:
+        return None
+
+    title = get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE")
+    desc = get_first(row, "MO_TA", "MÔ_TẢ")
+
+    if desc:
+        return f"📌 {title}\n\n{str(desc).strip()}" if title else str(desc).strip()
+
+    reply, _suggestions = answer_from_menu(row)
+    return reply
+
+
+# Chức năng: Tìm dòng liên hệ theo danh sách RELATED_ID của FAQ.
+# Vai trò: Điều hướng FAQ sang TRA_CUU_LIEN_HE bằng ID, bộ phận hoặc từ khóa trong Sheets.
+def _lien_he_rows_by_related_ids(related_ids):
+    results = []
+    seen = set()
+
+    for row in read_lien_he():
+        if not _is_on(row):
+            continue
+
+        values = [
+            get_first(row, "ID", "MA", "MÃ"),
+            get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+            get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
+            get_first(row, "CHUC_VU", "CHỨC_VỤ"),
+            get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN"),
+            get_first(row, "HO_TEN", "HỌ_TÊN"),
+        ]
+
+        values_norm = [normalize_text(v) for v in values if v]
+        keyword_norm = []
+        for value in values:
+            keyword_norm.extend([normalize_text(x) for x in _split_keywords(value)])
+
+        for rid in related_ids:
+            rid_norm = normalize_text(rid)
+            if not rid_norm:
                 continue
 
-            row_values = [
-                get_first(row, "ID", "MA", "MÃ"),
-                get_first(row, "BO_PHAN", "BỘ_PHẬN"),
-                get_first(row, "TU_KHOA", "TỪ_KHÓA"),
-                get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
-            ]
+            exact_match = any(rid_norm == v for v in values_norm + keyword_norm)
+            contain_match = len(rid_norm) >= 4 and any(rid_norm in v for v in values_norm + keyword_norm)
+            if exact_match or contain_match:
+                key = normalize_text(get_first(row, "ID", "MA", "MÃ", "HO_TEN", "HỌ_TÊN"))
+                if key not in seen:
+                    results.append(row)
+                    seen.add(key)
+                break
 
-            if any(rid_norm == normalize_text(v) or rid_norm in normalize_text(v) for v in row_values if v):
-                results.append(row)
+    return results
+
+
+# Chức năng: Trả lời liên hệ theo NGU_CANH và RELATED_ID của FAQ.
+# Vai trò: Cho phép FAQ điều hướng sang TRA_CUU_LIEN_HE bằng dữ liệu Google Sheets.
+def _reply_lien_he_from_faq(faq_row, user_text=""):
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
+    results = _lien_he_rows_by_related_ids(related_ids) if related_ids else []
+
+    if not results and user_text:
+        results = search_lien_he(user_text, limit=5) or []
 
     if not results:
-        return None
+        return get_contact_lookup_message()
 
     return format_multiple_results(results, format_lien_he, limit=5)
 
-# Chức năng: Trả lời dữ liệu theo NGU_CANH và RELATED_ID của FAQ.
-# Vai trò: Cho phép FAQ hiểu ý định và điều hướng sang sheet phù hợp bằng Google Sheets.
-def _reply_by_faq_context(faq_row):
-    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
-    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
 
-    if not ngu_canh or not related_ids:
-        return None
+# Chức năng: Lấy giá trị THONGTIN theo KEY trong RELATED_ID của FAQ.
+# Vai trò: Đọc đúng dữ liệu đơn vị từ sheet THONGTIN dù khác kiểu chữ.
+def _thongtin_value(data, key):
+    if not data or not key:
+        return ""
 
-    if ngu_canh == "thongtin":
-        return _reply_thongtin_from_faq(faq_row)
+    if key in data and data.get(key):
+        return str(data.get(key)).strip()
 
-    if ngu_canh == "tra_cuu_lien_he":
-        results = []
-        for row in read_lien_he():
-            if not _is_on(row):
-                continue
+    key_norm = normalize_text(key)
+    for item_key, value in data.items():
+        if normalize_text(item_key) == key_norm and value:
+            return str(value).strip()
 
-            values = [
-                get_first(row, "ID", "MA", "MÃ"),
-                get_first(row, "BO_PHAN", "BỘ_PHẬN"),
-                get_first(row, "TU_KHOA", "TỪ_KHÓA"),
-                get_first(row, "CHUC_NANG", "CHỨC_NĂNG"),
-            ]
+    return ""
 
-            values_norm = [normalize_text(v) for v in values if v]
 
-            for rid in related_ids:
-                rid_norm = normalize_text(rid)
-                if rid_norm and any(rid_norm == v or rid_norm in v for v in values_norm):
-                    results.append(row)
-                    break
-
-        if results:
-            return format_multiple_results(results, format_lien_he, limit=5)
-
-    return None
-    
 # Chức năng: Trả lời thông tin đơn vị theo NGU_CANH và RELATED_ID của FAQ.
 # Vai trò: Đọc các KEY trong sheet THONGTIN, không hardcode nghiệp vụ trong router.
 def _reply_thongtin_from_faq(faq_row):
-    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
-    if ngu_canh != "thongtin":
-        return None
-
     related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
     if not related_ids:
         return None
@@ -902,23 +947,147 @@ def _reply_thongtin_from_faq(faq_row):
     lines = []
 
     for key in related_ids:
-        value = data.get(key)
+        value = _thongtin_value(data, key)
         if value:
-            lines.append(str(value).strip())
+            lines.append(value)
 
     if not lines:
         return None
 
     return "\n".join(lines)
 
+
 # Chức năng: Tìm câu trả lời THONGTIN trong nhiều dòng FAQ.
 # Vai trò: Bảo đảm câu hỏi thông tin đơn vị không bị TRA_CUU_LIEN_HE cướp luồng.
 def _reply_thongtin_from_faq_rows(faq_rows):
     for faq_row in faq_rows or []:
+        ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+        if ngu_canh != "thongtin":
+            continue
+
         reply = _reply_thongtin_from_faq(faq_row)
         if reply:
             return reply
     return None
+
+
+# Chức năng: Tạo context thủ tục từ dòng thủ tục liên kết FAQ.
+# Vai trò: Lưu đúng thủ tục đã nhận diện để xử lý câu hỏi nối tiếp.
+def _context_from_related_procedure(procedure, ctx=None, route_name="FAQ_RELATED"):
+    base_ctx = dict(ctx or {})
+    return {
+        "sheet": procedure.get("_SHEET", base_ctx.get("sheet", "")),
+        "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=base_ctx.get("topic", "")),
+        "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
+        "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+        "stage": "procedure",
+        "page": 1,
+        "last_suggestions": [],
+        "last_route": route_name,
+    }
+
+
+# Chức năng: Định tuyến một dòng FAQ theo NGU_CANH và RELATED_ID.
+# Vai trò: Ưu tiên ID liên kết; nếu ID rỗng thì trả theo ngữ cảnh của FAQ.
+def _route_from_single_faq(user_text, faq_row, ctx):
+    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
+
+    if not ngu_canh:
+        return None
+
+    if ngu_canh == "thongtin":
+        reply = _reply_thongtin_from_faq(faq_row)
+        if reply:
+            new_ctx = dict(ctx or {})
+            new_ctx["last_route"] = "FAQ_THONGTIN"
+            return reply, "FAQ_THONGTIN", new_ctx, ""
+
+    if ngu_canh == "tra_cuu_lien_he":
+        reply = _reply_lien_he_from_faq(faq_row, user_text)
+        new_ctx = {
+            "stage": "contact_lookup" if not related_ids else "",
+            "sheet": "TRA_CUU_LIEN_HE",
+            "topic": "Tra cứu liên hệ",
+            "procedure_id": "",
+            "procedure_name": "",
+            "page": 1,
+            "last_suggestions": [],
+            "last_route": "FAQ_TRA_CUU_LIEN_HE",
+        }
+        return reply, "FAQ_TRA_CUU_LIEN_HE", new_ctx if not related_ids else dict(ctx or {}), ""
+
+    if ngu_canh == "menu":
+        reply = _reply_menu_from_faq(faq_row)
+        if reply:
+            menu_row = _menu_from_faq(faq_row)
+            new_ctx = menu_context(menu_row) if menu_row else dict(ctx or {})
+            new_ctx["last_route"] = "FAQ_MENU"
+            return reply, "FAQ_MENU", new_ctx, ""
+
+    if ngu_canh == "procedure_context" and ctx.get("procedure_id"):
+        procedure = find_procedure_by_id(ctx.get("procedure_id"))
+        if procedure:
+            new_ctx = dict(ctx or {})
+            new_ctx["last_route"] = "FAQ_PROCEDURE_CONTEXT"
+            return answer_procedure_detail(procedure, user_text), "FAQ_PROCEDURE_CONTEXT", new_ctx, ""
+
+    if related_ids:
+        procedure = _procedure_from_faq_related_id(faq_row)
+        if procedure:
+            new_ctx = _context_from_related_procedure(procedure, ctx, "FAQ_RELATED")
+            if is_followup_detail_question(user_text):
+                return answer_procedure_detail(procedure, user_text), "FAQ_RELATED", new_ctx, ""
+            return format_thu_tuc(procedure), "FAQ_RELATED", new_ctx, ""
+
+    return None
+
+
+
+# Chức năng: Kiểm tra FAQ có đủ căn cứ để định tuyến sớm hay không.
+# Vai trò: Cho FAQ ưu tiên các luồng có NGU_CANH rõ hoặc RELATED_ID, không cướp FAQ thường.
+def _faq_has_action(faq_row, ctx=None):
+    ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+    related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED"))
+
+    if related_ids:
+        return True
+
+    if ngu_canh in ["thongtin", "tra_cuu_lien_he", "menu"]:
+        return True
+
+    if ngu_canh == "procedure_context" and dict(ctx or {}).get("procedure_id"):
+        return True
+
+    return False
+
+# Chức năng: Định tuyến danh sách FAQ theo NGU_CANH và RELATED_ID.
+# Vai trò: Tập trung xử lý FAQ trước khi rơi về câu trả lời FAQ thường.
+def _route_from_faq_rows(user_text, faq_rows, ctx):
+    for faq_row in faq_rows or []:
+        routed = _route_from_single_faq(user_text, faq_row, ctx)
+        if routed:
+            return routed
+
+    normal_faq = _normal_faq_rows(faq_rows)
+    if normal_faq:
+        new_ctx = dict(ctx or {})
+        new_ctx["last_route"] = "FAQ"
+        return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+
+    if faq_rows:
+        new_ctx = dict(ctx or {})
+        new_ctx["last_route"] = "FAQ"
+        return format_multiple_results(faq_rows[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+
+    return None
+
+
+# Chức năng: Trả lời dữ liệu theo NGU_CANH và RELATED_ID của FAQ.
+# Vai trò: Giữ tương thích cho vùng code cũ còn gọi _reply_by_faq_context.
+def _reply_by_faq_context(faq_row):
+    routed = _route_from_single_faq("", faq_row, {})
+    return routed[0] if routed else None
 
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
 # Vai trò: Ưu tiên THU_TUC_* theo TU_KHOA, FAQ chỉ bổ sung ý định trừ luồng VNeID/THONGTIN.
@@ -979,7 +1148,14 @@ def route_message(user_text, context=None):
             new_ctx["last_suggestions"] = suggestions
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
-        
+
+    faq = search_faq(text, limit=3)
+    actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
+    if actionable_faq:
+        faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
+        if faq_routed and faq_routed[1] != "FAQ":
+            return faq_routed
+
     explicit = detect_explicit_topic(text)
     if is_followup_detail_question(text) and not is_contact_question(text):
         candidate_results = []
@@ -1026,7 +1202,7 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    faq = search_faq(text, limit=3)
+    faq = faq or []
     print("===== DEBUG ROUTER FAQ =====")
     print("FAQ_COUNT:", len(faq) if faq else 0)
     if faq:
@@ -1034,18 +1210,9 @@ def route_message(user_text, context=None):
     print("============================")
 
     if faq:
-        lien_he_reply = _reply_lien_he_from_faq(faq[0])
-        if lien_he_reply:
-            ctx["last_route"] = "FAQ_TRA_CUU_LIEN_HE"
-            return lien_he_reply, "FAQ_TRA_CUU_LIEN_HE", ctx, ""
-
-        thongtin_reply = _reply_thongtin_from_faq_rows(faq)
-        if thongtin_reply:
-            ctx["last_route"] = "FAQ_THONGTIN"
-            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
-
-        ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq[:1], format_faq, limit=1), "FAQ", ctx, ""
+        faq_routed = _route_from_faq_rows(text, faq, ctx)
+        if faq_routed:
+            return faq_routed
 
     if ctx.get("stage") == "contact_lookup":
         contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
