@@ -945,6 +945,11 @@ def route_message(user_text, context=None):
                 return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     faq = search_faq(text, limit=3)
+    print("===== DEBUG ROUTER FAQ =====")
+    print("FAQ_COUNT:", len(faq) if faq else 0)
+    if faq:
+        print("FIRST_FAQ:", get_first(faq[0], "ID"))
+    print("============================")
     if faq:
         thongtin_reply = _reply_thongtin_from_faq(faq[0])
         if thongtin_reply:
@@ -1130,6 +1135,9 @@ def route_message(user_text, context=None):
         return format_multiple_results(normal_faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
+    print("===== DEFAULT REACHED =====")
+    print("QUESTION:", user_text)
+    print("===========================")
     return get_default_reply(), "DEFAULT", ctx, ""
     
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
