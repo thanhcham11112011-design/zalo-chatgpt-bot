@@ -910,15 +910,21 @@ def route_message(user_text, context=None):
         candidate_results = []
         explicit = detect_explicit_topic(text)
 
-        if explicit:
-            explicit_sheet = explicit.get("sheet", "")
-            ):
-                candidate_results = search_thu_tuc(text, limit=5, sheet=explicit_sheet)
-            else:
-                candidate_results = _search_thu_tuc_by_tu_khoa(text, sheet=explicit_sheet, limit=5)
-
+    if explicit:
+        explicit_sheet = explicit.get("sheet", "")
+    
+        candidate_results = search_thu_tuc(
+            text,
+            limit=5,
+            sheet=explicit_sheet
+        )
+    
         if not candidate_results:
-            candidate_results = _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5)
+            candidate_results = _search_thu_tuc_by_tu_khoa(
+                text,
+                sheet=explicit_sheet,
+                limit=5
+            )
 
         if candidate_results:
             best = candidate_results[0]
