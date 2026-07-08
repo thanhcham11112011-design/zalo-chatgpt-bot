@@ -224,19 +224,31 @@ def is_location_question(text):
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
 # Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi người dân hỏi rõ về liên hệ, số điện thoại, cán bộ hoặc bộ phận.
-def is_contact_question(text):
-    t = normalize_text(text)
 
-    contact_intent_keys = [
-        "lien he", "so dien thoai", "sdt", "dien thoai",
-        "hotline", "gap can bo", "gap dong chi", "gap dc",
-        "can bo phu trach", "ai phu trach", "truc ban",
-        "cskv", "canh sat khu vuc", "to dan pho", "tdp",
-        "bo phan", "to an ninh", "to cstt", "to pctp", "to tong hop",
-        "chi huy", "lanh dao", "truong CAP","truong cong an phuong","pho cap","pho cong an phuong", "pho truong cap","pho truong cong an phuong",
+def is_contact_question(text):
+    # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
+    # Vai trò: Nhận diện tín hiệu liên hệ chung, không hardcode cán bộ hoặc đơn vị cụ thể.
+    t = normalize_text(text)
+    t_box = f" {t} "
+
+    if not t:
+        return False
+
+    location_only_keys = [
+        "dia chi", "ban do", "google map", "map", "vi tri",
+        "o dau", "tru so", "gio lam viec", "thoi gian lam viec", "mo cua",
+    ]
+    contact_strong_keys = [
+        "lien he", "so dien thoai", "sdt", "dien thoai", "hotline",
+        "gap", "can bo", "dong chi", "phu trach", "truc ban",
+        "lanh dao", "chi huy", "bo phan", "to dan pho", "tdp",
+        "canh sat khu vuc", "cskv", "la ai",
     ]
 
-    return any(k in t for k in contact_intent_keys)
+    if any(k in t for k in location_only_keys):
+        return any(k in t for k in contact_strong_keys)
+
+    return any(k in t for k in contact_strong_keys)
 
 
 # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
@@ -1063,22 +1075,34 @@ def _faq_has_action(faq_row, ctx=None):
 
 # Chức năng: Định tuyến danh sách FAQ theo NGU_CANH và RELATED_ID.
 # Vai trò: Tập trung xử lý FAQ trước khi rơi về câu trả lời FAQ thường.
+
 def _route_from_faq_rows(user_text, faq_rows, ctx):
-    for faq_row in faq_rows or []:
+    # Chức năng: Định tuyến danh sách FAQ theo NGU_CANH và RELATED_ID.
+    # Vai trò: Ưu tiên FAQ liên hệ khi câu hỏi có ý định liên hệ, tránh THONGTIN cướp luồng.
+    rows = list(faq_rows or [])
+
+    if is_contact_question(user_text):
+        rows.sort(
+            key=lambda row: 0
+            if normalize_text(get_first(row, "NGU_CANH", "NGỮ_CẢNH")) == "tra_cuu_lien_he"
+            else 1
+        )
+
+    for faq_row in rows:
         routed = _route_from_single_faq(user_text, faq_row, ctx)
         if routed:
             return routed
 
-    normal_faq = _normal_faq_rows(faq_rows)
+    normal_faq = _normal_faq_rows(rows)
     if normal_faq:
         new_ctx = dict(ctx or {})
         new_ctx["last_route"] = "FAQ"
         return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
-    if faq_rows:
+    if rows:
         new_ctx = dict(ctx or {})
         new_ctx["last_route"] = "FAQ"
-        return format_multiple_results(faq_rows[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+        return format_multiple_results(rows[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
     return None
 
@@ -1148,6 +1172,11 @@ def route_message(user_text, context=None):
             new_ctx["last_suggestions"] = suggestions
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
+
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
 
     faq = search_faq(text, limit=3)
     actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
