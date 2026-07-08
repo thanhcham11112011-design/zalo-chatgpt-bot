@@ -547,11 +547,119 @@ def _normal_faq_rows(faq_rows):
         results.append(row)
     return results
 
+# Chức năng: Lấy NGU_CANH phù hợp từ FAQ theo thủ tục hiện tại.
+# Vai trò: Dùng FAQ làm lớp hiểu ý định, không dùng FAQ để thay thế dữ liệu THU_TUC_*.
+def _faq_context_for_procedure(row, user_text):
+    pid = normalize_text(_procedure_id(row))
+    faq_rows = search_faq(user_text, limit=5) or []
+
+    for faq_row in faq_rows:
+        ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+        if not ngu_canh or ngu_canh == "thongtin":
+            continue
+
+        related_ids = _split_keywords(get_first(faq_row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC"))
+        if related_ids and any(normalize_text(x) == pid for x in related_ids):
+            return ngu_canh.upper()
+
+    for faq_row in faq_rows:
+        ngu_canh = normalize_text(get_first(faq_row, "NGU_CANH", "NGỮ_CẢNH"))
+        related_id = get_first(faq_row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
+
+        if ngu_canh and ngu_canh != "thongtin" and not related_id:
+            return ngu_canh.upper()
+
+    return ""
+
+
+# Chức năng: Lấy dữ liệu thủ tục theo NGU_CANH.
+# Vai trò: Chuyển ý định FAQ thành cột dữ liệu tương ứng trong THU_TUC_*.
+def _procedure_value_by_context(row, ngu_canh):
+    c = normalize_text(ngu_canh)
+
+    if c == "ho_so":
+        return "📄", "Hồ sơ", get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
+
+    if c == "dieu_kien":
+        return "✅", "Điều kiện", get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
+
+    if c == "trinh_tu":
+        return "📝", "Trình tự thực hiện", get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
+
+    if c == "noi_nop" or c == "noi_thuc_hien":
+        return "📍", "Cơ quan/nơi tiếp nhận", get_first(row, "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "CO_QUAN_TIEP_NHAN", "CƠ_QUAN_TIẾP_NHẬN", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "DON_VI_GIAI_QUYET", "ĐƠN_VỊ_GIẢI_QUYẾT")
+
+    if c == "thoi_han":
+        return "⏱", "Thời hạn", get_first(row, "THOI_HAN", "THỜI_HẠN")
+
+    if c == "le_phi":
+        return "💰", "Lệ phí", get_first(row, "LE_PHI", "LỆ_PHÍ", "PHI")
+
+    if c == "ket_qua":
+        return "✅", "Kết quả", get_first(row, "KET_QUA", "KẾT_QUẢ")
+
+    if c == "co_so_phap_ly":
+        return "⚖️", "Cơ sở pháp lý", get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
+
+    if c == "link_dvc":
+        return "🔗", "Làm trực tuyến", get_first(row, "LINK_DVC", "LINK")
+
+    return "", "", ""
+
 # Chức năng: Trả lời chi tiết một thủ tục theo câu hỏi nối tiếp.
 # Vai trò: Ưu tiên cột dữ liệu của THU_TUC_*, chỉ bổ sung FAQ khi NGU_CANH và RELATED_ID khớp.
 def answer_procedure_detail(row, user_text):
     t = normalize_text(user_text)
     ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+    faq_context = _faq_context_for_procedure(row, user_text)
+
+    if faq_context == "DIEU_KIEN":
+        value = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
+        reply = f"✅ Điều kiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "DIEU_KIEN")
+
+    if faq_context in ["NOI_NOP", "NOI_THUC_HIEN"]:
+        co_quan = get_first(row, "NOI_THUC_HIEN", "NƠI_THỰC_HIỆN", "NOI_NOP", "NƠI_NỘP", "CO_QUAN_TIEP_NHAN", "CƠ_QUAN_TIẾP_NHẬN", "CO_QUAN_THUC_HIEN", "CƠ_QUAN_THỰC_HIỆN", "DON_VI_GIAI_QUYET", "ĐƠN_VỊ_GIẢI_QUYẾT")
+        lien_he = find_lien_he_by_ten_co_quan(co_quan)
+        if lien_he:
+            return format_lien_he(lien_he)
+        reply = f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\n{compact(co_quan, 1800)}" if co_quan else _chat_setting("ASK_LOCATION_DETAIL", f"📍 Cơ quan/nơi tiếp nhận - {ten}\n\nChưa có dữ liệu nơi tiếp nhận trong Google Sheets.")
+        return reply + _faq_supplement_for_procedure(row, user_text, "NOI_NOP")
+
+    if faq_context == "HO_SO":
+        value = get_first(row, "HO_SO", "HỒ_SƠ", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
+        reply = f"📄 Hồ sơ - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "HO_SO")
+
+    if faq_context == "TRINH_TU":
+        value = get_first(row, "TRINH_TU", "TRÌNH_TỰ", "QUY_TRINH", "QUY_TRÌNH")
+        reply = f"📝 Trình tự thực hiện - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "TRINH_TU")
+
+    if faq_context == "THOI_HAN":
+        value = get_first(row, "THOI_HAN", "THỜI_HẠN")
+        reply = f"⏱ Thời hạn - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "THOI_HAN")
+
+    if faq_context == "LE_PHI":
+        value = get_first(row, "LE_PHI", "LỆ_PHÍ", "PHI")
+        reply = f"💰 Lệ phí - {ten}\n\n{value}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "LE_PHI")
+
+    if faq_context == "KET_QUA":
+        value = get_first(row, "KET_QUA", "KẾT_QUẢ")
+        reply = f"✅ Kết quả - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "KET_QUA")
+
+    if faq_context == "CO_SO_PHAP_LY":
+        value = get_first(row, "CO_SO_PHAP_LY", "CƠ_SỞ_PHÁP_LÝ")
+        reply = f"⚖️ Cơ sở pháp lý - {ten}\n\n{compact(value, 1800)}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "CO_SO_PHAP_LY")
+
+    if faq_context == "LINK_DVC":
+        value = get_first(row, "LINK_DVC", "LINK")
+        reply = f"🔗 Làm trực tuyến - {ten}\n\nQuý công dân có thể thực hiện trực tuyến qua Cổng Dịch vụ công nếu thủ tục được hỗ trợ.\n\n{value}" if value else format_thu_tuc(row)
+        return reply + _faq_supplement_for_procedure(row, user_text, "LINK_DVC")
 
     if "dieu kien" in t or "yeu cau" in t:
         value = get_first(row, "DIEU_KIEN", "ĐIỀU_KIỆN")
