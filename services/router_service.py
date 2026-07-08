@@ -807,6 +807,32 @@ def _reply_contact_results(text, limit=5, keep_context=False):
     return reply, "TRA_CUU_LIEN_HE", ctx if keep_context else {}, ""
 
 
+# Chức năng: Tạo ngữ cảnh tra cứu liên hệ khi cần hỏi rõ thêm.
+# Vai trò: Giữ luồng liên hệ bằng cấu hình và dữ liệu Sheets, không hardcode nghiệp vụ.
+def _contact_context(route_name="CONTACT_NOT_FOUND"):
+    return {
+        "stage": "contact_lookup",
+        "sheet": "TRA_CUU_LIEN_HE",
+        "topic": "Tra cứu liên hệ",
+        "procedure_id": "",
+        "procedure_name": "",
+        "page": 1,
+        "last_suggestions": [],
+        "last_route": route_name,
+    }
+
+
+# Chức năng: Lấy câu trả lời khi chưa xác định được liên hệ cần tra cứu.
+# Vai trò: Trả theo SETTING_CHAT, không để nội dung nghiệp vụ nằm cứng trong Python.
+def _contact_not_found_reply():
+    return (
+        _chat_setting("CONTACT_NOT_FOUND", "")
+        or _chat_setting("CONTACT_GUIDE", "")
+        or get_contact_lookup_message()
+        or get_default_reply()
+    )
+
+
 # Chức năng: Tìm thủ tục liên kết từ FAQ bằng RELATED_ID.
 # Vai trò: Biến FAQ thành lớp hiểu ý định và dẫn về đúng thủ tục trong Google Sheets.
 def _procedure_from_faq_related_id(faq_row):
@@ -1175,6 +1201,14 @@ def route_message(user_text, context=None):
             return reply, "MENU", new_ctx, ""
 
     explicit = detect_explicit_topic(text)
+
+    if ctx.get("stage") == "contact_lookup" or is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
+        if contact_reply:
+            return contact_reply
+
+        new_ctx = _contact_context("CONTACT_NOT_FOUND")
+        return _contact_not_found_reply(), "CONTACT_NOT_FOUND", new_ctx, ""
 
     if _should_keep_procedure_context(text, ctx, explicit):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
