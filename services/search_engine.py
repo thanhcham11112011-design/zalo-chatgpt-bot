@@ -49,7 +49,8 @@ def detect_bo_phan_contact(user_text):
 
         score = 0
         score += phrase_score(user_text, bo_phan, 6)
-        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
+        if _keyword_has_non_area_signal(user_text, row):
+            score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
         score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 2)
 
         if score > 0:
@@ -231,6 +232,34 @@ def _contains_phrase(text_norm, phrase_norm):
     return f" {phrase_norm} " in f" {text_norm} " or phrase_norm in text_norm
 
 
+
+
+def _significant_tokens(value):
+    # Chức năng: Tách các từ có ý nghĩa từ một giá trị đã chuẩn hóa.
+    # Vai trò: Loại bỏ từ quá ngắn để phân biệt tín hiệu bộ phận với địa bàn.
+    return set(x for x in normalize_text(value).split() if len(x) >= 3)
+
+
+def _keyword_has_non_area_signal(user_text, row):
+    # Chức năng: Kiểm tra từ khóa khớp có chứa tín hiệu ngoài tên địa bàn/TDP.
+    # Vai trò: Không để từ khóa địa bàn trần làm lẫn CSKV với ANTTCS/ANCS.
+    text_norm = normalize_text(user_text)
+    if not text_norm:
+        return False
+
+    area_tokens = _significant_tokens(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"))
+
+    for kw in split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA")):
+        kw_norm = normalize_text(kw)
+        if not kw_norm or not _contains_phrase(text_norm, kw_norm):
+            continue
+
+        kw_tokens = _significant_tokens(kw_norm)
+        if any(token not in area_tokens for token in kw_tokens):
+            return True
+
+    return False
+
 def _department_keyword_signal(user_text, rows):
     # Chức năng: Kiểm tra câu hỏi có nêu rõ nhóm liên hệ bằng dữ liệu BO_PHAN/TU_KHOA hay không.
     # Vai trò: Chặn khớp địa bàn trần làm lẫn CSKV với ANTTCS/ANCS khi người dân chưa nêu nhóm cần gặp.
@@ -246,12 +275,8 @@ def _department_keyword_signal(user_text, rows):
         if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
             return True
 
-        for kw in split_keywords(tu_khoa):
-            kw_norm = normalize_text(kw)
-            if not kw_norm or len(kw_norm.split()) < 2:
-                continue
-            if _contains_phrase(text_norm, kw_norm):
-                return True
+        if _keyword_has_non_area_signal(user_text, row):
+            return True
 
     return False
 
@@ -335,14 +360,8 @@ def _specific_unique_keyword_signal(user_text, rows):
         bo_phan_norm = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
         row_id = get_first(row, "ID", "MA", "MÃ", "HO_TEN", "HỌ_TÊN")
 
-        for kw in split_keywords(tu_khoa):
-            kw_norm = normalize_text(kw)
-            if not kw_norm or len(kw_norm.split()) < 2:
-                continue
-            if bo_phan_norm and kw_norm == bo_phan_norm:
-                continue
-            if _contains_phrase(text_norm, kw_norm):
-                matched_ids.add(row_id or id(row))
+        if _keyword_has_non_area_signal(user_text, row):
+            matched_ids.add(row_id or id(row))
 
     return len(matched_ids) == 1
 
