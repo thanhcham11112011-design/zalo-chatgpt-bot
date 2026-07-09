@@ -231,10 +231,38 @@ def _contains_phrase(text_norm, phrase_norm):
     return f" {phrase_norm} " in f" {text_norm} " or phrase_norm in text_norm
 
 
-def _specific_area_signal(user_text, rows):
-    # Chức năng: Kiểm tra câu hỏi có nêu rõ địa bàn/TDP trong TRA_CUU_LIEN_HE hay không.
-    # Vai trò: Chỉ cho phép tra cứu theo địa bàn khi khớp nguyên cụm dữ liệu sheet.
+def _department_keyword_signal(user_text, rows):
+    # Chức năng: Kiểm tra câu hỏi có nêu rõ nhóm liên hệ bằng dữ liệu BO_PHAN/TU_KHOA hay không.
+    # Vai trò: Chặn khớp địa bàn trần làm lẫn CSKV với ANTTCS/ANCS khi người dân chưa nêu nhóm cần gặp.
     text_norm = normalize_text(user_text)
+    if not text_norm:
+        return False
+
+    for row in rows:
+        bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+
+        bo_phan_norm = normalize_text(bo_phan)
+        if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
+            return True
+
+        for kw in split_keywords(tu_khoa):
+            kw_norm = normalize_text(kw)
+            if not kw_norm or len(kw_norm.split()) < 2:
+                continue
+            if _contains_phrase(text_norm, kw_norm):
+                return True
+
+    return False
+
+
+def _specific_area_signal(user_text, rows):
+    # Chức năng: Kiểm tra câu hỏi có nêu rõ địa bàn/TDP kèm nhóm liên hệ trong TRA_CUU_LIEN_HE hay không.
+    # Vai trò: Chỉ cho phép tra cứu theo địa bàn khi người dân nêu rõ nhóm cần gặp để tránh lẫn CSKV với ANTTCS/ANCS.
+    text_norm = normalize_text(user_text)
+    if not _department_keyword_signal(user_text, rows):
+        return False
+
     for row in rows:
         tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
         for area in split_keywords(tdp):
@@ -403,24 +431,25 @@ def search_lien_he(user_text, limit=3):
 
     area_results = []
 
-    for row in search_rows:
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-        score = 0
+    if bo_phan:
+        for row in search_rows:
+            tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
+            score = 0
 
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and area_norm in text_norm:
-                score += 50000
+            for area in split_keywords(tdp):
+                area_norm = normalize_text(area)
+                if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
+                    score += 50000
 
-        if score > 0:
-            area_results.append(_add_meta(
-                row=row,
-                route="LIEN_HE",
-                score=score,
-                sheet="TRA_CUU_LIEN_HE",
-                row_id=get_first(row, "ID", "MA", "MÃ"),
-                note="AREA_MATCH",
-            ))
+            if score > 0:
+                area_results.append(_add_meta(
+                    row=row,
+                    route="LIEN_HE",
+                    score=score,
+                    sheet="TRA_CUU_LIEN_HE",
+                    row_id=get_first(row, "ID", "MA", "MÃ"),
+                    note="AREA_MATCH",
+                ))
 
     if area_results:
         _sort_results(area_results)
