@@ -1214,13 +1214,9 @@ def route_message(user_text, context=None):
                 "procedure_name": "",
                 "page": 1,
                 "last_suggestions": [],
-                "last_route": "CONTACT_NOT_FOUND",
+                "last_route": "CONTACT_GUIDE",
             }
-            return _chat_setting(
-                "CONTACT_NOT_FOUND",
-                "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."
-            ), "CONTACT_NOT_FOUND", new_ctx, ""
-
+            return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
     explicit = detect_explicit_topic(text)
 
     if _should_keep_procedure_context(text, ctx, explicit):
