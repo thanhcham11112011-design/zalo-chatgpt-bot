@@ -1222,17 +1222,18 @@ def route_message(user_text, context=None):
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
     faq = search_faq(text, limit=3)
-    actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
-    if actionable_faq:
-        faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
-        if faq_routed and faq_routed[1] != "FAQ":
-            return faq_routed
 
     if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
         normal_faq = _normal_faq_rows(faq)
         if normal_faq:
             new_ctx = _faq_plain_context(ctx, "FAQ")
             return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+
+    actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
+    if actionable_faq:
+        faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
+        if faq_routed and faq_routed[1] != "FAQ":
+            return faq_routed
 
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
