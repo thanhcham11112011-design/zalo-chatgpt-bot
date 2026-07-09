@@ -232,6 +232,78 @@ def _contact_role_conflict(user_text, role_text):
     return asks_chief and role_is_deputy
 
 
+# Chức năng: Nhận diện câu hỏi tra cứu Trưởng/Phó trưởng Công an phường.
+# Vai trò: Giữ luồng CHI_HUY ổn định khi người dân dùng cách gọi tắt CAP.
+def _chi_huy_role_query_type(user_text):
+    text_norm = _expand_contact_role_terms(user_text)
+    if not text_norm:
+        return ""
+
+    has_chief = "truong cap" in text_norm or "truong cong an phuong" in text_norm
+    has_deputy = "pho" in text_norm and (
+        "pho cap" in text_norm
+        or "pho truong cap" in text_norm
+        or "pho truong cong an phuong" in text_norm
+        or "pho cong an phuong" in text_norm
+    )
+
+    if has_deputy:
+        return "PHO_TRUONG_CAP"
+    if has_chief:
+        return "TRUONG_CAP"
+    return ""
+
+
+# Chức năng: Tìm dòng CHI_HUY theo chức vụ Trưởng/Phó trưởng Công an phường.
+# Vai trò: Không để truy vấn chức vụ chỉ huy rơi sang CONTACT_NOT_FOUND hoặc nhóm liên hệ khác.
+def _search_chi_huy_by_role_query(user_text, rows, limit=5):
+    query_type = _chi_huy_role_query_type(user_text)
+    if not query_type:
+        return []
+
+    results = []
+    for row in rows:
+        bo_phan_norm = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
+        if bo_phan_norm != "chi_huy":
+            continue
+
+        role_text = get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ")
+        keyword_text = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+        role_norm = _expand_contact_role_terms(f"{role_text} {keyword_text}")
+
+        if query_type == "TRUONG_CAP":
+            if "pho" in role_norm:
+                continue
+            if "truong cap" not in role_norm and "truong cong an phuong" not in role_norm:
+                continue
+            score = 120000
+        else:
+            if "pho" not in role_norm:
+                continue
+            if (
+                "pho cap" not in role_norm
+                and "pho truong cap" not in role_norm
+                and "pho truong cong an phuong" not in role_norm
+                and "pho cong an phuong" not in role_norm
+            ):
+                continue
+            score = 110000
+
+        results.append(_add_meta(
+            row=row,
+            route="LIEN_HE",
+            score=score,
+            sheet="TRA_CUU_LIEN_HE",
+            row_id=get_first(row, "ID", "MA", "MÃ"),
+            note="CHI_HUY_ROLE_MATCH",
+        ))
+
+    if results:
+        _sort_results(results)
+        return results[:limit]
+    return []
+
+
 def _contains_phrase(text_norm, phrase_norm):
     # Chức năng: Kiểm tra cụm từ đã chuẩn hóa có xuất hiện nguyên cụm trong câu hỏi.
     # Vai trò: Tránh khớp rộng từng từ rời rạc làm sai kết quả liên hệ.
@@ -476,6 +548,19 @@ def search_lien_he(user_text, limit=3):
     phone_digits = re.sub(r"\D+", "", str(user_text or ""))
 
     active_rows = [row for row in rows if _active_status(row)]
+
+    chi_huy_role_results = _search_chi_huy_by_role_query(user_text, active_rows, limit=limit)
+    if chi_huy_role_results:
+        debug_print(
+            "CONTACT",
+            f"QUESTION: {user_text}",
+            "CHI_HUY_ROLE_MATCH",
+            *[
+                f"{get_first(r, 'TEN_CO_QUAN', 'HỌ_TÊN')} SCORE={r.get('_SCORE')}"
+                for r in chi_huy_role_results[:5]
+            ]
+        )
+        return chi_huy_role_results
 
     if not _has_specific_contact_signal(user_text, active_rows):
         debug_print(
