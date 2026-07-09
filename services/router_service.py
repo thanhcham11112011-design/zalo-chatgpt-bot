@@ -5,12 +5,12 @@ from services.logger import debug_print
 from services.search_engine import (
     search_menu,
     search_lien_he,
+    detect_bo_phan_contact,
     search_faq,
     search_thu_tuc,
     list_procedures_by_sheet,
     find_procedure_by_id,
     format_lien_he,
-    detect_bo_phan_contact,
     format_faq,
     format_thu_tuc,
     format_multiple_results,
@@ -226,8 +226,6 @@ def is_location_question(text):
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
 # Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi người dân hỏi rõ về liên hệ, số điện thoại, cán bộ hoặc bộ phận.
 def is_contact_question(text):
-    # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
-    # Vai trò: Ưu tiên nhận diện bộ phận theo dữ liệu TRA_CUU_LIEN_HE, không phụ thuộc danh sách hardcode.
     t = normalize_text(text)
 
     if detect_bo_phan_contact(text):
@@ -244,6 +242,21 @@ def is_contact_question(text):
     ]
 
     return any(k in t for k in contact_intent_keys)
+
+
+# Chức năng: Kiểm tra câu hỏi có ý định liên hệ rõ ràng.
+# Vai trò: Cho phép ưu tiên TRA_CUU_LIEN_HE nhưng không cướp luồng phản ánh ANTT/FAQ.
+def _is_clear_contact_intent(text):
+    t = normalize_text(text)
+    clear_keys = [
+        "lien he", "so dien thoai", "sdt", "dien thoai",
+        "hotline", "gap", "dong chi", "dc", "can bo",
+        "ai phu trach", "chi huy", "lanh dao",
+        "truong cap", "truong cong an phuong",
+        "pho cap", "pho truong cap", "pho cong an phuong", "pho truong cong an phuong",
+    ]
+    return any(k in t for k in clear_keys)
+
 
 # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
 # Vai trò: Giữ đúng context thủ tục hiện tại khi người dân hỏi hồ sơ, lệ phí, thời hạn.
@@ -1067,6 +1080,33 @@ def _faq_has_action(faq_row, ctx=None):
 
     return False
 
+# Chức năng: Tạo context sạch khi BOT trả lời FAQ thường.
+# Vai trò: Khi người dân đổi chủ đề sang FAQ, không giữ procedure_id của thủ tục cũ.
+def _faq_plain_context(ctx, route="FAQ"):
+    new_ctx = dict(ctx or {})
+    new_ctx["last_route"] = route
+    new_ctx["sheet"] = ""
+    new_ctx["topic"] = ""
+    new_ctx["procedure_id"] = ""
+    new_ctx["procedure_name"] = ""
+    new_ctx["stage"] = ""
+    new_ctx["page"] = 1
+    new_ctx["last_suggestions"] = []
+    return new_ctx
+
+
+# Chức năng: Kiểm tra có nên giữ ngữ cảnh thủ tục hiện tại hay không.
+# Vai trò: Chỉ giữ context khi câu hỏi là chi tiết nối tiếp, không khóa chặt khi người dân đổi chủ đề.
+def _should_keep_procedure_context(text, ctx, explicit=None):
+    if not dict(ctx or {}).get("procedure_id"):
+        return False
+    if is_contact_question(text):
+        return False
+    if explicit:
+        return False
+    return is_followup_detail_question(text)
+
+
 # Chức năng: Định tuyến danh sách FAQ theo NGU_CANH và RELATED_ID.
 # Vai trò: Tập trung xử lý FAQ trước khi rơi về câu trả lời FAQ thường.
 def _route_from_faq_rows(user_text, faq_rows, ctx):
@@ -1077,13 +1117,11 @@ def _route_from_faq_rows(user_text, faq_rows, ctx):
 
     normal_faq = _normal_faq_rows(faq_rows)
     if normal_faq:
-        new_ctx = dict(ctx or {})
-        new_ctx["last_route"] = "FAQ"
+        new_ctx = _faq_plain_context(ctx, "FAQ")
         return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
     if faq_rows:
-        new_ctx = dict(ctx or {})
-        new_ctx["last_route"] = "FAQ"
+        new_ctx = _faq_plain_context(ctx, "FAQ")
         return format_multiple_results(faq_rows[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
     return None
@@ -1155,6 +1193,34 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
+    if is_contact_question(text):
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        if contact_reply:
+            return contact_reply
+        if _is_clear_contact_intent(text):
+            new_ctx = {
+                "stage": "contact_lookup",
+                "sheet": "TRA_CUU_LIEN_HE",
+                "topic": "Tra cứu liên hệ",
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "CONTACT_NOT_FOUND",
+            }
+            return _chat_setting(
+                "CONTACT_NOT_FOUND",
+                "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."
+            ), "CONTACT_NOT_FOUND", new_ctx, ""
+
+    explicit = detect_explicit_topic(text)
+
+    if _should_keep_procedure_context(text, ctx, explicit):
+        procedure = find_procedure_by_id(ctx.get("procedure_id"))
+        if procedure:
+            ctx["last_route"] = "PROCEDURE_CONTEXT"
+            return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
+
     faq = search_faq(text, limit=3)
     actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
     if actionable_faq:
@@ -1162,7 +1228,12 @@ def route_message(user_text, context=None):
         if faq_routed and faq_routed[1] != "FAQ":
             return faq_routed
 
-    explicit = detect_explicit_topic(text)
+    if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
+        normal_faq = _normal_faq_rows(faq)
+        if normal_faq:
+            new_ctx = _faq_plain_context(ctx, "FAQ")
+            return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
+
     if is_followup_detail_question(text) and not is_contact_question(text):
         candidate_results = []
         
@@ -1202,7 +1273,7 @@ def route_message(user_text, context=None):
                 }
                 return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
 
-    if ctx.get("procedure_id"):
+    if _should_keep_procedure_context(text, ctx, explicit):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
         if procedure:
             ctx["last_route"] = "PROCEDURE_CONTEXT"
