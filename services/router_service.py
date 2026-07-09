@@ -1205,18 +1205,19 @@ def route_message(user_text, context=None):
         contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
         if contact_reply:
             return contact_reply
-        if _is_clear_contact_intent(text):
-            new_ctx = {
-                "stage": "contact_lookup",
-                "sheet": "TRA_CUU_LIEN_HE",
-                "topic": "Tra cứu liên hệ",
-                "procedure_id": "",
-                "procedure_name": "",
-                "page": 1,
-                "last_suggestions": [],
-                "last_route": "CONTACT_GUIDE",
-            }
-            return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
+
+        new_ctx = {
+            "stage": "contact_lookup",
+            "sheet": "TRA_CUU_LIEN_HE",
+            "topic": "Tra cứu liên hệ",
+            "procedure_id": "",
+            "procedure_name": "",
+            "page": 1,
+            "last_suggestions": [],
+            "last_route": "CONTACT_GUIDE",
+        }
+        return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
+            
     explicit = detect_explicit_topic(text)
 
     if _should_keep_procedure_context(text, ctx, explicit):
