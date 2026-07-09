@@ -1195,10 +1195,11 @@ def route_message(user_text, context=None):
 
     faq = search_faq(text, limit=3)
 
-    thongtin_reply = _reply_thongtin_from_faq_rows(faq)
-    if thongtin_reply:
-        ctx["last_route"] = "FAQ_THONGTIN"
-        return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+    if not detect_bo_phan_contact(text):
+        thongtin_reply = _reply_thongtin_from_faq_rows(faq)
+        if thongtin_reply:
+            ctx["last_route"] = "FAQ_THONGTIN"
+            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
 
     if is_contact_question(text):
         contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
