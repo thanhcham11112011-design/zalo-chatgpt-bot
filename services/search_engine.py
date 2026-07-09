@@ -30,8 +30,8 @@ def _active_status(row):
 
 
 def detect_bo_phan_contact(user_text):
-    # Chức năng: Nhận diện bộ phận liên hệ bằng BO_PHAN, TU_KHOA, TDP trong sheet TRA_CUU_LIEN_HE.
-    # Vai trò: Chỉ xác định bộ phận khi có tín hiệu BO_PHAN/TU_KHOA, TDP chỉ là tín hiệu bổ sung.
+    # Chức năng: Nhận diện bộ phận liên hệ bằng dữ liệu trong sheet TRA_CUU_LIEN_HE.
+    # Vai trò: Loại bỏ danh sách bộ phận hardcode, để Google Sheets quyết định nhóm liên hệ.
     text_norm = normalize_text(user_text)
 
     if not text_norm:
@@ -48,40 +48,26 @@ def detect_bo_phan_contact(user_text):
             continue
 
         score = 0
-        has_department_signal = False
-        has_area_signal = False
-
         bo_phan_norm = normalize_text(bo_phan)
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
+        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+        role_match = phrase_score(user_text, chuc_nang, 2)
 
         if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
+            score += 6000
+        if _department_token_signal(user_text, row):
             score += 10000
-            has_department_signal = True
+        if _keyword_has_non_area_signal(user_text, row):
+            score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
+        if role_match >= 80:
+            score += role_match
 
-        keyword_point = keyword_score(user_text, tu_khoa, 8)
-        if keyword_point > 0:
-            score += keyword_point
-            has_department_signal = True
-
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
-                score += 3000
-                has_area_signal = True
-                break
-
-        if score > 0 and has_department_signal:
-            candidates.append((
-                score,
-                safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999),
-                bo_phan,
-            ))
+        if score > 0:
+            candidates.append((score, safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999), bo_phan))
 
     if not candidates:
         return ""
 
-    candidates.sort(key=lambda item: (-item[0], item[1]))
+    candidates.sort(key=lambda item: (item[1], -item[0]))
     return candidates[0][2]
 
 def keyword_score(user_text, keywords, weight=1):
@@ -536,45 +522,34 @@ def search_lien_he(user_text, limit=3):
             continue
 
         row_score = 0
+        has_department_signal = False
+        has_area_signal = False
         tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        ten_norm = normalize_text(get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"))
-        base_norm = _agency_base_name(get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"))
+        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
 
-        if ten_norm and len(ten_norm.split()) >= 2 and _contains_phrase(text_norm, ten_norm):
-            row_score += 60000
+        if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
+            row_score += 10000
+            has_department_signal = True
 
-        if base_norm and len(base_norm.split()) >= 2 and _contains_phrase(text_norm, base_norm):
-            row_score += 55000
+        keyword_point = keyword_score(user_text, tu_khoa, 8)
+        if keyword_point > 0:
+            row_score += keyword_point
+            has_department_signal = True
 
-        if _contains_phrase(text_norm, bo_phan_norm):
-            row_score += 15000
+        for area in split_keywords(tdp):
+            area_norm = normalize_text(area)
+            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
+                row_score += 3000
+                has_area_signal = True
+                break
 
-        if _department_token_signal(user_text, row):
-            row_score += 30000
-
-
-        for kw in split_keywords(tu_khoa):
-            kw_norm = normalize_text(kw)
-            if not kw_norm:
-                continue
-
-            kw_phrase_match = (f" {kw_norm} " in f" {text_norm} ") or (len(kw_norm.split()) > 1 and kw_norm in text_norm)
-            if kw_phrase_match and not (len(kw_norm.split()) == 1 and len(kw_norm) <= 2):
-                area_tokens = _significant_tokens(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"))
-                name_tokens = _significant_tokens(get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"))
-                kw_tokens = set(x for x in kw_norm.split() if len(x) >= 3 and x not in CONTACT_GENERIC_WORDS)
-                non_area_tokens = kw_tokens - area_tokens - name_tokens
-
-                if non_area_tokens or not area_tokens:
-                    row_score += 40000 + min(len(kw_norm), 120)
-
-        if row_score <= 0:
+        if row_score <= 0 or not has_department_signal:
             continue
 
         current = dept_candidates.get(bo_phan_norm)
         priority = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999)
         if not current or row_score > current[0] or (row_score == current[0] and priority < current[1]):
-            dept_candidates[bo_phan_norm] = (row_score, priority, bo_phan)
+            dept_candidates[bo_phan_norm] = (row_score, priority, bo_phan, has_area_signal)
 
     bo_phan = ""
     if dept_candidates:
