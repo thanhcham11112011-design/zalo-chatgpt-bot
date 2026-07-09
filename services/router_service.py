@@ -1193,6 +1193,13 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
+    faq = search_faq(text, limit=3)
+
+    thongtin_reply = _reply_thongtin_from_faq_rows(faq)
+    if thongtin_reply:
+        ctx["last_route"] = "FAQ_THONGTIN"
+        return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+
     if is_contact_question(text):
         contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
         if contact_reply:
@@ -1221,8 +1228,6 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    faq = search_faq(text, limit=3)
-
     if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
         normal_faq = _normal_faq_rows(faq)
         if normal_faq:
@@ -1234,7 +1239,6 @@ def route_message(user_text, context=None):
         faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
         if faq_routed and faq_routed[1] != "FAQ":
             return faq_routed
-
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
     
