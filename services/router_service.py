@@ -236,7 +236,7 @@ def is_contact_question(text):
         "hotline", "gap can bo", "gap dong chi", "gap dc",
         "can bo phu trach", "ai phu trach", "truc ban",
         "cskv", "canh sat khu vuc", "to dan pho", "tdp",
-        "to an ninh", "to cstt", "to pctp", "to tong hop",
+        "bo phan", "to an ninh", "to cstt", "to pctp", "to tong hop",
         "chi huy", "lanh dao", "truong cap", "truong cong an phuong",
         "pho cap", "pho cong an phuong", "pho truong cap", "pho truong cong an phuong",
     ]
@@ -1234,10 +1234,6 @@ def route_message(user_text, context=None):
             new_ctx = _faq_plain_context(ctx, "FAQ")
             return format_multiple_results(normal_faq[:1], format_faq, limit=1), "FAQ", new_ctx, ""
 
-    if is_followup_detail_question(text) and not is_contact_question(text):
-        candidate_results = []
-        
-
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
     
@@ -1279,13 +1275,6 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    faq = faq or []
-    print("===== DEBUG ROUTER FAQ =====")
-    print("FAQ_COUNT:", len(faq) if faq else 0)
-    if faq:
-        print("FIRST_FAQ:", get_first(faq[0], "ID"))
-    print("============================")
-
     if faq:
         faq_routed = _route_from_faq_rows(text, faq, ctx)
         if faq_routed:
@@ -1311,7 +1300,6 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return get_contact_lookup_message(), "MENU", new_ctx, ""
 
-    explicit = detect_explicit_topic(text)
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
         explicit_topic = explicit.get("topic", "")
