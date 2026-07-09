@@ -30,8 +30,8 @@ def _active_status(row):
 
 
 def detect_bo_phan_contact(user_text):
-    # Chức năng: Nhận diện bộ phận liên hệ bằng dữ liệu trong sheet TRA_CUU_LIEN_HE.
-    # Vai trò: Loại bỏ danh sách bộ phận hardcode, để Google Sheets quyết định nhóm liên hệ.
+    # Chức năng: Nhận diện bộ phận liên hệ bằng BO_PHAN, TU_KHOA, TDP trong sheet TRA_CUU_LIEN_HE.
+    # Vai trò: Chỉ xác định bộ phận khi có tín hiệu BO_PHAN/TU_KHOA, TDP chỉ là tín hiệu bổ sung.
     text_norm = normalize_text(user_text)
 
     if not text_norm:
@@ -48,28 +48,40 @@ def detect_bo_phan_contact(user_text):
             continue
 
         score = 0
+        has_department_signal = False
+
         bo_phan_norm = normalize_text(bo_phan)
-        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
-        role_match = phrase_score(user_text, chuc_nang, 2)
+        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
+        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
 
         if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
-            score += 6000
-        if _department_token_signal(user_text, row):
             score += 10000
-        if _keyword_has_non_area_signal(user_text, row):
-            score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
-        if role_match >= 80:
-            score += role_match
+            has_department_signal = True
 
-        if score > 0:
-            candidates.append((score, safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999), bo_phan))
+        keyword_point = keyword_score(user_text, tu_khoa, 8)
+        if keyword_point > 0:
+            score += keyword_point
+            has_department_signal = True
+
+        for area in split_keywords(tdp):
+            area_norm = normalize_text(area)
+            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
+                score += 3000
+                break
+
+        if score > 0 and has_department_signal:
+            candidates.append((
+                score,
+                safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999),
+                bo_phan,
+            ))
 
     if not candidates:
         return ""
 
-    candidates.sort(key=lambda item: (item[1], -item[0]))
+    candidates.sort(key=lambda item: (-item[0], item[1]))
     return candidates[0][2]
-
+    
 def keyword_score(user_text, keywords, weight=1):
     # Chức năng: Chấm điểm khớp từ khóa giữa câu hỏi và chuỗi từ khóa trong Sheet.
     # Vai trò: Là nền tảng chấm điểm cho MENU, liên hệ, FAQ và thủ tục.
