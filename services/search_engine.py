@@ -48,10 +48,18 @@ def detect_bo_phan_contact(user_text):
             continue
 
         score = 0
-        score += phrase_score(user_text, bo_phan, 6)
+        bo_phan_norm = normalize_text(bo_phan)
+        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG")
+        role_match = phrase_score(user_text, chuc_nang, 2)
+
+        if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
+            score += 6000
+        if _department_token_signal(user_text, row):
+            score += 10000
         if _keyword_has_non_area_signal(user_text, row):
             score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
-        score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 2)
+        if role_match >= 80:
+            score += role_match
 
         if score > 0:
             candidates.append((score, safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999), bo_phan))
@@ -240,12 +248,84 @@ def _significant_tokens(value):
     return set(x for x in normalize_text(value).split() if len(x) >= 3)
 
 
+
+
+CONTACT_GENERIC_WORDS = {
+    "so", "dien", "thoai", "sdt", "lien", "he", "gap", "dong", "chi",
+    "cua", "toi", "muon", "can", "xin", "cho", "hoi", "biet", "to", "tdp",
+    "dan", "pho", "phu", "trach", "can", "bo", "ong", "ba", "anh", "chị", "chi",
+}
+
+
+def _department_alias_tokens(row):
+    # Chức năng: Lấy các token nhận diện bộ phận từ BO_PHAN và TU_KHOA của dòng liên hệ.
+    # Vai trò: Cho phép nhận đúng ANTT/ANCS/CSKV theo dữ liệu sheet, không khớp theo địa bàn trần.
+    alias_tokens = set()
+
+    bo_phan_tokens = {
+        token for token in _significant_tokens(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
+        if token not in CONTACT_GENERIC_WORDS
+    }
+    alias_tokens.update(bo_phan_tokens)
+
+    area_tokens = _significant_tokens(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"))
+    name_tokens = _significant_tokens(get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"))
+
+    for kw in split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA")):
+        kw_tokens = _significant_tokens(kw)
+        if not kw_tokens:
+            continue
+
+        has_area = bool(area_tokens and kw_tokens.intersection(area_tokens))
+        if not has_area:
+            continue
+
+        for token in kw_tokens:
+            if token in area_tokens:
+                continue
+            if token in name_tokens:
+                continue
+            if token in CONTACT_GENERIC_WORDS:
+                continue
+            alias_tokens.add(token)
+
+    return alias_tokens
+
+
+def _department_token_signal(user_text, row):
+    # Chức năng: Kiểm tra câu hỏi có nêu token nhận diện bộ phận theo dữ liệu sheet hay không.
+    # Vai trò: Bắt đúng các cách viết như ANTT/ANCS/CSKV dù người dân đảo thứ tự từ trong câu hỏi.
+    text_tokens = set(x for x in normalize_text(user_text).split() if len(x) >= 3)
+    if not text_tokens:
+        return False
+
+    alias_tokens = _department_alias_tokens(row)
+    return bool(alias_tokens and text_tokens.intersection(alias_tokens))
+
+
+def _requires_person_name_match(user_text):
+    # Chức năng: Nhận diện câu hỏi đang yêu cầu số điện thoại của một đồng chí cụ thể.
+    # Vai trò: Không để từ khóa chung như “số điện thoại” kéo nhầm danh sách chỉ huy hoặc bộ phận khác.
+    text_norm = normalize_text(user_text)
+    if not text_norm:
+        return False
+
+    person_markers = ["dong chi", "dc", "can bo"]
+    if not any(marker in text_norm for marker in person_markers):
+        return False
+
+    tokens = [x for x in text_norm.split() if len(x) >= 3 and x not in CONTACT_GENERIC_WORDS]
+    return len(tokens) >= 2
+
 def _keyword_has_non_area_signal(user_text, row):
     # Chức năng: Kiểm tra từ khóa khớp có chứa tín hiệu ngoài tên địa bàn/TDP.
     # Vai trò: Không để từ khóa địa bàn trần làm lẫn CSKV với ANTTCS/ANCS.
     text_norm = normalize_text(user_text)
     if not text_norm:
         return False
+
+    if _department_token_signal(user_text, row):
+        return True
 
     area_tokens = _significant_tokens(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"))
 
@@ -273,6 +353,9 @@ def _department_keyword_signal(user_text, rows):
 
         bo_phan_norm = normalize_text(bo_phan)
         if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
+            return True
+
+        if _department_token_signal(user_text, row):
             return True
 
         if _keyword_has_non_area_signal(user_text, row):
@@ -360,7 +443,7 @@ def _specific_unique_keyword_signal(user_text, rows):
         bo_phan_norm = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
         row_id = get_first(row, "ID", "MA", "MÃ", "HO_TEN", "HỌ_TÊN")
 
-        if _keyword_has_non_area_signal(user_text, row):
+        if _department_token_signal(user_text, row) or _keyword_has_non_area_signal(user_text, row):
             matched_ids.add(row_id or id(row))
 
     return len(matched_ids) == 1
@@ -583,6 +666,15 @@ def search_lien_he(user_text, limit=3):
             return same_score_results[:1]
 
         return same_score_results[:limit]
+
+    if _requires_person_name_match(user_text):
+        debug_print(
+            "CONTACT",
+            f"QUESTION: {user_text}",
+            "PERSON_NAME_NOT_FOUND"
+        )
+        return []
+
     role_results = []
 
     for row in search_rows:
