@@ -579,6 +579,14 @@ def search_lien_he(user_text, limit=3):
             row for row in active_rows
             if normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN")) == bo_phan_norm
         ]
+    if not bo_phan_norm:
+        debug_print(
+            "CONTACT",
+            f"QUESTION: {user_text}",
+            "BO_PHAN=NONE",
+            "NO_CLEAR_DEPARTMENT_SIGNAL",
+        )
+        return []
 
     has_area_signal = False
     has_name_signal = False
