@@ -1,4 +1,5 @@
 import re
+import unicodedata
 from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc, read_filter_bad_word
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
 from services.logger import debug_print
@@ -24,32 +25,96 @@ def _bad_word_pattern_match(user_text, pattern, match_type="CUM_TU"):
 
     return pattern_box in text_box
 
+# Chức năng: Chuẩn hóa chuỗi thành các từ nhưng giữ nguyên dấu tiếng Việt.
+# Vai trò: Phục vụ so khớp từng từ mà không làm mất sự khác biệt giữa tao, tảo, táo, tạo.
+def _tokenize_keep_accents(value):
+    text = str(value or "").strip().lower()
+    text = unicodedata.normalize("NFC", text)
+    text = re.sub(r"[^\w\s]", " ", text, flags=re.UNICODE)
+    text = text.replace("_", " ")
+    text = re.sub(r"\s+", " ", text).strip()
+    return text.split() if text else []
 
-# Chức năng: Tìm quy tắc ngăn chặn từ ngữ thiếu văn hóa trong sheet FILTER_BAD_WORD.
-# Vai trò: Chặn sớm nội dung vi phạm bằng dữ liệu Google Sheets trước khi định tuyến nghiệp vụ.
-def detect_bad_language(user_text):
-    matches = []
 
-    for row in read_filter_bad_word():
-        patterns = get_first(row, "TU_KHOA", "TỪ_KHÓA", "PATTERN", "MAU_CAU", "MẪU_CÂU")
-        match_type = get_first(row, "KIEU_KHOP", "KIỂU_KHỚP", "MATCH_TYPE", default="CUM_TU")
+# Chức năng: Kiểm tra một từ có dấu tiếng Việt hay không.
+# Vai trò: Quyết định khi nào được phép so khớp theo dạng bỏ dấu.
+def _has_vietnamese_diacritic(value):
+    text = str(value or "").lower()
 
-        for pattern in split_keywords(patterns):
-            if not _bad_word_pattern_match(user_text, pattern, match_type):
-                continue
+    if "đ" in text:
+        return True
 
-            item = dict(row)
-            item["_MATCHED_PATTERN"] = pattern
-            item["_MUC_DO"] = safe_int(get_first(row, "MUC_DO", "MỨC_ĐỘ", "LEVEL"), 1)
-            item["_UU_TIEN"] = safe_int(get_first(row, "MUC_UU_TIEN", "ƯU_TIÊN", "UU_TIEN"), 999)
-            matches.append(item)
-            break
+    decomposed = unicodedata.normalize("NFD", text)
+    return any(unicodedata.category(ch) == "Mn" for ch in decomposed)
 
-    if not matches:
-        return None
 
-    matches.sort(key=lambda r: (-safe_int(r.get("_MUC_DO", 1)), safe_int(r.get("_UU_TIEN", 999))))
-    return matches[0]
+# Chức năng: Kiểm tra hai từ có tương đương trong bộ lọc ngôn từ hay không.
+# Vai trò: Cho phép bỏ dấu đúng trường hợp nhưng không để tao khớp nhầm tảo, táo hoặc tạo.
+def _bad_word_token_match(user_token, pattern_token):
+    user_original = str(user_token or "").lower()
+    pattern_original = str(pattern_token or "").lower()
+
+    if user_original == pattern_original:
+        return True
+
+    user_norm = normalize_text(user_original)
+    pattern_norm = normalize_text(pattern_original)
+
+    if not user_norm or user_norm != pattern_norm:
+        return False
+
+    if _has_vietnamese_diacritic(pattern_original):
+        return True
+
+    return not _has_vietnamese_diacritic(user_original)
+
+
+# Chức năng: Kiểm tra một mẫu từ ngữ vi phạm có khớp trọn từ hoặc trọn cụm trong câu hỏi hay không.
+# Vai trò: So khớp từng từ để tránh nhầm lẫn giữa các từ khác nghĩa sau khi bỏ dấu.
+def _bad_word_pattern_match(user_text, pattern, match_type="CUM_TU"):
+    user_tokens = _tokenize_keep_accents(user_text)
+    pattern_tokens = _tokenize_keep_accents(pattern)
+
+    if not user_tokens or not pattern_tokens:
+        return False
+
+    match_type_norm = normalize_text(match_type)
+
+    if match_type_norm in ["chinh xac", "exact"]:
+        if len(user_tokens) != len(pattern_tokens):
+            return False
+
+        return all(
+            _bad_word_token_match(user_token, pattern_token)
+            for user_token, pattern_token in zip(user_tokens, pattern_tokens)
+        )
+
+    if match_type_norm in ["tu don", "word", "whole word"]:
+        if len(pattern_tokens) != 1:
+            return False
+
+        return any(
+            _bad_word_token_match(user_token, pattern_tokens[0])
+            for user_token in user_tokens
+        )
+
+    pattern_length = len(pattern_tokens)
+
+    if pattern_length > len(user_tokens):
+        return False
+
+    for index in range(len(user_tokens) - pattern_length + 1):
+        user_window = user_tokens[index:index + pattern_length]
+
+        matched = all(
+            _bad_word_token_match(user_token, pattern_token)
+            for user_token, pattern_token in zip(user_window, pattern_tokens)
+        )
+
+        if matched:
+            return True
+
+    return False
 
 
 def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
