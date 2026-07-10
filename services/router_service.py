@@ -251,7 +251,8 @@ def _is_clear_contact_intent(text):
     clear_keys = [
         "lien he", "so dien thoai", "sdt", "dien thoai",
         "hotline", "gap", "dong chi", "dc", "can bo",
-        "ai phu trach", "chi huy", "lanh dao",
+        "phu trach", "chi huy", "lanh dao","quan ly",
+        "an ninh trat tu o co so",
         "truong cap", "truong cong an phuong",
         "pho cap", "pho truong cap", "pho cong an phuong", "pho truong cong an phuong",
     ]
