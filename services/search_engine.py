@@ -30,8 +30,8 @@ def _active_status(row):
 
 
 def detect_bo_phan_contact(user_text):
-    # Chức năng: Nhận diện bộ phận liên hệ bằng BO_PHAN, TU_KHOA, TDP trong sheet TRA_CUU_LIEN_HE.
-    # Vai trò: Chỉ xác định bộ phận khi có tín hiệu BO_PHAN/TU_KHOA, TDP chỉ là tín hiệu bổ sung.
+    # Chức năng: Nhận diện bộ phận liên hệ bằng dữ liệu trong sheet TRA_CUU_LIEN_HE.
+    # Vai trò: Loại bỏ danh sách bộ phận hardcode, để Google Sheets quyết định nhóm liên hệ.
     text_norm = normalize_text(user_text)
 
     if not text_norm:
@@ -48,40 +48,19 @@ def detect_bo_phan_contact(user_text):
             continue
 
         score = 0
-        has_department_signal = False
+        score += phrase_score(user_text, bo_phan, 6)
+        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
+        score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 2)
 
-        bo_phan_norm = normalize_text(bo_phan)
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-
-        if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
-            score += 10000
-            has_department_signal = True
-
-        keyword_point = keyword_score(user_text, tu_khoa, 8)
-        if keyword_point > 0:
-            score += keyword_point
-            has_department_signal = True
-
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
-                score += 3000
-                break
-
-        if score > 0 and has_department_signal:
-            candidates.append((
-                score,
-                safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999),
-                bo_phan,
-            ))
+        if score > 0:
+            candidates.append((score, safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999), bo_phan))
 
     if not candidates:
         return ""
 
-    candidates.sort(key=lambda item: (-item[0], item[1]))
+    candidates.sort(key=lambda item: (item[1], -item[0]))
     return candidates[0][2]
-    
+
 def keyword_score(user_text, keywords, weight=1):
     # Chức năng: Chấm điểm khớp từ khóa giữa câu hỏi và chuỗi từ khóa trong Sheet.
     # Vai trò: Là nền tảng chấm điểm cho MENU, liên hệ, FAQ và thủ tục.
@@ -208,308 +187,82 @@ def _keyword_exact_match(user_text, keywords):
     return False
 
 
-def _expand_contact_role_terms(value):
-    # Chức năng: Mở rộng cách gọi chức vụ chỉ huy Công an phường.
-    # Vai trò: Giúp TRA_CUU_LIEN_HE khớp Trưởng CAP/Trưởng Công an phường bằng dữ liệu sheet.
-    text = normalize_text(value)
-    if not text:
-        return ""
-
-    terms = [text]
-
-    if "truong cong an phuong" in text and "truong cap" not in text:
-        terms.append("truong cap")
-
-    if "truong cap" in text and "truong cong an phuong" not in text:
-        terms.append("truong cong an phuong")
-
-    if "pho truong cong an phuong" in text and "pho cap" not in text:
-        terms.append("pho cap")
-
-    if "pho cap" in text and "pho truong cong an phuong" not in text:
-        terms.append("pho truong cong an phuong")
-
-    return " ".join(terms)
 
 
-def _contact_role_conflict(user_text, role_text):
-    # Chức năng: Loại trừ kết quả Phó trưởng khi người dân hỏi rõ Trưởng Công an phường.
-    # Vai trò: Hạn chế trả nhầm lãnh đạo trong tra cứu liên hệ.
-    user_norm = _expand_contact_role_terms(user_text)
-    role_norm = _expand_contact_role_terms(role_text)
-
-    asks_chief = ("truong cong an phuong" in user_norm or "truong cap" in user_norm) and "pho" not in user_norm
-    role_is_deputy = "pho" in role_norm
-
-    return asks_chief and role_is_deputy
-
-
-def _contains_phrase(text_norm, phrase_norm):
-    # Chức năng: Kiểm tra cụm từ đã chuẩn hóa có xuất hiện nguyên cụm trong câu hỏi.
-    # Vai trò: Tránh khớp rộng từng từ rời rạc làm sai kết quả liên hệ.
-    if not text_norm or not phrase_norm:
-        return False
-    return f" {phrase_norm} " in f" {text_norm} " or phrase_norm in text_norm
-
-
-
-
-def _significant_tokens(value):
-    # Chức năng: Tách các từ có ý nghĩa từ một giá trị đã chuẩn hóa.
-    # Vai trò: Loại bỏ từ quá ngắn để phân biệt tín hiệu bộ phận với địa bàn.
-    return set(x for x in normalize_text(value).split() if len(x) >= 3)
-
-
-
-
-CONTACT_GENERIC_WORDS = {
-    "so", "dien", "thoai", "sdt", "lien", "he", "gap", "dong", "chi",
-    "cua", "toi", "muon", "can", "xin", "cho", "hoi", "biet", "to", "tdp",
-    "dan", "pho", "phu", "trach", "can", "bo", "ong", "ba", "anh", "chị", "chi",
-}
-
-
-def _department_alias_tokens(row):
-    # Chức năng: Lấy các token nhận diện bộ phận từ BO_PHAN và TU_KHOA của dòng liên hệ.
-    # Vai trò: Cho phép nhận đúng ANTT/ANCS/CSKV theo dữ liệu sheet, không khớp theo địa bàn trần.
-    alias_tokens = set()
-
-    bo_phan_tokens = {
-        token for token in _significant_tokens(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
-        if token not in CONTACT_GENERIC_WORDS
+def _contact_field_values(row):
+    # Chức năng: Gom các trường dùng để tra cứu liên hệ từ một dòng TRA_CUU_LIEN_HE.
+    # Vai trò: Để Google Sheets quyết định từ khóa, bộ phận, địa bàn, chức năng và họ tên.
+    return {
+        "bo_phan": get_first(row, "BO_PHAN", "BỘ_PHẬN"),
+        "tdp": get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"),
+        "keywords": get_first(row, "TU_KHOA", "TỪ_KHÓA"),
+        "name": get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"),
+        "role": get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ"),
+        "phone": get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI", "PHONE"),
     }
-    alias_tokens.update(bo_phan_tokens)
-
-    area_tokens = _significant_tokens(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"))
-    name_tokens = _significant_tokens(get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"))
-
-    for kw in split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA")):
-        kw_tokens = _significant_tokens(kw)
-        if not kw_tokens:
-            continue
-
-        has_area = bool(area_tokens and kw_tokens.intersection(area_tokens))
-        if not has_area:
-            continue
-
-        for token in kw_tokens:
-            if token in area_tokens:
-                continue
-            if token in name_tokens:
-                continue
-            if token in CONTACT_GENERIC_WORDS:
-                continue
-            alias_tokens.add(token)
-
-    return alias_tokens
 
 
-def _department_token_signal(user_text, row):
-    # Chức năng: Kiểm tra câu hỏi có nêu token nhận diện bộ phận theo dữ liệu sheet hay không.
-    # Vai trò: Bắt đúng các cách viết như ANTT/ANCS/CSKV dù người dân đảo thứ tự từ trong câu hỏi.
-    text_tokens = set(x for x in normalize_text(user_text).split() if len(x) >= 3)
-    if not text_tokens:
-        return False
+def _exact_keyword_score(user_text, keywords, base_score=0):
+    # Chức năng: Chấm điểm khi người dân nhập đúng một từ khóa/cụm từ trong sheet.
+    # Vai trò: Ưu tiên dữ liệu TU_KHOA thay vì suy luận nghiệp vụ trong Python.
+    user_norm = normalize_text(user_text)
+    user_words = set(user_norm.split())
+    score = 0
 
-    alias_tokens = _department_alias_tokens(row)
-    return bool(alias_tokens and text_tokens.intersection(alias_tokens))
-
-
-def _requires_person_name_match(user_text):
-    # Chức năng: Nhận diện câu hỏi đang yêu cầu số điện thoại của một đồng chí cụ thể.
-    # Vai trò: Không để từ khóa chung như “số điện thoại” kéo nhầm danh sách chỉ huy hoặc bộ phận khác.
-    text_norm = normalize_text(user_text)
-    if not text_norm:
-        return False
-
-    person_markers = ["dong chi", "dc", "can bo"]
-    if not any(marker in text_norm for marker in person_markers):
-        return False
-
-    tokens = [x for x in text_norm.split() if len(x) >= 3 and x not in CONTACT_GENERIC_WORDS]
-    return len(tokens) >= 2
-
-def _keyword_has_non_area_signal(user_text, row):
-    # Chức năng: Kiểm tra từ khóa khớp có chứa tín hiệu ngoài tên địa bàn/TDP.
-    # Vai trò: Không để từ khóa địa bàn trần làm lẫn CSKV với ANTTCS/ANCS.
-    text_norm = normalize_text(user_text)
-    if not text_norm:
-        return False
-
-    if _department_token_signal(user_text, row):
-        return True
-
-    area_tokens = _significant_tokens(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"))
-
-    for kw in split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA")):
+    for kw in split_keywords(keywords):
         kw_norm = normalize_text(kw)
-        if not kw_norm or not _contains_phrase(text_norm, kw_norm):
+        if not kw_norm:
             continue
 
-        kw_tokens = _significant_tokens(kw_norm)
-        if any(token not in area_tokens for token in kw_tokens):
-            return True
-
-    return False
-
-def _department_keyword_signal(user_text, rows):
-    # Chức năng: Kiểm tra câu hỏi có nêu rõ nhóm liên hệ bằng dữ liệu BO_PHAN/TU_KHOA hay không.
-    # Vai trò: Chặn khớp địa bàn trần làm lẫn CSKV với ANTTCS/ANCS khi người dân chưa nêu nhóm cần gặp.
-    text_norm = normalize_text(user_text)
-    if not text_norm:
-        return False
-
-    for row in rows:
-        bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-
-        bo_phan_norm = normalize_text(bo_phan)
-        if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
-            return True
-
-        if _department_token_signal(user_text, row):
-            return True
-
-        if _keyword_has_non_area_signal(user_text, row):
-            return True
-
-    return False
-
-
-def _specific_area_signal(user_text, rows):
-    # Chức năng: Kiểm tra câu hỏi có nêu rõ địa bàn/TDP kèm nhóm liên hệ trong TRA_CUU_LIEN_HE hay không.
-    # Vai trò: Chỉ cho phép tra cứu theo địa bàn khi người dân nêu rõ nhóm cần gặp để tránh lẫn CSKV với ANTTCS/ANCS.
-    text_norm = normalize_text(user_text)
-    if not _department_keyword_signal(user_text, rows):
-        return False
-
-    for row in rows:
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
-                return True
-    return False
-
-
-def _specific_name_signal(user_text, rows):
-    # Chức năng: Kiểm tra câu hỏi có nêu rõ họ tên cán bộ/cơ quan trong TRA_CUU_LIEN_HE hay không.
-    # Vai trò: Tránh khớp nhầm khi người dân chỉ nhập một từ trùng tên riêng.
-    text_norm = normalize_text(user_text)
-    raw_words = set(x for x in text_norm.split() if len(x) >= 3)
-
-    for row in rows:
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        ten_norm = normalize_text(ten)
-        base_norm = _agency_base_name(ten)
-
-        if ten_norm and _contains_phrase(text_norm, ten_norm):
-            return True
-        if base_norm and len(base_norm.split()) >= 2 and _contains_phrase(text_norm, base_norm):
-            return True
-
-        name_tokens = [x for x in ten_norm.split() if len(x) >= 3]
-        if len([x for x in name_tokens if x in raw_words]) >= 2:
-            return True
-
-    return False
-
-
-def _specific_role_signal(user_text, rows):
-    # Chức năng: Kiểm tra câu hỏi có nêu rõ chức năng/chức vụ đủ cụ thể trong TRA_CUU_LIEN_HE hay không.
-    # Vai trò: Cho phép hỏi theo chức vụ nhưng không coi bộ phận chung là kết quả đủ rõ.
-    text_norm = normalize_text(user_text)
-    matched = []
-
-    for row in rows:
-        role_text = get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ")
-        role_norm = _expand_contact_role_terms(role_text)
-        bo_phan_norm = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
-        if not role_norm:
+        kw_words = [x for x in kw_norm.split() if x]
+        if not kw_words:
             continue
 
-        role_tokens = [x for x in role_norm.split() if len(x) >= 3]
-        for size in range(min(5, len(role_tokens)), 1, -1):
-            for start in range(0, len(role_tokens) - size + 1):
-                phrase = " ".join(role_tokens[start:start + size])
-                if phrase == bo_phan_norm:
-                    continue
-                if _contains_phrase(text_norm, phrase):
-                    matched.append(row)
-                    break
-            else:
-                continue
-            break
+        if len(kw_words) == 1:
+            if len(kw_norm) >= 3 and kw_norm in user_words:
+                score += base_score + 2000 + len(kw_norm) * 5
+        elif kw_norm in user_norm:
+            score += base_score + 12000 + len(kw_norm) * 10
 
-    return bool(matched)
+    return score
 
 
-def _specific_unique_keyword_signal(user_text, rows):
-    # Chức năng: Kiểm tra từ khóa liên hệ có xác định được một dòng duy nhất hay không.
-    # Vai trò: Cho phép từ khóa rõ ràng trong sheet, chặn từ khóa nhóm chung trả danh sách rộng.
-    text_norm = normalize_text(user_text)
-    matched_ids = set()
+def _name_token_score(user_text, name):
+    # Chức năng: Chấm điểm khi câu hỏi có chứa họ tên cán bộ/cơ quan.
+    # Vai trò: Hỗ trợ tra cứu trực tiếp theo tên trong TRA_CUU_LIEN_HE.
+    user_norm = normalize_text(user_text)
+    name_norm = normalize_text(name)
 
-    for row in rows:
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        bo_phan_norm = normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN"))
-        row_id = get_first(row, "ID", "MA", "MÃ", "HO_TEN", "HỌ_TÊN")
+    if not user_norm or not name_norm:
+        return 0
 
-        if _department_token_signal(user_text, row) or _keyword_has_non_area_signal(user_text, row):
-            matched_ids.add(row_id or id(row))
+    if name_norm in user_norm:
+        return 50000
 
-    return len(matched_ids) == 1
+    name_tokens = [x for x in name_norm.split() if len(x) >= 3]
+    matched = [x for x in name_tokens if x in user_norm]
 
+    if len(matched) >= 2:
+        return 35000 + len(matched) * 1000
 
-def _has_specific_contact_signal(user_text, rows):
-    # Chức năng: Kiểm tra câu hỏi liên hệ đã đủ rõ để trả dữ liệu cá nhân/bộ phận hay chưa.
-    # Vai trò: Câu hỏi chỉ nêu bộ phận chung sẽ trả hướng dẫn làm rõ thay vì danh sách rộng.
-    phone_digits = re.sub(r"\D+", "", str(user_text or ""))
-    if len(phone_digits) >= 9:
-        return True
+    return 0
 
-    return (
-        _specific_area_signal(user_text, rows)
-        or _specific_name_signal(user_text, rows)
-        or _specific_role_signal(user_text, rows)
-        or _specific_unique_keyword_signal(user_text, rows)
-    )
 
 def search_lien_he(user_text, limit=3):
-    # Chức năng: Tìm thông tin liên hệ theo pipeline nhận diện BO_PHAN từ TU_KHOA rồi mới chấm điểm.
-    # Vai trò: Không để địa bàn/TDP kéo nhầm sang bộ phận khác, không ảnh hưởng FAQ và thủ tục.
-    rows = read_lien_he()
+    # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE.
+    # Vai trò: Chấm điểm hoàn toàn theo dữ liệu liên hệ, không hardcode cán bộ/bộ phận.
     text_norm = normalize_text(user_text)
-    text_raw = str(user_text or "").lower()
-
     if not text_norm:
         return []
 
+    active_rows = [row for row in read_lien_he() if _active_status(row)]
     phone_digits = re.sub(r"\D+", "", str(user_text or ""))
-    active_rows = []
-
-    for row in rows:
-        if not _active_status(row):
-            continue
-
-        if not any([
-            get_first(row, "BO_PHAN", "BỘ_PHẬN"),
-            get_first(row, "TU_KHOA", "TỪ_KHÓA"),
-            get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"),
-            get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ"),
-            get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI", "PHONE"),
-        ]):
-            continue
-
-        active_rows.append(row)
 
     if len(phone_digits) >= 9:
         phone_results = []
-
         for row in active_rows:
-            phone = get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI", "PHONE")
-            phone_norm = re.sub(r"\D+", "", str(phone or ""))
-
+            fields = _contact_field_values(row)
+            phone_norm = re.sub(r"\D+", "", str(fields.get("phone") or ""))
             if phone_norm and phone_digits in phone_norm:
                 phone_results.append(_add_meta(
                     row=row,
@@ -519,294 +272,65 @@ def search_lien_he(user_text, limit=3):
                     row_id=get_first(row, "ID", "MA", "MÃ"),
                     note="PHONE_MATCH",
                 ))
-
-        phone_results.sort(key=lambda r: (-safe_int(r.get("_SCORE", 0)), safe_int(r.get("_UU_TIEN", 999))))
+        _sort_results(phone_results)
         return phone_results[:1]
 
-    text_tokens = set(x for x in text_norm.split() if len(x) >= 3 and x not in CONTACT_GENERIC_WORDS)
-    dept_candidates = {}
-
+    scored = []
     for row in active_rows:
-        bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
-        bo_phan_norm = normalize_text(bo_phan)
-
-        if not bo_phan_norm:
-            continue
-
-        row_score = 0
-        has_department_signal = False
-        has_area_signal = False
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-
-        if bo_phan_norm and _contains_phrase(text_norm, bo_phan_norm):
-            row_score += 10000
-            has_department_signal = True
-
-        keyword_point = keyword_score(user_text, tu_khoa, 8)
-        if keyword_point > 0:
-            row_score += keyword_point
-            has_department_signal = True
-
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
-                row_score += 3000
-                has_area_signal = True
-                break
-
-        if row_score <= 0 or not has_department_signal:
-            continue
-
-        current = dept_candidates.get(bo_phan_norm)
-        priority = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999)
-        if not current or row_score > current[0] or (row_score == current[0] and priority < current[1]):
-            dept_candidates[bo_phan_norm] = (row_score, priority, bo_phan, has_area_signal)
-
-    bo_phan = ""
-    if dept_candidates:
-        sorted_depts = sorted(dept_candidates.values(), key=lambda item: (-item[0], item[1], normalize_text(item[2])))
-        best_score = sorted_depts[0][0]
-        second_score = sorted_depts[1][0] if len(sorted_depts) > 1 else 0
-        if best_score >= 10000 and best_score >= second_score + 500:
-            bo_phan = sorted_depts[0][2]
-
-    bo_phan_norm = normalize_text(bo_phan)
-    search_rows = active_rows
-
-    if bo_phan_norm:
-        search_rows = [
-            row for row in active_rows
-            if normalize_text(get_first(row, "BO_PHAN", "BỘ_PHẬN")) == bo_phan_norm
-        ]
-    if not bo_phan_norm:
-        debug_print(
-            "CONTACT",
-            f"QUESTION: {user_text}",
-            "BO_PHAN=NONE",
-            "NO_CLEAR_DEPARTMENT_SIGNAL",
-        )
-        return []
-
-    has_area_signal = False
-    has_name_signal = False
-
-    for row in search_rows:
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        ten_norm = normalize_text(ten)
-        ten_tokens = [x for x in ten_norm.split() if len(x) >= 3]
-
-        for area in split_keywords(tdp):
-            area_norm = normalize_text(area)
-            if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
-                has_area_signal = True
-
-        if ten_norm and _contains_phrase(text_norm, ten_norm):
-            has_name_signal = True
-        elif ten_tokens and len([x for x in ten_tokens if x in text_tokens]) >= 2:
-            has_name_signal = True
-
-    has_many_tdp_rows = bo_phan_norm and len(search_rows) > limit and any(
-        get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN") for row in search_rows
-    )
-
-    if has_many_tdp_rows and not has_area_signal and not has_name_signal:
-        debug_print(
-            "CONTACT",
-            f"QUESTION: {user_text}",
-            f"BO_PHAN={bo_phan}",
-            "NEED_AREA_OR_NAME_FOR_TDP_GROUP",
-        )
-        return []
-
-    results = []
-    asks_deputy = "pho" in text_norm and ("truong" in text_norm or "cap" in text_norm or "cong an phuong" in text_norm)
-    asks_chief = ("truong cap" in text_norm or "truong cong an phuong" in text_norm) and "pho" not in text_norm
-
-    for row in search_rows:
+        fields = _contact_field_values(row)
         score = 0
         notes = []
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        tdp = get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
-        tu_khoa = get_first(row, "TU_KHOA", "TỪ_KHÓA")
-        chuc_nang = get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ")
-        ten_norm = normalize_text(ten)
-        ten_raw = str(ten or "").lower().strip()
-        base_norm = _agency_base_name(ten)
-        chuc_nang_norm = _expand_contact_role_terms(chuc_nang)
-        row_bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
 
-        if _contact_role_conflict(user_text, chuc_nang):
-            continue
+        area_score = _exact_keyword_score(user_text, fields["tdp"], 30000)
+        if area_score:
+            score += area_score
+            notes.append("AREA_MATCH")
 
-        if asks_deputy and "pho" not in chuc_nang_norm:
-            continue
+        keyword_score_value = _exact_keyword_score(user_text, fields["keywords"], 20000)
+        if keyword_score_value:
+            score += keyword_score_value
+            notes.append("KEYWORD_MATCH")
 
-        if asks_chief and "pho" in chuc_nang_norm:
-            continue
+        department_score = _exact_keyword_score(user_text, fields["bo_phan"], 15000)
+        if department_score:
+            score += department_score
+            notes.append("DEPARTMENT_MATCH")
 
-        if ten_raw and ten_raw in text_raw:
-            score += 120000
-            notes.append("FULL_NAME_RAW")
+        name_score = _name_token_score(user_text, fields["name"])
+        if name_score:
+            score += name_score
+            notes.append("NAME_MATCH")
 
-        if ten_norm and _contains_phrase(text_norm, ten_norm):
-            score += 110000
-            notes.append("FULL_NAME")
-
-        if base_norm and len(base_norm.split()) >= 2 and _contains_phrase(text_norm, base_norm):
-            score += 90000
-            notes.append("BASE_NAME")
-
-        ten_tokens = [x for x in ten_norm.split() if len(x) >= 3]
-        matched_name_tokens = [x for x in ten_tokens if x in text_tokens]
-        if len(matched_name_tokens) >= 2:
-            score += 70000 + len(matched_name_tokens) * 5000
-            notes.append("NAME_TOKEN")
-
-        if bo_phan_norm:
-            for area in split_keywords(tdp):
-                area_norm = normalize_text(area)
-                if area_norm and len(area_norm.split()) >= 2 and _contains_phrase(text_norm, area_norm):
-                    score += 35000
-                    notes.append("AREA")
-                    break
-
-        role_score = 0
-        role_tokens = []
-        matched_role_tokens = []
-
-        if bo_phan_norm or has_name_signal:
-            role_score = phrase_score(
-                _expand_contact_role_terms(user_text),
-                chuc_nang_norm,
-                10,
-            )
-
-            role_tokens = [
-                x for x in chuc_nang_norm.split()
-                if len(x) >= 3 and x != normalize_text(row_bo_phan)
-            ]
-            matched_role_tokens = [x for x in role_tokens if x in text_tokens]
-
-            role_words = [x for x in chuc_nang_norm.split() if len(x) >= 2]
-            role_phrase_bonus = 0
-            for size in range(min(4, len(role_words)), 1, -1):
-                for start in range(0, len(role_words) - size + 1):
-                    phrase = " ".join(role_words[start:start + size])
-                    if phrase == normalize_text(row_bo_phan):
-                        continue
-                    if f" {phrase} " in f" {text_norm} " or phrase in text_norm:
-                        role_phrase_bonus = 25000 + size * 1000
-                        break
-                if role_phrase_bonus:
-                    break
-
-            if role_score > 0:
-                score += 10000 + role_score
-                notes.append("ROLE")
-
-            if matched_role_tokens:
-                score += len(set(matched_role_tokens)) * 12000
-                notes.append("ROLE_TOKEN")
-
-            if role_phrase_bonus:
-                score += role_phrase_bonus
-                notes.append("ROLE_PHRASE")
-
-        keyword_exact = 0
-        keyword_token = 0
-        for kw in split_keywords(tu_khoa):
-            kw_norm = normalize_text(kw)
-            if not kw_norm:
-                continue
-
-            kw_phrase_match = (f" {kw_norm} " in f" {text_norm} ") or (len(kw_norm.split()) > 1 and kw_norm in text_norm)
-            if kw_phrase_match and not (len(kw_norm.split()) == 1 and len(kw_norm) <= 2):
-                area_tokens = _significant_tokens(tdp)
-                name_tokens = _significant_tokens(ten)
-                kw_tokens = set(x for x in kw_norm.split() if len(x) >= 3 and x not in CONTACT_GENERIC_WORDS)
-                non_area_tokens = kw_tokens - area_tokens - name_tokens
-                if non_area_tokens or not area_tokens:
-                    keyword_exact = max(keyword_exact, 30000 + min(len(kw_norm), 120))
-                elif bo_phan_norm:
-                    keyword_exact = max(keyword_exact, 8000)
-            else:
-                kw_tokens = set(x for x in kw_norm.split() if len(x) >= 3 and x not in CONTACT_GENERIC_WORDS)
-                matched_kw_tokens = kw_tokens.intersection(text_tokens)
-                if len(matched_kw_tokens) >= 2:
-                    keyword_token = max(keyword_token, len(matched_kw_tokens) * 3000)
-
-        if keyword_exact:
-            score += keyword_exact
-            notes.append("KEYWORD_EXACT")
-
-        if keyword_token and bo_phan_norm:
-            score += keyword_token
-            notes.append("KEYWORD_TOKEN")
-
-        if bo_phan_norm:
-            score += 5000
-            notes.append("BO_PHAN_FILTER")
-        else:
-            score += phrase_score(user_text, row_bo_phan, 3)
+        role_score = _exact_keyword_score(user_text, fields["role"], 10000)
+        if role_score:
+            score += role_score
+            notes.append("ROLE_MATCH")
 
         if score <= 0:
             continue
 
-        results.append(_add_meta(
+        scored.append(_add_meta(
             row=row,
             route="LIEN_HE",
             score=score,
             sheet="TRA_CUU_LIEN_HE",
             row_id=get_first(row, "ID", "MA", "MÃ"),
-            note="|".join(notes),
+            note="+".join(notes) or "CONTACT_MATCH",
         ))
 
-    if not results:
-        debug_print(
-            "CONTACT",
-            f"QUESTION: {user_text}",
-            f"BO_PHAN={bo_phan or 'NONE'}",
-            "NO_MATCH",
-        )
+    if not scored:
+        debug_print("CONTACT", f"QUESTION: {user_text}", "NO MATCH")
         return []
 
-    results.sort(key=lambda r: (-safe_int(r.get("_SCORE", 0)), safe_int(r.get("_UU_TIEN", 999))))
-    best_score = safe_int(results[0].get("_SCORE", 0))
-    second_score = safe_int(results[1].get("_SCORE", 0)) if len(results) > 1 else 0
+    scored.sort(key=lambda r: (-safe_int(r.get("_SCORE", 0)), safe_int(r.get("_UU_TIEN", 999))))
 
-    debug_print(
-        "CONTACT",
-        f"QUESTION: {user_text}",
-        f"BO_PHAN={bo_phan or 'AUTO'}",
-        *[
-            f"{get_first(r,'TEN_CO_QUAN','TÊN_CƠ_QUAN','HO_TEN','HỌ_TÊN')} SCORE={r.get('_SCORE')} NOTE={r.get('_NOTE')}"
-            for r in results[:5]
-        ]
-    )
+    best_score = safe_int(scored[0].get("_SCORE", 0))
+    same_group = [row for row in scored if safe_int(row.get("_SCORE", 0)) == best_score]
 
-    if has_name_signal:
-        return results[:1]
+    if len(same_group) == 1:
+        return same_group[:1]
 
-    if len(results) == 1:
-        return results[:1]
-
-    same_score_results = [row for row in results if safe_int(row.get("_SCORE", 0)) == best_score]
-    next_distinct_score = 0
-    for row in results:
-        row_score = safe_int(row.get("_SCORE", 0))
-        if row_score != best_score:
-            next_distinct_score = row_score
-            break
-
-    if next_distinct_score and best_score >= next_distinct_score + 8000:
-        return same_score_results[:limit]
-
-    if best_score >= second_score + 8000:
-        return results[:1]
-
-    return results[:limit]
+    return same_group[:limit]
 
 def search_faq(user_text, limit=3):
     # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
