@@ -13,6 +13,7 @@ from services.search_engine import (
     format_thu_tuc,
     format_multiple_results,
     find_lien_he_by_ten_co_quan,
+    detect_bad_language,
 )
 
 PAGE_SIZE = 5
@@ -1126,6 +1127,22 @@ def route_message(user_text, context=None):
 
     if not text:
         return get_default_reply(), "EMPTY", ctx, ""
+
+    bad_language = detect_bad_language(text)
+    if bad_language:
+        reply = get_first(
+            bad_language,
+            "TRA_LOI",
+            "TRẢ_LỜI",
+            default="Kính đề nghị Quý công dân sử dụng ngôn từ lịch sự và gửi lại nội dung cần hỗ trợ.",
+        )
+        new_ctx = dict(ctx or {})
+        new_ctx["last_route"] = "FILTER_BAD_WORD"
+        new_ctx["filter_id"] = get_first(bad_language, "ID", "MA", "MÃ")
+        new_ctx["filter_level"] = get_first(bad_language, "MUC_DO", "MỨC_ĐỘ", "LEVEL")
+        new_ctx["filter_category"] = get_first(bad_language, "PHAN_LOAI", "PHÂN_LOẠI", "CATEGORY")
+        new_ctx["filter_log"] = get_first(bad_language, "GHI_LOG", "LOG", default="TRUE")
+        return reply, "FILTER_BAD_WORD", new_ctx, ""
 
     if is_reset_question(text):
         return get_end_message(), "RESET", {}, ""
