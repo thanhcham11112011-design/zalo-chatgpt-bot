@@ -786,19 +786,101 @@ def get_contact_lookup_message():
 
     return "📌 Tra cứu liên hệ\n\nQuý công dân vui lòng nhập nội dung liên hệ cần tra cứu."
 
+# Chức năng: Lấy thông báo hướng dẫn riêng cho bộ phận liên hệ từ SETTING_CHAT.
+# Vai trò: Áp dụng hướng dẫn khi câu hỏi chưa xác định được cán bộ hoặc địa bàn mà không hardcode bộ phận trong Python.
+def _contact_department_guide(department):
+    department_norm = normalize_text(department)
+
+    if not department_norm:
+        return ""
+
+    guide_configs = [
+        (
+            "CONTACT_GUIDE_DEPARTMENT",
+            "CONTACT_GUIDE",
+        ),
+        (
+            "CONTACT_GUIDE_MESSAGE_DEPARTMENT",
+            "CONTACT_GUIDE_MESSAGE",
+        ),
+    ]
+
+    for department_key, message_key in guide_configs:
+        configured_department = normalize_text(_chat_setting(department_key, ""))
+
+        if not configured_department:
+            continue
+
+        if department_norm != configured_department:
+            continue
+
+        return _chat_setting(message_key, "")
+
+    return ""
 
 # Chức năng: Xử lý kết quả liên hệ và câu nhắc làm rõ khi có nhiều kết quả.
 # Vai trò: Chuẩn hóa trả lời TRA_CUU_LIEN_HE bằng dữ liệu sheet.
+# Chức năng: Xử lý kết quả liên hệ và hướng dẫn làm rõ theo cấu hình từng bộ phận.
+# Vai trò: Chỉ áp dụng hướng dẫn riêng cho bộ phận được khai báo trong SETTING_CHAT, không ảnh hưởng bộ phận khác.
 def _reply_contact_results(text, limit=5, keep_context=False):
     results = search_lien_he(text, limit=limit)
+
     if not results:
         return None
 
-    reply = format_multiple_results(results, format_lien_he, limit=limit)
-    if len(results) > 1:
-        reply += "\n\nℹ️ Có nhiều kết quả phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách để BOT tra cứu chính xác."
+    department = detect_bo_phan_contact(text)
 
-    ctx = {
+    has_specific_signal = any(
+        any(
+            signal in str(row.get("_NOTE") or "")
+            for signal in [
+                "AREA_MATCH",
+                "NAME_MATCH",
+                "PHONE_MATCH",
+            ]
+        )
+        for row in results
+    )
+
+    guide_message = ""
+
+    if len(results) > 1 and not has_specific_signal:
+        guide_message = _contact_department_guide(department)
+
+    if guide_message:
+        new_ctx = {
+            "stage": "contact_lookup",
+            "sheet": "TRA_CUU_LIEN_HE",
+            "topic": department or "Tra cứu liên hệ",
+            "contact_department": department,
+            "procedure_id": "",
+            "procedure_name": "",
+            "page": 1,
+            "last_suggestions": [],
+            "last_route": "CONTACT_GUIDE_BY_DEPARTMENT",
+        }
+
+        return (
+            guide_message,
+            "CONTACT_GUIDE_BY_DEPARTMENT",
+            new_ctx,
+            "",
+        )
+
+    reply = format_multiple_results(
+        results,
+        format_lien_he,
+        limit=limit,
+    )
+
+    if len(results) > 1:
+        reply += (
+            "\n\nℹ️ Có nhiều kết quả phù hợp. "
+            "Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách "
+            "để BOT tra cứu chính xác."
+        )
+
+    new_ctx = {
         "stage": "contact_lookup" if keep_context else "",
         "sheet": "TRA_CUU_LIEN_HE",
         "topic": "Tra cứu liên hệ",
@@ -808,7 +890,13 @@ def _reply_contact_results(text, limit=5, keep_context=False):
         "last_suggestions": [],
         "last_route": "TRA_CUU_LIEN_HE",
     }
-    return reply, "TRA_CUU_LIEN_HE", ctx if keep_context else {}, ""
+
+    return (
+        reply,
+        "TRA_CUU_LIEN_HE",
+        new_ctx if keep_context else {},
+        "",
+    )
 
 
 # Chức năng: Tìm thủ tục liên kết từ FAQ bằng RELATED_ID.
