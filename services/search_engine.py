@@ -97,6 +97,61 @@ def _bad_word_pattern_match(user_text, pattern, match_type="CUM_TU"):
 
     return False
 
+# Chức năng: Tìm quy tắc ngăn chặn từ ngữ thiếu văn hóa trong sheet FILTER_BAD_WORD.
+# Vai trò: Chặn sớm nội dung vi phạm bằng dữ liệu Google Sheets trước khi định tuyến nghiệp vụ.
+def detect_bad_language(user_text):
+    matches = []
+
+    for row in read_filter_bad_word():
+        patterns = get_first(
+            row,
+            "TU_KHOA",
+            "TỪ_KHÓA",
+            "PATTERN",
+            "MAU_CAU",
+            "MẪU_CÂU",
+        )
+        match_type = get_first(
+            row,
+            "KIEU_KHOP",
+            "KIỂU_KHỚP",
+            "MATCH_TYPE",
+            default="CUM_TU",
+        )
+
+        for pattern in split_keywords(patterns):
+            if not _bad_word_pattern_match(user_text, pattern, match_type):
+                continue
+
+            item = dict(row)
+            item["_MATCHED_PATTERN"] = pattern
+            item["_MUC_DO"] = safe_int(
+                get_first(row, "MUC_DO", "MỨC_ĐỘ", "LEVEL"),
+                1,
+            )
+            item["_UU_TIEN"] = safe_int(
+                get_first(
+                    row,
+                    "MUC_UU_TIEN",
+                    "ƯU_TIÊN",
+                    "UU_TIEN",
+                ),
+                999,
+            )
+            matches.append(item)
+            break
+
+    if not matches:
+        return None
+
+    matches.sort(
+        key=lambda r: (
+            -safe_int(r.get("_MUC_DO", 1)),
+            safe_int(r.get("_UU_TIEN", 999)),
+        )
+    )
+    return matches[0]
+
 
 def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
     # Chức năng: Gắn metadata tìm kiếm vào một dòng kết quả.
