@@ -1,4 +1,3 @@
-
 from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin, read_thu_tuc_sheet_names, read_thu_tuc_sheet
 from services.search_engine import (
@@ -534,15 +533,22 @@ def _faq_supplement_for_procedure(row, user_text, ngu_canh):
 # Chức năng: Lọc FAQ thường không có RELATED_ID và không phải THONGTIN.
 # Vai trò: Không để FAQ có RELATED_ID trả danh sách khi chưa đúng luồng.
 def _normal_faq_rows(faq_rows):
+    # Chức năng: Lọc các FAQ trả lời thông thường, không có ngữ cảnh định tuyến riêng.
+    # Vai trò: Ngăn FAQ PROCEDURE_CONTEXT cướp câu hỏi khi chưa có thủ tục hiện tại.
     results = []
+    excluded_contexts = {"thongtin", "procedure_context", "tra_cuu_lien_he", "menu"}
+
     for row in faq_rows or []:
         ngu_canh = normalize_text(get_first(row, "NGU_CANH", "NGỮ_CẢNH"))
         related_id = get_first(row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
-        if ngu_canh == "thongtin":
+
+        if ngu_canh in excluded_contexts:
             continue
         if related_id:
             continue
+
         results.append(row)
+
     return results
 
 # Chức năng: Lấy NGU_CANH phù hợp từ FAQ theo thủ tục hiện tại.
