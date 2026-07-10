@@ -818,53 +818,130 @@ def _contact_department_guide(department):
 
     return ""
 
-# Chức năng: Xử lý kết quả liên hệ và câu nhắc làm rõ khi có nhiều kết quả.
-# Vai trò: Chuẩn hóa trả lời TRA_CUU_LIEN_HE bằng dữ liệu sheet.
+# Chức năng: Kiểm tra bộ phận liên hệ có được cấu hình phân trang hay không.
+# Vai trò: Chỉ phân trang các bộ phận khai báo trong SETTING_CHAT, không hardcode nghiệp vụ.
+def _contact_paging_enabled(department):
+    configured = _chat_setting("CONTACT_PAGING_DEPARTMENTS", "")
+    departments = [
+        normalize_text(item)
+        for item in _split_keywords(configured)
+        if normalize_text(item)
+    ]
+    return normalize_text(department) in departments
+
+
+# Chức năng: Tạo nội dung một trang danh sách liên hệ.
+# Vai trò: Hiển thị đúng số kết quả và lưu ngữ cảnh để người dân nhắn xem tiếp.
+def _make_contact_page_reply(text, department, page=1):
+    page_size = max(safe_int(_chat_setting("CONTACT_PAGE_SIZE", "5"), 5), 1)
+    all_results = search_lien_he(text, limit=999)
+
+    if not all_results:
+        return None
+
+    page = max(safe_int(page, 1), 1)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_results = all_results[start:end]
+
+    if not page_results:
+        return None
+
+    reply = format_multiple_results(
+        page_results,
+        format_lien_he,
+        limit=page_size,
+    )
+
+    has_next = end < len(all_results)
+
+    if has_next:
+        reply += "\n\n" + _chat_setting(
+            "CONTACT_NEXT_MESSAGE",
+            'Nhắn "xem tiếp" để xem danh sách tiếp theo.',
+        )
+    else:
+        reply += "\n\n✅ Đã hiển thị hết danh sách phù hợp."
+
+    new_ctx = {
+        "stage": "contact_list",
+        "sheet": "TRA_CUU_LIEN_HE",
+        "topic": department or "Tra cứu liên hệ",
+        "contact_department": department,
+        "contact_query": text,
+        "contact_page": page,
+        "procedure_id": "",
+        "procedure_name": "",
+        "page": 1,
+        "last_suggestions": [],
+        "last_route": "CONTACT_LIST_PAGE",
+    }
+
+    return reply, "CONTACT_LIST_PAGE", new_ctx, ""
+
 # Chức năng: Xử lý kết quả liên hệ và hướng dẫn làm rõ theo cấu hình từng bộ phận.
 # Vai trò: Chỉ áp dụng hướng dẫn riêng cho bộ phận được khai báo trong SETTING_CHAT, không ảnh hưởng bộ phận khác.
+# Chức năng: Xử lý kết quả liên hệ, hướng dẫn làm rõ và phân trang theo cấu hình bộ phận.
+# Vai trò: Phân trang riêng cho bộ phận được khai báo, không ảnh hưởng các luồng liên hệ khác.
 def _reply_contact_results(text, limit=5, keep_context=False):
-    results = search_lien_he(text, limit=limit)
+    results = search_lien_he(text, limit=999)
 
     if not results:
         return None
 
     department = detect_bo_phan_contact(text)
 
-    has_specific_signal = any(
-        any(
-            signal in str(row.get("_NOTE") or "")
-            for signal in [
-                "AREA_MATCH",
-                "NAME_MATCH",
-                "PHONE_MATCH",
-            ]
-        )
+    has_area_match = any(
+        "AREA_MATCH" in str(row.get("_NOTE") or "")
+        for row in results
+    )
+    has_name_match = any(
+        "NAME_MATCH" in str(row.get("_NOTE") or "")
+        for row in results
+    )
+    has_phone_match = any(
+        "PHONE_MATCH" in str(row.get("_NOTE") or "")
         for row in results
     )
 
-    guide_message = ""
+    has_specific_signal = (
+        has_area_match
+        or has_name_match
+        or has_phone_match
+    )
 
     if len(results) > 1 and not has_specific_signal:
         guide_message = _contact_department_guide(department)
 
-    if guide_message:
-        new_ctx = {
-            "stage": "contact_lookup",
-            "sheet": "TRA_CUU_LIEN_HE",
-            "topic": department or "Tra cứu liên hệ",
-            "contact_department": department,
-            "procedure_id": "",
-            "procedure_name": "",
-            "page": 1,
-            "last_suggestions": [],
-            "last_route": "CONTACT_GUIDE_BY_DEPARTMENT",
-        }
+        if guide_message:
+            new_ctx = {
+                "stage": "contact_lookup",
+                "sheet": "TRA_CUU_LIEN_HE",
+                "topic": department or "Tra cứu liên hệ",
+                "contact_department": department,
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "CONTACT_GUIDE_BY_DEPARTMENT",
+            }
 
-        return (
-            guide_message,
-            "CONTACT_GUIDE_BY_DEPARTMENT",
-            new_ctx,
-            "",
+            return (
+                guide_message,
+                "CONTACT_GUIDE_BY_DEPARTMENT",
+                new_ctx,
+                "",
+            )
+
+    if (
+        len(results) > limit
+        and has_specific_signal
+        and _contact_paging_enabled(department)
+    ):
+        return _make_contact_page_reply(
+            text=text,
+            department=department,
+            page=1,
         )
 
     reply = format_multiple_results(
@@ -873,11 +950,10 @@ def _reply_contact_results(text, limit=5, keep_context=False):
         limit=limit,
     )
 
-    if len(results) > 1:
+    if len(results) > limit:
         reply += (
             "\n\nℹ️ Có nhiều kết quả phù hợp. "
-            "Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách "
-            "để BOT tra cứu chính xác."
+            "Quý công dân vui lòng nhập rõ hơn họ tên để BOT tra cứu chính xác."
         )
 
     new_ctx = {
@@ -897,7 +973,6 @@ def _reply_contact_results(text, limit=5, keep_context=False):
         new_ctx if keep_context else {},
         "",
     )
-
 
 # Chức năng: Tìm thủ tục liên kết từ FAQ bằng RELATED_ID.
 # Vai trò: Biến FAQ thành lớp hiểu ý định và dẫn về đúng thủ tục trong Google Sheets.
@@ -1238,7 +1313,28 @@ def route_message(user_text, context=None):
 
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
+        
+    if is_next_page_question(text) and ctx.get("stage") == "contact_list":
+        contact_query = ctx.get("contact_query", "")
+        department = ctx.get("contact_department", "")
+        next_page = safe_int(ctx.get("contact_page", 1), 1) + 1
 
+        paged = _make_contact_page_reply(
+            text=contact_query,
+            department=department,
+            page=next_page,
+        )
+
+        if paged:
+            return paged
+
+        ctx["last_route"] = "CONTACT_LIST_END"
+        return (
+            "✅ Đã hiển thị hết danh sách phù hợp.",
+            "CONTACT_LIST_END",
+            ctx,
+            "",
+        )
     selected = _select_from_suggestions(text, ctx)
     if selected:
         new_ctx = {
