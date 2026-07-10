@@ -16,6 +16,7 @@ from config import (
     GOOGLE_CREDENTIALS_FILE,
     GOOGLE_CREDENTIALS_JSON,
     SHEET_MENU,
+    SHEET_FILTER_BAD_WORD,
     SHEET_SETTING_SYSTEM,
     SHEET_SETTING_AI,
     SHEET_SETTING_CHAT,
@@ -236,15 +237,21 @@ def _read_active(sheet_name: str) -> List[Dict[str, str]]:
 # PUBLIC READ FUNCTIONS
 # =========================
 
+# Chức năng: Đọc các quy tắc ngăn chặn từ ngữ thiếu văn hóa từ Google Sheets.
+# Vai trò: Cung cấp dữ liệu kiểm duyệt cho Search Engine mà không hardcode từ ngữ trong Python.
+def read_filter_bad_word() -> List[Dict[str, str]]:
+    return _read_active(SHEET_FILTER_BAD_WORD)
+
+
+# Chức năng: Đọc sheet MENU.
+# Vai trò: Cung cấp dữ liệu định tuyến chức năng cho BOT.
 def read_menu() -> List[Dict[str, str]]:
-    # Chức năng: Đọc sheet MENU.
-    # Vai trò: Cung cấp dữ liệu định tuyến chức năng cho BOT.
     return _read_active(SHEET_MENU)
 
 
+# Chức năng: Đọc sheet TRA_CUU_LIEN_HE.
+# Vai trò: Cung cấp dữ liệu liên hệ cán bộ, bộ phận, trực ban cho BOT.
 def read_lien_he() -> List[Dict[str, str]]:
-    # Chức năng: Đọc sheet TRA_CUU_LIEN_HE.
-    # Vai trò: Cung cấp dữ liệu liên hệ cán bộ, bộ phận, trực ban cho BOT.
     return _read_active(SHEET_TRA_CUU_LIEN_HE)
 
 
@@ -603,6 +610,7 @@ def sheet_health() -> Dict[str, Any]:
         existing = {ws.title for ws in ss.worksheets()}
         check_sheets = [
             SHEET_MENU,
+            SHEET_FILTER_BAD_WORD,
             SHEET_SETTING_SYSTEM,
             SHEET_SETTING_AI,
             SHEET_SETTING_CHAT,
