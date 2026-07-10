@@ -73,13 +73,6 @@ def keyword_score(user_text, keywords, weight=1):
 
     return score
 
-def field_score(user_text, *fields):
-    # Chức năng: Chấm điểm nhiều trường dữ liệu theo cơ chế từ khóa.
-    # Vai trò: Hỗ trợ gom điểm từ nhiều cột dữ liệu khi tìm kiếm.
-    score = 0
-    for field in fields:
-        score += keyword_score(user_text, field)
-    return score
 
 
 def phrase_score(user_text, value, weight=1):
@@ -147,27 +140,8 @@ def search_menu(user_text):
     return results[0] if results else None
 
 
-def _agency_base_name(name):
-    # Chức năng: Chuẩn hóa tên cơ quan về tên gốc để so khớp rộng.
-    # Vai trò: Giúp BOT nhận diện tên cơ quan khi người dân nhập thiếu phần mô tả.
-    text = normalize_text(name)
-    text = re.sub(r"\(.*?\)", "", text)
-    text = re.sub(r"\bco so\s*\d+\b", "", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
 
 
-def _keyword_exact_match(user_text, keywords):
-    # Chức năng: Kiểm tra câu hỏi có khớp rõ một từ khóa trong cột TU_KHOA hay không.
-    # Vai trò: Là tầng lọc chính xác trước khi tìm kiếm rộng.
-    user_norm = normalize_text(user_text)
-
-    for kw in split_keywords(keywords):
-        kw_norm = normalize_text(kw)
-        if kw_norm and kw_norm in user_norm:
-            return True
-
-    return False
 
 
 
