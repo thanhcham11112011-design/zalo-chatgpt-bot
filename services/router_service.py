@@ -1170,6 +1170,27 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
+    thu_tuc_results = _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5)
+    if thu_tuc_results:
+        best = thu_tuc_results[0]
+        best_score = safe_int(best.get("_SCORE", 0))
+        second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
+
+        if best_score >= 45 and best_score >= second_score + 15:
+            new_ctx = {
+                "sheet": best.get("_SHEET", ""),
+                "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
+                "procedure_id": get_first(best, "ID", "MA", "MÃ"),
+                "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+                "stage": "procedure",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "THU_TUC_TU_KHOA_GLOBAL",
+            }
+            if is_followup_detail_question(text):
+                return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
+            return format_thu_tuc(best), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
+
     faq = search_faq(text, limit=3)
 
     if not detect_bo_phan_contact(text):
@@ -1203,12 +1224,7 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    if (
-        faq
-        and not explicit
-        and not is_contact_question(text)
-        and not _should_keep_procedure_context(text, ctx, explicit)
-    ):
+    if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
         normal_faq = _normal_faq_rows(faq)
         if normal_faq:
             new_ctx = _faq_plain_context(ctx, "FAQ")
@@ -1423,27 +1439,6 @@ def route_message(user_text, context=None):
         new_ctx["last_suggestions"] = suggestions
         new_ctx["last_route"] = "MENU"
         return reply, "MENU", new_ctx, ""
-
-    thu_tuc_results = _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5)
-    if thu_tuc_results:
-        best = thu_tuc_results[0]
-        best_score = safe_int(best.get("_SCORE", 0))
-        second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
-
-        if best_score >= 45 and best_score >= second_score + 15:
-            new_ctx = {
-                "sheet": best.get("_SHEET", ""),
-                "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
-                "procedure_id": get_first(best, "ID", "MA", "MÃ"),
-                "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                "stage": "procedure",
-                "page": 1,
-                "last_suggestions": [],
-                "last_route": "THU_TUC_TU_KHOA_GLOBAL",
-            }
-            if is_followup_detail_question(text):
-                return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
-            return format_thu_tuc(best), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
 
     normal_faq = _normal_faq_rows(faq)
     if normal_faq:
