@@ -29,6 +29,7 @@ ZALO_REFRESH_TOKEN = os.getenv("ZALO_REFRESH_TOKEN", "").strip()
 # Chức năng: Khai báo tên các sheet lõi của hệ thống.
 # Vai trò: Đây là hằng số kỹ thuật để sheet_api.py truy cập dữ liệu, không phải dữ liệu nghiệp vụ.
 SHEET_MENU = "MENU"
+SHEET_FILTER_BAD_WORD = "FILTER_BAD_WORD"
 SHEET_SETTING_SYSTEM = "SETTING_SYSTEM"
 SHEET_SETTING_AI = "SETTING_AI"
 SHEET_SETTING_CHAT = "SETTING_CHAT"
