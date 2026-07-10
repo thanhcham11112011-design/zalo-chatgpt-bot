@@ -248,6 +248,45 @@ def _name_token_score(user_text, name):
     return 0
 
 
+
+def _detect_contact_department(user_text, rows):
+    # Chức năng: Nhận diện bộ phận khi câu hỏi có tín hiệu rõ trong BO_PHAN hoặc TU_KHOA.
+    # Vai trò: Phân biệt các dòng cùng địa bàn mà không bắt buộc mọi tra cứu phải có BO_PHAN.
+    candidates = {}
+
+    for row in rows:
+        fields = _contact_field_values(row)
+        department = str(fields.get("bo_phan") or "").strip()
+        department_norm = normalize_text(department)
+        if not department_norm:
+            continue
+
+        score = _exact_keyword_score(user_text, department, 20000)
+        area_tokens = set(normalize_text(fields.get("tdp")).split())
+
+        for keyword in split_keywords(fields.get("keywords")):
+            keyword_tokens = set(x for x in normalize_text(keyword).split() if len(x) >= 3)
+            if keyword_tokens and area_tokens and keyword_tokens.issubset(area_tokens):
+                continue
+            score += _exact_keyword_score(user_text, keyword, 10000)
+
+        if score <= 0:
+            continue
+
+        current = candidates.get(department_norm)
+        priority = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999)
+        if not current or score > current[0] or (score == current[0] and priority < current[1]):
+            candidates[department_norm] = (score, priority, department)
+
+    if not candidates:
+        return ""
+
+    ranked = sorted(candidates.values(), key=lambda item: (-item[0], item[1], normalize_text(item[2])))
+    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+        return ""
+
+    return ranked[0][2]
+
 def search_lien_he(user_text, limit=3):
     # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE.
     # Vai trò: Chấm điểm hoàn toàn theo dữ liệu liên hệ, không hardcode cán bộ/bộ phận.
@@ -257,6 +296,8 @@ def search_lien_he(user_text, limit=3):
 
     active_rows = [row for row in read_lien_he() if _active_status(row)]
     phone_digits = re.sub(r"\D+", "", str(user_text or ""))
+    department_filter = _detect_contact_department(user_text, active_rows)
+    department_filter_norm = normalize_text(department_filter)
 
     if len(phone_digits) >= 9:
         phone_results = []
@@ -278,6 +319,10 @@ def search_lien_he(user_text, limit=3):
     scored = []
     for row in active_rows:
         fields = _contact_field_values(row)
+
+        if department_filter_norm and normalize_text(fields.get("bo_phan")) != department_filter_norm:
+            continue
+
         score = 0
         notes = []
 
