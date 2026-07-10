@@ -4,26 +4,7 @@ from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_t
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
 from services.logger import debug_print
 
-# Chức năng: Kiểm tra một mẫu từ ngữ vi phạm có khớp trọn từ hoặc trọn cụm trong câu hỏi hay không.
-# Vai trò: Ngăn chặn khớp chuỗi con làm ảnh hưởng các từ ngữ hợp lệ.
-def _bad_word_pattern_match(user_text, pattern, match_type="CUM_TU"):
-    text_norm = normalize_text(user_text)
-    pattern_norm = normalize_text(pattern)
 
-    if not text_norm or not pattern_norm:
-        return False
-
-    text_box = f" {text_norm} "
-    pattern_box = f" {pattern_norm} "
-    match_type_norm = normalize_text(match_type)
-
-    if match_type_norm in ["chinh xac", "exact"]:
-        return text_norm == pattern_norm
-
-    if match_type_norm in ["tu don", "word", "whole word"]:
-        return len(pattern_norm.split()) == 1 and pattern_box in text_box
-
-    return pattern_box in text_box
 
 # Chức năng: Chuẩn hóa chuỗi thành các từ nhưng giữ nguyên dấu tiếng Việt.
 # Vai trò: Phục vụ so khớp từng từ mà không làm mất sự khác biệt giữa tao, tảo, táo, tạo.
