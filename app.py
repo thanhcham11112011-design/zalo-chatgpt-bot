@@ -5,7 +5,6 @@ from config import PORT, check_config
 from services.router_service import route_message_for_ai, get_welcome_message
 from services.gemini_service import ask_gemini_status
 from services.zalo_service import send_zalo_text
-from services.logger import log_chat
 from services.logger import (
     write_log,
     log_error,
@@ -352,9 +351,6 @@ def api_chat():
     return jsonify({"success": True, "answer": answer, "source": source})
 
 
-# Chức năng: Nhận webhook từ Zalo OA.
-# Vai trò: Chuyển tin nhắn người dân vào luồng xử lý BOT CAP 3.1.
-@app.route("/webhook", methods=["GET", "POST"])
 # Chức năng: Nhận webhook từ Zalo OA.
 # Vai trò: Chuyển tin nhắn người dân vào luồng xử lý BOT CAP 3.1.
 @app.route("/webhook", methods=["GET", "POST"])
