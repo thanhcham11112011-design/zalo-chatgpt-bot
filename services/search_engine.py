@@ -1,7 +1,7 @@
 import re
 import unicodedata
 from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc, read_filter_bad_word
-from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
+from services.text_utils import normalize_text, get_first, safe_int, split_keywords, split_list, compact
 from services.logger import debug_print
 
 
@@ -119,7 +119,7 @@ def detect_bad_language(user_text):
             default="CUM_TU",
         )
 
-        for pattern in split_keywords(patterns):
+        for pattern in split_list(patterns):
             if not _bad_word_pattern_match(user_text, pattern, match_type):
                 continue
 
