@@ -30,36 +30,19 @@ def _active_status(row):
 
 
 def detect_bo_phan_contact(user_text):
-    # Chức năng: Nhận diện bộ phận liên hệ bằng dữ liệu trong sheet TRA_CUU_LIEN_HE.
-    # Vai trò: Loại bỏ danh sách bộ phận hardcode, để Google Sheets quyết định nhóm liên hệ.
+    # Chức năng: Nhận diện bộ phận liên hệ bằng tín hiệu chính xác trong sheet TRA_CUU_LIEN_HE.
+    # Vai trò: Chỉ xác định bộ phận khi BO_PHAN hoặc TU_KHOA khớp rõ, tránh cướp luồng FAQ và phản ánh.
     text_norm = normalize_text(user_text)
 
     if not text_norm:
         return ""
 
-    candidates = []
+    active_rows = [
+        row for row in read_lien_he()
+        if _active_status(row)
+    ]
 
-    for row in read_lien_he():
-        if not _active_status(row):
-            continue
-
-        bo_phan = get_first(row, "BO_PHAN", "BỘ_PHẬN")
-        if not bo_phan:
-            continue
-
-        score = 0
-        score += phrase_score(user_text, bo_phan, 6)
-        score += keyword_score(user_text, get_first(row, "TU_KHOA", "TỪ_KHÓA"), 5)
-        score += phrase_score(user_text, get_first(row, "CHUC_NANG", "CHỨC_NĂNG"), 2)
-
-        if score > 0:
-            candidates.append((score, safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999), bo_phan))
-
-    if not candidates:
-        return ""
-
-    candidates.sort(key=lambda item: (item[1], -item[0]))
-    return candidates[0][2]
+    return _detect_contact_department(user_text, active_rows)
 
 def keyword_score(user_text, keywords, weight=1):
     # Chức năng: Chấm điểm khớp từ khóa giữa câu hỏi và chuỗi từ khóa trong Sheet.
