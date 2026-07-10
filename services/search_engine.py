@@ -1,7 +1,56 @@
 import re
-from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc
+from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc, read_filter_bad_word
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, compact
 from services.logger import debug_print
+
+# Chức năng: Kiểm tra một mẫu từ ngữ vi phạm có khớp trọn từ hoặc trọn cụm trong câu hỏi hay không.
+# Vai trò: Ngăn chặn khớp chuỗi con làm ảnh hưởng các từ ngữ hợp lệ.
+def _bad_word_pattern_match(user_text, pattern, match_type="CUM_TU"):
+    text_norm = normalize_text(user_text)
+    pattern_norm = normalize_text(pattern)
+
+    if not text_norm or not pattern_norm:
+        return False
+
+    text_box = f" {text_norm} "
+    pattern_box = f" {pattern_norm} "
+    match_type_norm = normalize_text(match_type)
+
+    if match_type_norm in ["chinh xac", "exact"]:
+        return text_norm == pattern_norm
+
+    if match_type_norm in ["tu don", "word", "whole word"]:
+        return len(pattern_norm.split()) == 1 and pattern_box in text_box
+
+    return pattern_box in text_box
+
+
+# Chức năng: Tìm quy tắc ngăn chặn từ ngữ thiếu văn hóa trong sheet FILTER_BAD_WORD.
+# Vai trò: Chặn sớm nội dung vi phạm bằng dữ liệu Google Sheets trước khi định tuyến nghiệp vụ.
+def detect_bad_language(user_text):
+    matches = []
+
+    for row in read_filter_bad_word():
+        patterns = get_first(row, "TU_KHOA", "TỪ_KHÓA", "PATTERN", "MAU_CAU", "MẪU_CÂU")
+        match_type = get_first(row, "KIEU_KHOP", "KIỂU_KHỚP", "MATCH_TYPE", default="CUM_TU")
+
+        for pattern in split_keywords(patterns):
+            if not _bad_word_pattern_match(user_text, pattern, match_type):
+                continue
+
+            item = dict(row)
+            item["_MATCHED_PATTERN"] = pattern
+            item["_MUC_DO"] = safe_int(get_first(row, "MUC_DO", "MỨC_ĐỘ", "LEVEL"), 1)
+            item["_UU_TIEN"] = safe_int(get_first(row, "MUC_UU_TIEN", "ƯU_TIÊN", "UU_TIEN"), 999)
+            matches.append(item)
+            break
+
+    if not matches:
+        return None
+
+    matches.sort(key=lambda r: (-safe_int(r.get("_MUC_DO", 1)), safe_int(r.get("_UU_TIEN", 999))))
+    return matches[0]
+
 
 def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
     # Chức năng: Gắn metadata tìm kiếm vào một dòng kết quả.
