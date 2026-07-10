@@ -1203,7 +1203,12 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
+    if (
+        faq
+        and not explicit
+        and not is_contact_question(text)
+        and not _should_keep_procedure_context(text, ctx, explicit)
+    ):
         normal_faq = _normal_faq_rows(faq)
         if normal_faq:
             new_ctx = _faq_plain_context(ctx, "FAQ")
