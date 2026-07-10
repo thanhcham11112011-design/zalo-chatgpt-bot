@@ -1,7 +1,6 @@
 
 from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin, read_thu_tuc_sheet_names, read_thu_tuc_sheet
-from services.logger import debug_print
 from services.search_engine import (
     search_menu,
     search_lien_he,
@@ -14,6 +13,7 @@ from services.search_engine import (
     format_faq,
     format_thu_tuc,
     format_multiple_results,
+    find_lien_he_by_ten_co_quan,
 )
 
 PAGE_SIZE = 5
@@ -275,29 +275,6 @@ def is_followup_detail_question(user_text):
         "lam truc tuyen", "nop truc tuyen", "co lam online duoc khong",
     ]
     return any(kw in text for kw in detail_keywords) or is_location_question(text)
-
-# Chức năng: Tìm liên hệ theo tên cơ quan/cán bộ từ TRA_CUU_LIEN_HE.
-# Vai trò: Bổ sung nơi tiếp nhận cho thủ tục bằng dữ liệu Google Sheets.
-def find_lien_he_by_ten_co_quan(name):
-    if not name:
-        return None
-
-    name_norm = normalize_text(name)
-    rows = read_lien_he()
-
-    for row in rows:
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        if normalize_text(ten) == name_norm:
-            return row
-
-    for row in rows:
-        ten = get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN")
-        ten_norm = normalize_text(ten)
-        if ten_norm and (name_norm in ten_norm or ten_norm in name_norm):
-            return row
-
-    return None
-
 
 # Chức năng: Tạo tin nhắn chào mừng và danh mục hỗ trợ từ MENU/SETTING_CHAT.
 # Vai trò: Không hardcode danh mục nghiệp vụ trong Python.
