@@ -237,7 +237,7 @@ def is_contact_question(text):
         "can bo phu trach", "ai phu trach", "truc ban",
         "cskv", "canh sat khu vuc", "to dan pho", "tdp",
         "to an ninh", "to cstt", "to pctp", "to tong hop",
-        "an ninh trat tu o co so", "antt o co so"
+        "an ninh trat tu o co so", "antt o co so",
         "chi huy", "lanh dao", "truong cap", "truong cong an phuong",
         "pho cap", "pho cong an phuong", "pho truong cap", "pho truong cong an phuong",
     ]
