@@ -335,19 +335,26 @@ def _exact_keyword_score(user_text, keywords, base_score=0):
 
 
 def _name_token_score(user_text, name):
-    # Chức năng: Chấm điểm khi câu hỏi có chứa họ tên cán bộ/cơ quan.
-    # Vai trò: Hỗ trợ tra cứu trực tiếp theo tên trong TRA_CUU_LIEN_HE.
+    # Chức năng: Chấm điểm khi câu hỏi chứa đúng họ tên hoặc nhiều từ trong họ tên.
+    # Vai trò: Ưu tiên khớp nguyên cụm và tránh khớp một phần từ trong TRA_CUU_LIEN_HE.
     user_norm = normalize_text(user_text)
     name_norm = normalize_text(name)
 
     if not user_norm or not name_norm:
         return 0
 
-    if name_norm in user_norm:
-        return 50000
+    user_box = f" {user_norm} "
+    name_box = f" {name_norm} "
 
+    if name_box in user_box:
+        return 60000
+
+    user_tokens = set(user_norm.split())
     name_tokens = [x for x in name_norm.split() if len(x) >= 3]
-    matched = [x for x in name_tokens if x in user_norm]
+    matched = [x for x in name_tokens if x in user_tokens]
+
+    if name_tokens and len(matched) == len(name_tokens):
+        return 45000 + len(matched) * 1000
 
     if len(matched) >= 2:
         return 35000 + len(matched) * 1000
@@ -413,7 +420,7 @@ def search_lien_he(user_text, limit=3):
             phone_norm = re.sub(r"\D+", "", str(fields.get("phone") or ""))
             if phone_norm and phone_digits in phone_norm:
                 phone_results.append(_add_meta(
-                    row=row,
+                    row=dict(row),
                     route="LIEN_HE",
                     score=100000,
                     sheet="TRA_CUU_LIEN_HE",
@@ -422,6 +429,35 @@ def search_lien_he(user_text, limit=3):
                 ))
         _sort_results(phone_results)
         return phone_results[:1]
+
+    exact_name_results = []
+    text_box = f" {text_norm} "
+
+    for row in active_rows:
+        fields = _contact_field_values(row)
+        name_norm = normalize_text(fields.get("name"))
+        name_tokens = [x for x in name_norm.split() if x]
+
+        if len(name_tokens) < 2:
+            continue
+
+        if f" {name_norm} " not in text_box:
+            continue
+
+        exact_name_results.append(_add_meta(
+            row=dict(row),
+            route="LIEN_HE",
+            score=100000,
+            sheet="TRA_CUU_LIEN_HE",
+            row_id=get_first(row, "ID", "MA", "MÃ"),
+            note="NAME_MATCH_EXACT",
+        ))
+
+    if exact_name_results:
+        exact_name_results.sort(
+            key=lambda r: safe_int(r.get("_UU_TIEN", 999))
+        )
+        return exact_name_results[:limit]
 
     scored = []
     for row in active_rows:
@@ -484,6 +520,68 @@ def search_lien_he(user_text, limit=3):
 
     return same_group[:limit]
 
+def _related_procedure_signal(user_text, related_ids):
+    # Chức năng: Kiểm tra câu hỏi có tín hiệu rõ của thủ tục được FAQ liên kết hay không.
+    # Vai trò: Chặn FAQ_RELATED dẫn sang thủ tục khác khi tên hoặc TU_KHOA không khớp.
+    user_norm = normalize_text(user_text)
+    user_box = f" {user_norm} "
+    user_tokens = set(user_norm.split())
+    resolved = False
+
+    for related_id in split_keywords(related_ids):
+        related_norm = normalize_text(related_id)
+
+        if related_norm and (
+            user_norm == related_norm
+            or f" {related_norm} " in user_box
+        ):
+            return True, True
+
+        procedure = find_procedure_by_id(related_id)
+        if not procedure:
+            continue
+
+        resolved = True
+        procedure_name = normalize_text(
+            get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+        )
+
+        if procedure_name and (
+            user_norm == procedure_name
+            or f" {procedure_name} " in user_box
+        ):
+            return True, True
+
+        procedure_keywords = get_first(
+            procedure,
+            "TU_KHOA",
+            "TỪ_KHÓA",
+            "KEYWORDS",
+        )
+
+        for keyword in split_keywords(procedure_keywords):
+            keyword_norm = normalize_text(keyword)
+            keyword_tokens = [x for x in keyword_norm.split() if x]
+
+            if not keyword_tokens:
+                continue
+
+            if len(keyword_tokens) >= 2 and (
+                user_norm == keyword_norm
+                or f" {keyword_norm} " in user_box
+            ):
+                return True, True
+
+            if (
+                len(keyword_tokens) == 1
+                and len(keyword_norm) >= 5
+                and keyword_norm in user_tokens
+            ):
+                return True, True
+
+    return resolved, False
+
+
 def search_faq(user_text, limit=3):
     # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
     # Vai trò: Chặn FAQ liên kết thủ tục cướp câu hỏi chi tiết ngắn khi chưa đủ căn cứ.
@@ -522,21 +620,17 @@ def search_faq(user_text, limit=3):
 
         score = keyword_match + question_match + ways_match
 
-        if related_id:
-            related_norm = normalize_text(related_id)
-            specific_signal = False
-            for value in [keywords, question, ways]:
-                value_norm = normalize_text(value)
-                if not value_norm:
-                    continue
-                value_tokens = [x for x in value_norm.split() if len(x) >= 3]
-                matched_tokens = [x for x in value_tokens if x in user_norm]
-                if len(matched_tokens) >= 2 and any(x not in detail_keys for x in matched_tokens):
-                    specific_signal = True
-                    break
-            if related_norm and related_norm in user_norm:
-                specific_signal = True
-            if not specific_signal and score < 120:
+        if related_id and ngu_canh not in [
+            "procedure_context",
+            "thongtin",
+            "tra_cuu_lien_he",
+            "menu",
+        ]:
+            related_resolved, related_matched = _related_procedure_signal(
+                user_text,
+                related_id,
+            )
+            if related_resolved and not related_matched:
                 continue
 
         if score < 35:
@@ -847,5 +941,4 @@ def find_lien_he_by_ten_co_quan(name):
                 row_id=get_first(row, "ID", "MA", "MÃ"),
                 note="AGENCY_PARTIAL_MATCH",
             )
-
     return None
