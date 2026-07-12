@@ -1427,7 +1427,11 @@ def route_message(user_text, context=None):
     contact_intent = is_contact_question(text)
 
     if contact_intent:
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        contact_reply = _reply_contact_results(
+            text,
+            limit=5,
+            keep_context=False
+        )
         if contact_reply:
             return contact_reply
 
@@ -1439,9 +1443,13 @@ def route_message(user_text, context=None):
             "procedure_name": "",
             "page": 1,
             "last_suggestions": [],
-            "last_route": "CONTACT_GUIDE",
+            "last_route": "CONTACT_NOT_FOUND",
         }
-        return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
+
+        return _chat_setting(
+            "CONTACT_NOT_FOUND",
+            "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng kiểm tra lại họ tên, bộ phận hoặc địa bàn phụ trách."
+        ), "CONTACT_NOT_FOUND", new_ctx, ""
 
     if not detect_bo_phan_contact(text):
         thongtin_reply = _reply_thongtin_from_faq_rows(faq)
