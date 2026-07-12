@@ -520,16 +520,17 @@ def search_lien_he(user_text, limit=3):
 
     return same_group[:limit]
 
+# Chức năng: Kiểm tra câu hỏi có tín hiệu rõ của thủ tục được FAQ liên kết hay không.
+# Vai trò: Chặn FAQ_RELATED dẫn sang thủ tục khác khi tên hoặc TU_KHOA không khớp.
 def _related_procedure_signal(user_text, related_ids):
-    # Chức năng: Kiểm tra câu hỏi có tín hiệu rõ của thủ tục được FAQ liên kết hay không.
-    # Vai trò: Chặn FAQ_RELATED dẫn sang thủ tục khác khi tên hoặc TU_KHOA không khớp.
     user_norm = normalize_text(user_text)
     user_box = f" {user_norm} "
     user_tokens = set(user_norm.split())
     resolved = False
 
-    for related_id in split_keywords(related_ids):
-        related_norm = normalize_text(related_id)
+    for related_id in split_list(related_ids):
+        related_value = str(related_id or "").strip()
+        related_norm = normalize_text(related_value)
 
         if related_norm and (
             user_norm == related_norm
@@ -537,7 +538,7 @@ def _related_procedure_signal(user_text, related_ids):
         ):
             return True, True
 
-        procedure = find_procedure_by_id(related_id)
+        procedure = find_procedure_by_id(related_value)
         if not procedure:
             continue
 
@@ -580,7 +581,6 @@ def _related_procedure_signal(user_text, related_ids):
                 return True, True
 
     return resolved, False
-
 
 def search_faq(user_text, limit=3):
     # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
