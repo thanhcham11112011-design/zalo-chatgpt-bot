@@ -438,32 +438,44 @@ def _procedure_id(row):
 
 
 # Chức năng: Tính điểm khớp thủ tục chỉ bằng cột TU_KHOA.
-# Vai trò: Bảo đảm THU_TUC_* thường được định tuyến bằng TU_KHOA, không bị FAQ cướp luồng.
+# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ hoặc nguyên cụm, không khớp chuỗi con.
 def _score_procedure_by_tu_khoa(text, row):
     t = normalize_text(text)
     t_box = f" {t} "
+    t_tokens = set(t.split())
+    raw_text = " ".join(str(text or "").lower().split())
+    raw_box = f" {raw_text} "
     score = 0
 
     pid = normalize_text(_procedure_id(row))
-    if pid and pid in t:
+    if pid and (t == pid or f" {pid} " in t_box):
         score += 80
 
-    keywords = _split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS"))
+    keywords = _split_keywords(
+        get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")
+    )
+
     for kw in keywords:
         n = normalize_text(kw)
+        raw_kw = " ".join(str(kw or "").lower().split())
+
         if not n:
             continue
-        if t == n:
+
+        parts = [p for p in n.split() if len(p) >= 3]
+
+        if raw_text == raw_kw:
             score += 70
-        elif f" {n} " in t_box or n in t:
+        elif raw_kw and f" {raw_kw} " in raw_box:
             score += 45
-        else:
-            parts = [p for p in n.split() if len(p) >= 3]
-            if parts and all(p in t for p in parts):
-                score += 25
+        elif len(parts) >= 2 and f" {n} " in t_box:
+            score += 45
+        elif len(parts) >= 2 and all(p in t_tokens for p in parts):
+            score += 25
+        elif len(parts) == 1 and len(parts[0]) >= 5 and parts[0] in t_tokens:
+            score += 25
 
     return score
-
 
 # Chức năng: Tìm thủ tục theo TU_KHOA trong các sheet THU_TUC_*.
 # Vai trò: Dùng Google Sheets làm nguồn định tuyến chính cho thủ tục thường.
