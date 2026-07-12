@@ -1413,43 +1413,51 @@ def route_message(user_text, context=None):
 
     explicit = detect_explicit_topic(text)
 
-    if explicit:
-        explicit_sheet = explicit.get("sheet", "")
-
-        candidate_results = search_thu_tuc(
+    candidate_results = []
+    if ctx.get("procedure_id") and is_followup_detail_question(text):
+        candidate_results = _search_thu_tuc_by_tu_khoa(
             text,
-            limit=5,
-            sheet=explicit_sheet
+            sheet=explicit.get("sheet", "") if explicit else None,
+            limit=5
         )
 
-        if not candidate_results:
-            candidate_results = _search_thu_tuc_by_tu_khoa(
-                text,
-                sheet=explicit_sheet,
-                limit=5
-            )
+    if candidate_results:
+        best = candidate_results[0]
+        best_score = safe_int(best.get("_SCORE", 0))
+        second_score = (
+            safe_int(candidate_results[1].get("_SCORE", 0))
+            if len(candidate_results) > 1
+            else 0
+        )
 
-        if candidate_results:
-            best = candidate_results[0]
-            best_score = safe_int(best.get("_SCORE", 0))
-            current_id = normalize_text(ctx.get("procedure_id"))
-            best_id = normalize_text(get_first(best, "ID", "MA", "MÃ"))
+        current_id = normalize_text(ctx.get("procedure_id"))
+        best_id = normalize_text(get_first(best, "ID", "MA", "MÃ"))
 
-            if best_score >= 45 and best_id and best_id != current_id:
-                new_ctx = {
-                    "sheet": best.get("_SHEET", ""),
-                    "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
-                    "procedure_id": get_first(best, "ID", "MA", "MÃ"),
-                    "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                    "stage": "procedure",
-                    "page": 1,
-                    "last_suggestions": [],
-                    "last_route": "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT",
-                }
-                return answer_procedure_detail(
+        if (
+            best_score >= 45
+            and best_score >= second_score + 15
+            and best_id
+            and best_id != current_id
+        ):
+            new_ctx = {
+                "sheet": best.get("_SHEET", ""),
+                "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
+                "procedure_id": get_first(best, "ID", "MA", "MÃ"),
+                "procedure_name": get_first(
                     best,
-                    text
-                ), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
+                    "TEN_THU_TUC",
+                    "TÊN_THỦ_TỤC"
+                ),
+                "stage": "procedure",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT",
+            }
+
+            return answer_procedure_detail(
+                best,
+                text
+            ), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
 
     if _should_keep_procedure_context(text, ctx, explicit):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
@@ -1459,22 +1467,6 @@ def route_message(user_text, context=None):
                 procedure,
                 text
             ), "PROCEDURE_CONTEXT", ctx, ""
-
-    if faq and not contact_intent:
-        normal_faq = _normal_faq_rows(faq)
-        if normal_faq:
-            new_ctx = _faq_plain_context(ctx, "FAQ")
-            return format_multiple_results(
-                normal_faq[:1],
-                format_faq,
-                limit=1
-            ), "FAQ", new_ctx, ""
-
-    actionable_faq = [row for row in faq or [] if _faq_has_action(row, ctx)]
-    if actionable_faq:
-        faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
-        if faq_routed and faq_routed[1] != "FAQ":
-            return faq_routed
 
     if faq:
         faq_routed = _route_from_faq_rows(text, faq, ctx)
