@@ -477,6 +477,53 @@ def _score_procedure_by_tu_khoa(text, row):
 
     return score
 
+# Chức năng: Tính mức độ câu hỏi nêu rõ một thủ tục bằng tên và TU_KHOA trong Google Sheets.
+# Vai trò: Phân biệt tên thủ tục cụ thể với từ hỏi chi tiết chung trước khi đổi ngữ cảnh.
+def _specific_procedure_match_score(text, row):
+    t = normalize_text(text)
+    t_box = f" {t} "
+    score = 0
+
+    pid = normalize_text(_procedure_id(row))
+    if pid and (t == pid or f" {pid} " in t_box):
+        score = max(score, 1000)
+
+    procedure_name = normalize_text(
+        get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+    )
+    procedure_tokens = {
+        token for token in procedure_name.split() if len(token) >= 3
+    }
+
+    if procedure_name:
+        if t == procedure_name:
+            score = max(score, 900 + len(procedure_tokens))
+        elif f" {procedure_name} " in t_box:
+            score = max(score, 800 + len(procedure_tokens))
+
+    keywords = _split_keywords(
+        get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")
+    )
+
+    for keyword in keywords:
+        keyword_norm = normalize_text(keyword)
+        if not keyword_norm:
+            continue
+
+        keyword_tokens = {
+            token for token in keyword_norm.split() if len(token) >= 3
+        }
+        if not keyword_tokens.intersection(procedure_tokens):
+            continue
+
+        if t == keyword_norm:
+            score = max(score, 700 + len(keyword_tokens))
+        elif f" {keyword_norm} " in t_box:
+            score = max(score, 600 + len(keyword_tokens))
+
+    return score
+
+
 # Chức năng: Tìm thủ tục theo TU_KHOA trong các sheet THU_TUC_*.
 # Vai trò: Dùng Google Sheets làm nguồn định tuyến chính cho thủ tục thường.
 def _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5, include_vneid=False):
@@ -1376,27 +1423,6 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
-    thu_tuc_results = _search_thu_tuc_by_tu_khoa(text, sheet=None, limit=5)
-    if thu_tuc_results:
-        best = thu_tuc_results[0]
-        best_score = safe_int(best.get("_SCORE", 0))
-        second_score = safe_int(thu_tuc_results[1].get("_SCORE", 0)) if len(thu_tuc_results) > 1 else 0
-
-        if best_score >= 45 and best_score >= second_score + 15:
-            new_ctx = {
-                "sheet": best.get("_SHEET", ""),
-                "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
-                "procedure_id": get_first(best, "ID", "MA", "MÃ"),
-                "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
-                "stage": "procedure",
-                "page": 1,
-                "last_suggestions": [],
-                "last_route": "THU_TUC_TU_KHOA_GLOBAL",
-            }
-            if is_followup_detail_question(text):
-                return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
-            return format_thu_tuc(best), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
-
     faq = search_faq(text, limit=3)
     contact_intent = is_contact_question(text)
 
@@ -1424,52 +1450,96 @@ def route_message(user_text, context=None):
             return thongtin_reply, "FAQ_THONGTIN", ctx, ""
 
     explicit = detect_explicit_topic(text)
+    detail_question = is_followup_detail_question(text)
+    current_id = normalize_text(ctx.get("procedure_id"))
+    search_sheet = explicit.get("sheet", "") if explicit else None
 
-    candidate_results = []
-    if ctx.get("procedure_id") and is_followup_detail_question(text):
-        candidate_results = _search_thu_tuc_by_tu_khoa(
-            text,
-            sheet=explicit.get("sheet", "") if explicit else None,
-            limit=5
+    thu_tuc_results = _search_thu_tuc_by_tu_khoa(
+        text,
+        sheet=search_sheet,
+        limit=5,
+    )
+
+    specific_results = []
+    for row in thu_tuc_results:
+        specific_score = _specific_procedure_match_score(text, row)
+        if specific_score <= 0:
+            continue
+
+        item = dict(row)
+        item["_SPECIFIC_SCORE"] = specific_score
+        specific_results.append(item)
+
+    specific_results.sort(
+        key=lambda row: (
+            safe_int(row.get("_SPECIFIC_SCORE", 0)),
+            safe_int(row.get("_SCORE", 0)),
+        ),
+        reverse=True,
+    )
+
+    best = specific_results[0] if specific_results else None
+    best_specific = safe_int(best.get("_SPECIFIC_SCORE", 0)) if best else 0
+    second_specific = (
+        safe_int(specific_results[1].get("_SPECIFIC_SCORE", 0))
+        if len(specific_results) > 1
+        else 0
+    )
+    best_score = safe_int(best.get("_SCORE", 0)) if best else 0
+    second_score = (
+        safe_int(specific_results[1].get("_SCORE", 0))
+        if len(specific_results) > 1
+        else 0
+    )
+    best_id = normalize_text(
+        get_first(best, "ID", "MA", "MÃ")
+    ) if best else ""
+
+    strong_match = bool(
+        best
+        and best_id
+        and best_specific > 0
+        and (
+            len(specific_results) == 1
+            or best_specific > second_specific
+            or best_score >= second_score + 15
         )
+    )
 
-    if candidate_results:
-        best = candidate_results[0]
-        best_score = safe_int(best.get("_SCORE", 0))
-        second_score = (
-            safe_int(candidate_results[1].get("_SCORE", 0))
-            if len(candidate_results) > 1
-            else 0
+    if strong_match and (not current_id or best_id != current_id):
+        route_name = (
+            "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT"
+            if current_id
+            else "THU_TUC_TU_KHOA_GLOBAL"
         )
-
-        current_id = normalize_text(ctx.get("procedure_id"))
-        best_id = normalize_text(get_first(best, "ID", "MA", "MÃ"))
-
-        if (
-            best_score >= 45
-            and best_score >= second_score + 15
-            and best_id
-            and best_id != current_id
-        ):
-            new_ctx = {
-                "sheet": best.get("_SHEET", ""),
-                "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
-                "procedure_id": get_first(best, "ID", "MA", "MÃ"),
-                "procedure_name": get_first(
-                    best,
-                    "TEN_THU_TUC",
-                    "TÊN_THỦ_TỤC"
-                ),
-                "stage": "procedure",
-                "page": 1,
-                "last_suggestions": [],
-                "last_route": "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT",
-            }
-
-            return answer_procedure_detail(
+        new_ctx = {
+            "sheet": best.get("_SHEET", ""),
+            "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
+            "procedure_id": get_first(best, "ID", "MA", "MÃ"),
+            "procedure_name": get_first(
                 best,
-                text
-            ), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
+                "TEN_THU_TUC",
+                "TÊN_THỦ_TỤC",
+            ),
+            "stage": "procedure",
+            "page": 1,
+            "last_suggestions": [],
+            "last_route": route_name,
+        }
+
+        if detail_question:
+            return answer_procedure_detail(best, text), route_name, new_ctx, ""
+        return format_thu_tuc(best), route_name, new_ctx, ""
+
+    if strong_match and best_id == current_id:
+        procedure = find_procedure_by_id(ctx.get("procedure_id")) or best
+        ctx["last_route"] = "PROCEDURE_CONTEXT"
+        if detail_question:
+            return answer_procedure_detail(
+                procedure,
+                text,
+            ), "PROCEDURE_CONTEXT", ctx, ""
+        return format_thu_tuc(procedure), "PROCEDURE_CONTEXT", ctx, ""
 
     if _should_keep_procedure_context(text, ctx, explicit):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
@@ -1477,7 +1547,7 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(
                 procedure,
-                text
+                text,
             ), "PROCEDURE_CONTEXT", ctx, ""
 
     if faq:
