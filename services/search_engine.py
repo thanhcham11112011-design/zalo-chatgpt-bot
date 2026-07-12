@@ -584,12 +584,15 @@ def _related_procedure_signal(user_text, related_ids):
 
 def search_faq(user_text, limit=3):
     # Chức năng: Tìm câu hỏi thường gặp phù hợp trong sheet FAQ.
-    # Vai trò: Chặn FAQ liên kết thủ tục cướp câu hỏi chi tiết ngắn khi chưa đủ căn cứ.
+    # Vai trò: Chỉ trả FAQ khi khớp rõ câu hỏi, cách hỏi hoặc cụm từ khóa trong Google Sheets.
     results = []
     user_norm = normalize_text(user_text)
 
     if not user_norm:
         return []
+
+    user_box = f" {user_norm} "
+    user_tokens = set(user_norm.split())
 
     detail_keys = [
         "ho so", "giay to", "can gi", "gom gi", "le phi", "phi",
@@ -597,8 +600,14 @@ def search_faq(user_text, limit=3):
         "nop o dau", "noi nop", "noi lam", "dia chi", "link",
         "online", "truc tuyen", "ket qua", "nhan ket qua",
     ]
-    user_tokens = [x for x in user_norm.split() if x]
-    is_short_detail_question = len(user_tokens) <= 5 and any(k in user_norm for k in detail_keys)
+
+    is_short_detail_question = (
+        len(user_tokens) <= 5
+        and any(
+            user_norm == key or f" {key} " in user_box
+            for key in detail_keys
+        )
+    )
 
     for row in read_faq():
         if not _active_status(row):
@@ -607,18 +616,80 @@ def search_faq(user_text, limit=3):
         keywords = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         question = get_first(row, "CAU_HOI", "CÂU_HỎI")
         ways = get_first(row, "CAC_CACH_HOI", "CÁC_CÁCH_HỎI")
-        answer = get_first(row, "TRA_LOI", "TRẢ_LỜI", "TRA_LOI_NGAN", "TRẢ_LỜI_NGẮN", "TRA_LOI_DAY_DU", "TRẢ_LỜI_ĐẦY_ĐỦ")
-        related_id = get_first(row, "RELATED_ID", "RELATED", "MA_THU_TUC", "MÃ_THỦ_TỤC")
-        ngu_canh = normalize_text(get_first(row, "NGU_CANH", "NGỮ_CẢNH"))
+        answer = get_first(
+            row,
+            "TRA_LOI",
+            "TRẢ_LỜI",
+            "TRA_LOI_NGAN",
+            "TRẢ_LỜI_NGẮN",
+            "TRA_LOI_DAY_DU",
+            "TRẢ_LỜI_ĐẦY_ĐỦ",
+        )
+        related_id = get_first(
+            row,
+            "RELATED_ID",
+            "RELATED",
+            "MA_THU_TUC",
+            "MÃ_THỦ_TỤC",
+        )
+        ngu_canh = normalize_text(
+            get_first(row, "NGU_CANH", "NGỮ_CẢNH")
+        )
 
-        if is_short_detail_question and related_id and ngu_canh not in ["procedure_context"]:
+        if (
+            is_short_detail_question
+            and related_id
+            and ngu_canh != "procedure_context"
+        ):
             continue
 
-        keyword_match = keyword_score(user_text, keywords, 6)
-        question_match = phrase_score(user_text, question, 5)
-        ways_match = keyword_score(user_text, ways, 5)
+        score = 0
+        strong_signal = False
 
-        score = keyword_match + question_match + ways_match
+        question_norm = normalize_text(question)
+        if question_norm and user_norm == question_norm:
+            score += 500
+            strong_signal = True
+
+        for way in split_keywords(ways):
+            way_norm = normalize_text(way)
+            if not way_norm:
+                continue
+
+            way_tokens = way_norm.split()
+
+            if user_norm == way_norm:
+                score += 450
+                strong_signal = True
+            elif (
+                len(way_tokens) >= 2
+                and f" {way_norm} " in user_box
+            ):
+                score += 320
+                strong_signal = True
+
+        for keyword in split_keywords(keywords):
+            keyword_norm = normalize_text(keyword)
+            if not keyword_norm:
+                continue
+
+            keyword_tokens = keyword_norm.split()
+
+            if user_norm == keyword_norm:
+                score += 400
+                strong_signal = True
+            elif (
+                len(keyword_tokens) >= 2
+                and f" {keyword_norm} " in user_box
+            ):
+                score += 260
+                strong_signal = True
+            elif (
+                len(keyword_tokens) == 1
+                and len(keyword_norm) >= 5
+                and keyword_norm in user_tokens
+            ):
+                score += 40
 
         if related_id and ngu_canh not in [
             "procedure_context",
@@ -630,10 +701,18 @@ def search_faq(user_text, limit=3):
                 user_text,
                 related_id,
             )
+
             if related_resolved and not related_matched:
                 continue
 
-        if score < 35:
+            if related_matched:
+                score += 300
+                strong_signal = True
+
+        if not strong_signal:
+            continue
+
+        if score < 200:
             continue
 
         if not answer and not related_id:
@@ -649,9 +728,9 @@ def search_faq(user_text, limit=3):
         ))
 
     results.sort(
-        key=lambda r: (
-            -safe_int(r.get("_SCORE", 0)),
-            safe_int(r.get("_UU_TIEN", 999)),
+        key=lambda row: (
+            -safe_int(row.get("_SCORE", 0)),
+            safe_int(row.get("_UU_TIEN", 999)),
         )
     )
 
@@ -659,8 +738,14 @@ def search_faq(user_text, limit=3):
         "FAQ",
         f"USER_TEXT: {user_text}",
         *[
-            f"{get_first(r,'ID')} SCORE={r.get('_SCORE')} PRIORITY={r.get('_UU_TIEN')} QUESTION={get_first(r,'CAU_HOI','CÂU_HỎI')} RELATED={get_first(r,'RELATED_ID')}"
-            for r in results[:5]
+            (
+                f"{get_first(row, 'ID')} "
+                f"SCORE={row.get('_SCORE')} "
+                f"PRIORITY={row.get('_UU_TIEN')} "
+                f"QUESTION={get_first(row, 'CAU_HOI', 'CÂU_HỎI')} "
+                f"RELATED={get_first(row, 'RELATED_ID')}"
+            )
+            for row in results[:5]
         ]
     )
 
