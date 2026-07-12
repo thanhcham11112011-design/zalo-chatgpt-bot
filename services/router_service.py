@@ -232,7 +232,7 @@ def is_contact_question(text):
         return True
 
     contact_intent_keys = [
-        "lien he", "so dien thoai", "sdt", "dien thoai",
+        "lien he", "so dien thoai", "sdt",
         "hotline", "gap can bo", "gap dong chi", "gap dc",
         "can bo phu trach", "ai phu trach", "truc ban",
         "cskv", "canh sat khu vuc", "to dan pho", "tdp",
