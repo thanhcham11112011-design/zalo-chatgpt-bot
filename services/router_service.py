@@ -237,26 +237,13 @@ def is_contact_question(text):
         "can bo phu trach", "ai phu trach", "truc ban",
         "cskv", "canh sat khu vuc", "to dan pho", "tdp",
         "to an ninh", "to cstt", "to pctp", "to tong hop",
+        "an ninh trat tu o co so", "antt o co so"
         "chi huy", "lanh dao", "truong cap", "truong cong an phuong",
         "pho cap", "pho cong an phuong", "pho truong cap", "pho truong cong an phuong",
     ]
 
     return any(k in t for k in contact_intent_keys)
 
-
-# Chức năng: Kiểm tra câu hỏi có ý định liên hệ rõ ràng.
-# Vai trò: Cho phép ưu tiên TRA_CUU_LIEN_HE nhưng không cướp luồng phản ánh ANTT/FAQ.
-def _is_clear_contact_intent(text):
-    t = normalize_text(text)
-    clear_keys = [
-        "lien he", "so dien thoai", "sdt", "dien thoai",
-        "hotline", "gap", "dong chi", "dc", "can bo",
-        "phu trach", "chi huy", "lanh dao","quan ly",
-        "an ninh trat tu o co so",
-        "truong cap", "truong cong an phuong",
-        "pho cap", "pho truong cap", "pho cong an phuong", "pho truong cong an phuong",
-    ]
-    return any(k in t for k in clear_keys)
 
 
 # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
