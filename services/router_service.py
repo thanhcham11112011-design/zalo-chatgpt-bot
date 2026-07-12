@@ -247,7 +247,7 @@ def is_contact_question(text):
 
 
 # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
-# Vai trò: Giữ đúng context thủ tục hiện tại khi người dân hỏi hồ sơ, lệ phí, thời hạn.
+# Vai trò: Chỉ giữ context khi câu hỏi còn lại là cách hỏi chung, không chứa chủ đề nghiệp vụ mới.
 def is_followup_detail_question(user_text):
     text = normalize_text(user_text)
     detail_keywords = [
@@ -258,11 +258,27 @@ def is_followup_detail_question(user_text):
         "phi", "mat phi", "co so phap ly", "can cu phap ly", "link",
         "dich vu cong", "ket qua", "luu y", "chi tiet", "buu dien",
         "buu chinh", "chuyen phat", "gui ve nha", "nhan tai nha",
-        "nhan ket qua","lam truc tuyen", "truc tuyen",
-        "online", "lam online", "làm online", "nop online", "nộp online",
-        "lam truc tuyen", "nop truc tuyen", "co lam online duoc khong",
+        "nhan ket qua", "lam truc tuyen", "truc tuyen",
+        "online", "lam online", "nop online", "nop truc tuyen",
+        "co lam online duoc khong",
     ]
-    return any(kw in text for kw in detail_keywords) or is_location_question(text)
+
+    matched = [kw for kw in detail_keywords if kw in text]
+    if not matched:
+        return False
+
+    remaining = text
+    for kw in sorted(matched, key=len, reverse=True):
+        remaining = remaining.replace(kw, " ")
+
+    common_words = {
+        "la", "gi", "gom", "nhung", "bao", "nhieu", "duoc", "khong",
+        "the", "nao", "can", "co", "mat", "nop", "giai", "quyet",
+        "xin", "cho", "toi", "hoi", "ve", "nay", "do", "thu", "tuc",
+        "chuan", "bi", "phai", "mang"
+    }
+
+    return set(normalize_text(remaining).split()).issubset(common_words)
 
 # Chức năng: Tạo tin nhắn chào mừng và danh mục hỗ trợ từ MENU/SETTING_CHAT.
 # Vai trò: Không hardcode danh mục nghiệp vụ trong Python.
