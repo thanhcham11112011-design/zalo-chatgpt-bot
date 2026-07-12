@@ -1413,8 +1413,8 @@ def route_message(user_text, context=None):
 
     explicit = detect_explicit_topic(text)
 
-    if dict(ctx or {}).get("procedure_id") and is_followup_detail_question(text):
-        explicit_sheet = explicit.get("sheet", "") if explicit else ""
+    if explicit:
+        explicit_sheet = explicit.get("sheet", "")
 
         candidate_results = search_thu_tuc(
             text,
