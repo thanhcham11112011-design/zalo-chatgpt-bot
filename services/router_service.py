@@ -1387,14 +1387,9 @@ def route_message(user_text, context=None):
             return format_thu_tuc(best), "THU_TUC_TU_KHOA_GLOBAL", new_ctx, ""
 
     faq = search_faq(text, limit=3)
+    contact_intent = is_contact_question(text)
 
-    if not detect_bo_phan_contact(text):
-        thongtin_reply = _reply_thongtin_from_faq_rows(faq)
-        if thongtin_reply:
-            ctx["last_route"] = "FAQ_THONGTIN"
-            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
-
-    if is_contact_question(text):
+    if contact_intent:
         contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
         if contact_reply:
             return contact_reply
@@ -1410,7 +1405,13 @@ def route_message(user_text, context=None):
             "last_route": "CONTACT_GUIDE",
         }
         return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
-            
+
+    if not detect_bo_phan_contact(text):
+        thongtin_reply = _reply_thongtin_from_faq_rows(faq)
+        if thongtin_reply:
+            ctx["last_route"] = "FAQ_THONGTIN"
+            return thongtin_reply, "FAQ_THONGTIN", ctx, ""
+
     explicit = detect_explicit_topic(text)
 
     if _should_keep_procedure_context(text, ctx, explicit):
@@ -1419,7 +1420,7 @@ def route_message(user_text, context=None):
             ctx["last_route"] = "PROCEDURE_CONTEXT"
             return answer_procedure_detail(procedure, text), "PROCEDURE_CONTEXT", ctx, ""
 
-    if faq and not is_contact_question(text) and not _should_keep_procedure_context(text, ctx, explicit):
+    if faq and not contact_intent and not _should_keep_procedure_context(text, ctx, explicit):
         normal_faq = _normal_faq_rows(faq)
         if normal_faq:
             new_ctx = _faq_plain_context(ctx, "FAQ")
@@ -1430,15 +1431,16 @@ def route_message(user_text, context=None):
         faq_routed = _route_from_faq_rows(text, actionable_faq, ctx)
         if faq_routed and faq_routed[1] != "FAQ":
             return faq_routed
+
     if explicit:
         explicit_sheet = explicit.get("sheet", "")
-    
+
         candidate_results = search_thu_tuc(
             text,
             limit=5,
             sheet=explicit_sheet
         )
-    
+
         if not candidate_results:
             candidate_results = _search_thu_tuc_by_tu_khoa(
                 text,
@@ -1463,7 +1465,10 @@ def route_message(user_text, context=None):
                     "last_suggestions": [],
                     "last_route": "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT",
                 }
-                return answer_procedure_detail(best, text), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
+                return answer_procedure_detail(
+                    best,
+                    text
+                ), "THU_TUC_TU_KHOA_OVERRIDE_CONTEXT", new_ctx, ""
 
     if _should_keep_procedure_context(text, ctx, explicit):
         procedure = find_procedure_by_id(ctx.get("procedure_id"))
@@ -1480,17 +1485,15 @@ def route_message(user_text, context=None):
         contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
         if contact_reply:
             return contact_reply
+
         ctx["last_route"] = "CONTACT_NOT_FOUND"
         return _chat_setting(
             "CONTACT_NOT_FOUND",
             "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."
         ), "CONTACT_NOT_FOUND", ctx, ""
 
-    if is_contact_question(text):
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
-        if contact_reply:
-            return contact_reply
     menu_row = _match_menu_by_data(text)
+    
     if menu_row and normalize_text(get_first(menu_row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
         new_ctx = menu_context(menu_row)
         new_ctx["last_route"] = "MENU"
