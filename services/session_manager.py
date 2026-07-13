@@ -82,58 +82,17 @@ def get_context(user_id: Any) -> Dict[str, Any]:
 
     return dict(cached)
 
-# Chức năng: Lưu context hội thoại của một người dùng.
-# Vai trò: Ghi ngữ cảnh kỹ thuật vào bộ nhớ tạm và sheet BOT_SESSION.
+# Chức năng: Lưu context hội thoại của một người dùng vào bộ nhớ tạm.
+# Vai trò: Không ghi BOT_SESSION trong mỗi lượt nhắn, tránh vượt quota Google Sheets.
 def save_context(user_id: Any, context: Dict[str, Any]) -> bool:
     uid = _uid(user_id)
     if not uid:
         return False
 
     ctx = _normalize_context(_safe_context(context))
-    updated_at = _now().isoformat(timespec="seconds")
-    ctx["updated_at"] = updated_at
+    ctx["updated_at"] = _now().isoformat(timespec="seconds")
     _memory[uid] = ctx
-
-    try:
-        ws = ensure_session_sheet()
-        values = ws.get_all_values()
-        if not values:
-            ws.append_row([
-                "USER_ID",
-                "CONTEXT_JSON",
-                "LAST_ROUTE",
-                "LAST_SHEET",
-                "LAST_RECORD_ID",
-                "LAST_MENU",
-                "LAST_PROCEDURE",
-                "PAGE",
-                "UPDATED_AT",
-            ])
-            values = ws.get_all_values()
-
-        row_values = [
-            uid,
-            _context_json(ctx),
-            str(ctx.get("last_route", "")),
-            str(ctx.get("sheet", "")),
-            str(ctx.get("procedure_id", "")),
-            str(ctx.get("topic", "")),
-            str(ctx.get("procedure_name", "")),
-            str(ctx.get("page", "")),
-            updated_at,
-        ]
-
-        row_index = _find_user_row(values, uid)
-        if row_index:
-            ws.update(f"A{row_index}:I{row_index}", [row_values])
-        else:
-            ws.append_row(row_values)
-        return True
-
-    except Exception as e:
-        print(f"[SESSION SAVE ERROR] {e}")
-        return False
-
+    return True
 
 # Chức năng: Xóa context hội thoại của một người dùng.
 # Vai trò: Reset phiên chat khi người dân quay lại menu hoặc kết thúc trao đổi.
