@@ -537,14 +537,20 @@ def search_lien_he(user_text, limit=3):
         score = 0
         notes = []
 
-        name_score = _name_token_score(
-            user_text,
-            fields.get("name"),
+        name_norm = normalize_text(
+            fields.get("name")
         )
+        name_score = 0
+
+        if (
+            name_norm
+            and f" {name_norm} " in f" {text_norm} "
+        ):
+            name_score = 90000
 
         if name_score:
-            score += name_score * 5
-            notes.append("NAME_MATCH")
+            score += name_score
+            notes.append("NAME_MATCH_EXACT")
 
         role_score = _exact_keyword_score(
             user_text,
