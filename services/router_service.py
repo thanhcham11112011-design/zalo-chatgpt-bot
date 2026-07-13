@@ -438,11 +438,12 @@ def _procedure_id(row):
 
 
 # Chức năng: Tính điểm khớp thủ tục chỉ bằng cột TU_KHOA.
-# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ hoặc nguyên cụm, không khớp chuỗi con.
+# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ, nguyên cụm hoặc đúng thứ tự từ.
 def _score_procedure_by_tu_khoa(text, row):
     t = normalize_text(text)
     t_box = f" {t} "
-    t_tokens = set(t.split())
+    t_words = t.split()
+    t_tokens = set(t_words)
     raw_text = " ".join(str(text or "").lower().split())
     raw_box = f" {raw_text} "
     score = 0
@@ -462,7 +463,7 @@ def _score_procedure_by_tu_khoa(text, row):
         if not n:
             continue
 
-        parts = [p for p in n.split() if len(p) >= 3]
+        parts = [part for part in n.split() if len(part) >= 3]
 
         if raw_text == raw_kw:
             score += 70
@@ -470,8 +471,20 @@ def _score_procedure_by_tu_khoa(text, row):
             score += 45
         elif len(parts) >= 2 and f" {n} " in t_box:
             score += 45
-        elif len(parts) >= 2 and all(p in t_tokens for p in parts):
-            score += 25
+        elif len(parts) >= 2:
+            search_from = 0
+            ordered_match = True
+
+            for part in parts:
+                try:
+                    search_from = t_words.index(part, search_from) + 1
+                except ValueError:
+                    ordered_match = False
+                    break
+
+            if ordered_match:
+                score += 25
+
         elif len(parts) == 1 and len(parts[0]) >= 5 and parts[0] in t_tokens:
             score += 25
 
