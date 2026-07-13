@@ -1,6 +1,8 @@
 import hmac
 import os
 import time
+from collections import OrderedDict
+from threading import Lock
 
 from flask import Flask, request, jsonify
 
@@ -37,8 +39,16 @@ _health_check_cache = {
 
 app = Flask(__name__)
 
-processed_messages = set()
-MAX_PROCESSED_MESSAGES = 5000
+MESSAGE_DEDUP_TTL_SECONDS = max(
+    60,
+    int(os.getenv("MESSAGE_DEDUP_TTL_SECONDS", "600")),
+)
+MAX_PROCESSED_MESSAGES = max(
+    100,
+    int(os.getenv("MAX_PROCESSED_MESSAGES", "5000")),
+)
+processed_messages = OrderedDict()
+processed_messages_lock = Lock()
 
 # Chức năng: Kiểm tra khóa bảo vệ API nội bộ từ HTTP header.
 # Vai trò: Ngăn người ngoài gọi test-ai và api-chat để tiêu hao tài nguyên BOT.
@@ -176,17 +186,37 @@ def log_unknown_safe(user_id, question, route="UNKNOWN", note="NO_SHEET_MATCH", 
         return False
 
 
-# Chức năng: Kiểm tra và ghi nhớ message_id đã xử lý.
-# Vai trò: Chống xử lý trùng webhook Zalo.
+# Chức năng: Kiểm tra và ghi nhớ message_id webhook trong thời hạn chống trùng.
+# Vai trò: Chặn nguyên tử webhook đồng thời và tự loại bản ghi cũ khỏi bộ nhớ.
 def remember_message(message_id):
-    if not message_id:
+    message_key = str(message_id or "").strip()
+
+    if not message_key:
         return False
-    if message_id in processed_messages:
-        return True
-    processed_messages.add(message_id)
-    if len(processed_messages) > MAX_PROCESSED_MESSAGES:
-        processed_messages.clear()
-    return False
+
+    now = time.monotonic()
+    expired_before = now - MESSAGE_DEDUP_TTL_SECONDS
+
+    with processed_messages_lock:
+        while processed_messages:
+            oldest_id, oldest_seen_at = next(
+                iter(processed_messages.items())
+            )
+
+            if oldest_seen_at > expired_before:
+                break
+
+            processed_messages.popitem(last=False)
+
+        if message_key in processed_messages:
+            return True
+
+        processed_messages[message_key] = now
+
+        while len(processed_messages) > MAX_PROCESSED_MESSAGES:
+            processed_messages.popitem(last=False)
+
+        return False
 
 
 # Chức năng: Gọi Gemini theo cơ chế tùy chọn và nhận trạng thái AI.
