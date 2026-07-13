@@ -30,24 +30,15 @@ def _has_vietnamese_diacritic(value):
 
 
 # Chức năng: Kiểm tra hai từ có tương đương trong bộ lọc ngôn từ hay không.
-# Vai trò: Cho phép bỏ dấu đúng trường hợp nhưng không để tao khớp nhầm tảo, táo hoặc tạo.
+# Vai trò: Chỉ khớp chính xác tiếng Việt có dấu, không quy đổi bỏ dấu để tránh nhận diện nhầm từ khác nghĩa.
 def _bad_word_token_match(user_token, pattern_token):
-    user_original = str(user_token or "").lower()
-    pattern_original = str(pattern_token or "").lower()
+    user_original = str(user_token or "").strip().lower()
+    pattern_original = str(pattern_token or "").strip().lower()
 
-    if user_original == pattern_original:
-        return True
-
-    user_norm = normalize_text(user_original)
-    pattern_norm = normalize_text(pattern_original)
-
-    if not user_norm or user_norm != pattern_norm:
+    if not user_original or not pattern_original:
         return False
 
-    if _has_vietnamese_diacritic(pattern_original):
-        return True
-
-    return not _has_vietnamese_diacritic(user_original)
+    return user_original == pattern_original
 
 
 # Chức năng: Kiểm tra một mẫu từ ngữ vi phạm có khớp trọn từ hoặc trọn cụm trong câu hỏi hay không.
@@ -96,6 +87,7 @@ def _bad_word_pattern_match(user_text, pattern, match_type="CUM_TU"):
             return True
 
     return False
+
 
 # Chức năng: Tìm quy tắc ngăn chặn từ ngữ thiếu văn hóa trong sheet FILTER_BAD_WORD.
 # Vai trò: Chặn sớm nội dung vi phạm bằng dữ liệu Google Sheets trước khi định tuyến nghiệp vụ.
@@ -151,7 +143,6 @@ def detect_bad_language(user_text):
         )
     )
     return matches[0]
-
 
 def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
     # Chức năng: Gắn metadata tìm kiếm vào một dòng kết quả.
