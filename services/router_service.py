@@ -999,16 +999,27 @@ def get_contact_lookup_message():
     return "📌 Tra cứu liên hệ\n\nQuý công dân vui lòng nhập nội dung liên hệ cần tra cứu."
 
 # Chức năng: Lấy thông báo hướng dẫn riêng cho bộ phận liên hệ từ SETTING_CHAT.
-# Vai trò: Cho phép khai báo nhiều bộ phận cần hướng dẫn riêng mà không hardcode nghiệp vụ trong Python.
+# Vai trò: Hỗ trợ khóa riêng theo mã bộ phận và duy trì tương thích với các cấu hình hướng dẫn hiện có.
 def _contact_department_guide(department):
-    department_norm = normalize_text(department)
+    department_value = str(department or "").strip()
+    department_norm = normalize_text(department_value)
 
     if not department_norm:
         return ""
 
+    direct_key = f"CONTACT_GUIDE_{department_value.upper()}"
+    direct_message = _chat_setting(direct_key, "")
+
+    if direct_message:
+        return direct_message
+
     guide_configs = [
         (
             "CONTACT_GUIDE_DEPARTMENT",
+            "CONTACT_GUIDE",
+        ),
+        (
+            "CONTACT_GUIDE_MESSAGE_DEPARTMENT",
             "CONTACT_GUIDE_MESSAGE",
         ),
         (
