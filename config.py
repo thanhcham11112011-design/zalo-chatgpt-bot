@@ -7,6 +7,7 @@ load_dotenv()
 # Vai trò: Giữ config.py chỉ làm lớp cấu hình hạ tầng, không chứa nghiệp vụ.
 PORT = int(os.getenv("PORT", "5000"))
 DEBUG_MODE = os.getenv("DEBUG_MODE", "FALSE").strip().upper() == "TRUE"
+INTERNAL_API_KEY = os.getenv("INTERNAL_API_KEY", "").strip()
 
 # Chức năng: Cấu hình kết nối Google Sheets.
 # Vai trò: Google Sheets là nguồn dữ liệu nghiệp vụ duy nhất của BOT CAP 3.1.
