@@ -300,7 +300,10 @@ def read_sheet(
 
     try:
         ws = get_worksheet(sheet_name)
-        records = ws.get_all_records(default_blank="")
+        records = ws.get_all_records(
+            default_blank="",
+            numericise_ignore=["all"],
+        )
         rows: List[Dict[str, str]] = []
 
         for row in records:
