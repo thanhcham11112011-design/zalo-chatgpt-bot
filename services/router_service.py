@@ -1091,28 +1091,107 @@ def _make_contact_page_reply(text, department, page=1):
 
     return reply, "CONTACT_LIST_PAGE", new_ctx, ""
 
-# Chức năng: Xử lý kết quả liên hệ và hướng dẫn làm rõ theo cấu hình từng bộ phận.
-# Vai trò: Chỉ áp dụng hướng dẫn riêng cho bộ phận được khai báo trong SETTING_CHAT, không ảnh hưởng bộ phận khác.
 # Chức năng: Xử lý kết quả liên hệ, hướng dẫn làm rõ và phân trang theo cấu hình bộ phận.
-# Vai trò: Phân trang riêng cho bộ phận được khai báo, không ảnh hưởng các luồng liên hệ khác.
+# Vai trò: Lọc chính xác địa bàn TDP từ dữ liệu Sheet trước khi định dạng kết quả trả lời.
 def _reply_contact_results(text, limit=5, keep_context=False, contact_results=None):
-    results = contact_results if contact_results is not None else search_lien_he(text, limit=999)
+    results = (
+        contact_results
+        if contact_results is not None
+        else search_lien_he(text, limit=999)
+    )
 
     if not results:
         return None
 
+    text_norm = normalize_text(text)
+    text_box = f" {text_norm} "
+    area_candidates = []
+
+    for row in results:
+        area = str(
+            row.get("TDP")
+            or row.get("DIA_BAN")
+            or row.get("ĐỊA_BÀN")
+            or ""
+        ).strip()
+
+        area_norm = normalize_text(area)
+
+        if not area_norm:
+            continue
+
+        if f" {area_norm} " not in text_box:
+            continue
+
+        area_candidates.append(
+            (
+                len(area_norm.split()),
+                len(area_norm),
+                row,
+            )
+        )
+
+    has_direct_area_match = bool(area_candidates)
+
+    if area_candidates:
+        best_area_rank = max(
+            (word_count, text_length)
+            for word_count, text_length, row in area_candidates
+        )
+
+        results = [
+            row
+            for word_count, text_length, row in area_candidates
+            if (word_count, text_length) == best_area_rank
+        ]
+
     department = detect_bo_phan_contact(text)
 
-    has_area_match = any(
-        "AREA_MATCH" in str(row.get("_NOTE") or "")
-        for row in results
+    if not department:
+        departments = {}
+
+        for row in results:
+            row_department = str(
+                row.get("BO_PHAN")
+                or row.get("BỘ_PHẬN")
+                or ""
+            ).strip()
+
+            row_department_norm = normalize_text(
+                row_department
+            )
+
+            if row_department_norm:
+                departments[
+                    row_department_norm
+                ] = row_department
+
+        if len(departments) == 1:
+            department = next(
+                iter(departments.values())
+            )
+
+    has_area_match = (
+        has_direct_area_match
+        or any(
+            "AREA_MATCH" in str(
+                row.get("_NOTE") or ""
+            )
+            for row in results
+        )
     )
+
     has_name_match = any(
-        "NAME_MATCH" in str(row.get("_NOTE") or "")
+        "NAME_MATCH" in str(
+            row.get("_NOTE") or ""
+        )
         for row in results
     )
+
     has_phone_match = any(
-        "PHONE_MATCH" in str(row.get("_NOTE") or "")
+        "PHONE_MATCH" in str(
+            row.get("_NOTE") or ""
+        )
         for row in results
     )
 
@@ -1123,7 +1202,9 @@ def _reply_contact_results(text, limit=5, keep_context=False, contact_results=No
     )
 
     if len(results) > 1 and not has_specific_signal:
-        guide_message = _contact_department_guide(department)
+        guide_message = _contact_department_guide(
+            department
+        )
 
         if guide_message:
             new_ctx = {
