@@ -180,18 +180,21 @@ def clear_cache(sheet_name: Optional[str] = None):
 
 
 def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
-    # Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa.
-    # Vai trò: Là hàm đọc dữ liệu trung tâm cho toàn bộ BOT CAP 3.1.
+    # Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa và dùng cache dự phòng khi Google Sheets lỗi.
+    # Vai trò: Bảo đảm BOT vẫn có dữ liệu gần nhất khi API bị giới hạn 429 hoặc gián đoạn tạm thời.
     sheet_name = _clean_value(sheet_name)
     if not sheet_name:
         return []
 
     now = time.time()
+    cached_rows = []
+    cached_at = 0
 
-    if use_cache and sheet_name in _cache:
-        cached_at, rows = _cache[sheet_name]
-        if now - cached_at <= CACHE_TTL_SECONDS:
-            return [dict(r) for r in rows]
+    if sheet_name in _cache:
+        cached_at, cached_rows = _cache[sheet_name]
+
+        if use_cache and now - cached_at <= CACHE_TTL_SECONDS:
+            return [dict(row) for row in cached_rows]
 
     try:
         ws = get_worksheet(sheet_name)
@@ -200,20 +203,33 @@ def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
 
         for row in records:
             cleaned = _clean_row(row)
-            if any(str(v).strip() for v in cleaned.values()):
+            if any(str(value).strip() for value in cleaned.values()):
                 rows.append(cleaned)
 
         _cache[sheet_name] = (now, rows)
-        return [dict(r) for r in rows]
+        return [dict(row) for row in rows]
 
     except gspread.WorksheetNotFound:
         print(f"[SHEET WARNING] Không tìm thấy sheet: {sheet_name}")
+
+        if cached_rows:
+            print(f"[SHEET CACHE FALLBACK] {sheet_name}: dùng dữ liệu cache gần nhất")
+            return [dict(row) for row in cached_rows]
+
         return []
 
     except Exception as e:
         print(f"[SHEET READ ERROR] {sheet_name}: {e}")
-        return []
 
+        if cached_rows:
+            cache_age = int(now - cached_at)
+            print(
+                f"[SHEET CACHE FALLBACK] {sheet_name}: "
+                f"dùng cache cũ {cache_age} giây"
+            )
+            return [dict(row) for row in cached_rows]
+
+        return []
 
 def _is_active(row: Dict[str, Any]) -> bool:
     # Chức năng: Kiểm tra trạng thái hoạt động của một dòng dữ liệu.
