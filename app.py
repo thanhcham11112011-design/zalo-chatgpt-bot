@@ -370,8 +370,7 @@ def webhook():
             return jsonify({"success": False, "message": "Missing user_id"}), 400
 
         if event_name != "user_send_text":
-            send_zalo_text(user_id=user_id, message=get_welcome_message())
-            return jsonify({"success": True, "message": "Non-text event handled"}), 200
+            return jsonify({"success": True, "message": "Event ignored"}), 200
 
         message_id = message_data.get("msg_id") or message_data.get("message_id") or ""
         if remember_message(message_id):
