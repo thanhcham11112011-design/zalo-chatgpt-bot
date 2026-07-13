@@ -262,7 +262,7 @@ def is_location_question(text):
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
 # Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi có số điện thoại, yêu cầu liên hệ rõ hoặc bộ phận được cấu hình hướng dẫn.
-def is_contact_question(text):
+def is_contact_question(text, contact_results=None):
     t = normalize_text(text)
     phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
 
@@ -299,7 +299,7 @@ def is_contact_question(text):
     if department and _contact_department_guide(department):
         return True
 
-    results = search_lien_he(text, limit=5) or []
+    results = contact_results if contact_results is not None else (search_lien_he(text, limit=5) or [])
 
     for row in results:
         note = str(row.get("_NOTE") or "")
@@ -325,7 +325,7 @@ def is_contact_question(text):
 
 # Chức năng: Kiểm tra yêu cầu liên hệ đã nêu rõ cán bộ, bộ phận, địa bàn hoặc số điện thoại hay chưa.
 # Vai trò: Phân biệt tra cứu liên hệ cụ thể với yêu cầu hướng dẫn tra cứu chung.
-def _has_specific_contact_target(text):
+def _has_specific_contact_target(text, contact_results=None):
     t = normalize_text(text)
     phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
 
@@ -335,7 +335,7 @@ def _has_specific_contact_target(text):
     if detect_bo_phan_contact(text):
         return True
 
-    results = search_lien_he(text, limit=5) or []
+    results = contact_results if contact_results is not None else (search_lien_he(text, limit=5) or [])
     for row in results:
         note = str(row.get("_NOTE") or "")
         if any(signal in note for signal in ["NAME_MATCH", "PHONE_MATCH", "AREA_MATCH"]):
@@ -1095,8 +1095,8 @@ def _make_contact_page_reply(text, department, page=1):
 # Vai trò: Chỉ áp dụng hướng dẫn riêng cho bộ phận được khai báo trong SETTING_CHAT, không ảnh hưởng bộ phận khác.
 # Chức năng: Xử lý kết quả liên hệ, hướng dẫn làm rõ và phân trang theo cấu hình bộ phận.
 # Vai trò: Phân trang riêng cho bộ phận được khai báo, không ảnh hưởng các luồng liên hệ khác.
-def _reply_contact_results(text, limit=5, keep_context=False):
-    results = search_lien_he(text, limit=999)
+def _reply_contact_results(text, limit=5, keep_context=False, contact_results=None):
+    results = contact_results if contact_results is not None else search_lien_he(text, limit=999)
 
     if not results:
         return None
@@ -1624,18 +1624,27 @@ def route_message(user_text, context=None):
         return format_thu_tuc(exact_procedure), route_name, new_ctx, ""
 
     faq = search_faq(text, limit=3)
-    contact_intent = is_contact_question(text)
+    
+    contact_results = search_lien_he(text, limit=999) or []
+    contact_intent = is_contact_question(
+        text,
+        contact_results=contact_results,
+    )
 
     if contact_intent:
         contact_reply = _reply_contact_results(
             text,
             limit=5,
-            keep_context=False
+            keep_context=False,
+            contact_results=contact_results,
         )
         if contact_reply:
             return contact_reply
 
-        if not _has_specific_contact_target(text):
+        if not _has_specific_contact_target(
+            text,
+            contact_results=contact_results,
+        ):
             faq_routed = _route_from_faq_rows(text, faq, ctx) if faq else None
             if faq_routed:
                 reply, _route, _faq_ctx, ai_context = faq_routed
@@ -1793,7 +1802,12 @@ def route_message(user_text, context=None):
             return faq_routed
 
     if ctx.get("stage") == "contact_lookup":
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=True)
+        contact_reply = _reply_contact_results(
+            text,
+            limit=5,
+            keep_context=True,
+            contact_results=contact_results,
+        )
         if contact_reply:
             return contact_reply
 
