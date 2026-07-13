@@ -178,7 +178,6 @@ def clear_cache(sheet_name: Optional[str] = None):
     else:
         _cache.clear()
 
-
 def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
     # Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa và dùng cache dự phòng khi Google Sheets lỗi.
     # Vai trò: Bảo đảm BOT vẫn có dữ liệu gần nhất khi API bị giới hạn 429 hoặc gián đoạn tạm thời.
