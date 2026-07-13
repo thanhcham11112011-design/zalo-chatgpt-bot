@@ -406,9 +406,70 @@ def _detect_contact_department(user_text, rows):
 
     return ranked[0][2]
 
+# Chức năng: Nhận diện địa bàn TDP được nêu trực tiếp trong câu hỏi.
+# Vai trò: Lọc kết quả liên hệ theo dữ liệu cột TDP, không hardcode tên địa bàn trong Python.
+def _detect_contact_area(user_text, rows):
+    user_norm = normalize_text(user_text)
+
+    if not user_norm:
+        return ""
+
+    user_box = f" {user_norm} "
+    candidates = {}
+
+    for row in rows:
+        fields = _contact_field_values(row)
+        area = str(fields.get("tdp") or "").strip()
+        area_norm = normalize_text(area)
+
+        if not area_norm:
+            continue
+
+        if f" {area_norm} " not in user_box:
+            continue
+
+        priority = safe_int(
+            get_first(
+                row,
+                "MUC_UU_TIEN",
+                "UU_TIEN",
+                "ƯU_TIÊN",
+            ),
+            999,
+        )
+
+        rank = (
+            len(area_norm.split()),
+            len(area_norm),
+            -priority,
+        )
+
+        current = candidates.get(area_norm)
+
+        if not current or rank > current[0]:
+            candidates[area_norm] = (
+                rank,
+                area,
+            )
+
+    if not candidates:
+        return ""
+
+    ranked = sorted(
+        candidates.values(),
+        key=lambda item: (
+            -item[0][0],
+            -item[0][1],
+            -item[0][2],
+            normalize_text(item[1]),
+        ),
+    )
+
+    return ranked[0][1]
+
 
 # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE theo tên, chức danh, bộ phận và địa bàn.
-# Vai trò: Ưu tiên đúng chức danh và từ khóa nghiệp vụ, không để tên địa bàn tự động chọn nhầm CSKV, ANCS hoặc BO_MAY_TDP.
+# Vai trò: Lọc đúng địa bàn đã nêu trước khi chấm điểm, không để các TDP khác lọt vào kết quả.
 def search_lien_he(user_text, limit=3):
     text_norm = normalize_text(user_text)
 
@@ -433,6 +494,14 @@ def search_lien_he(user_text, limit=3):
     )
     department_filter_norm = normalize_text(
         department_filter
+    )
+
+    area_filter = _detect_contact_area(
+        user_text,
+        active_rows,
+    )
+    area_filter_norm = normalize_text(
+        area_filter
     )
 
     if len(phone_digits) >= 9:
@@ -495,6 +564,13 @@ def search_lien_he(user_text, limit=3):
         ):
             continue
 
+        if (
+            area_filter_norm
+            and normalize_text(fields.get("tdp"))
+            != area_filter_norm
+        ):
+            continue
+
         exact_name_results.append(
             _add_meta(
                 row=dict(row),
@@ -526,11 +602,21 @@ def search_lien_he(user_text, limit=3):
         row_department_norm = normalize_text(
             fields.get("bo_phan")
         )
+        row_area_norm = normalize_text(
+            fields.get("tdp")
+        )
 
         if (
             department_filter_norm
             and row_department_norm
             != department_filter_norm
+        ):
+            continue
+
+        if (
+            area_filter_norm
+            and row_area_norm
+            != area_filter_norm
         ):
             continue
 
@@ -572,12 +658,9 @@ def search_lien_he(user_text, limit=3):
             score += department_score
             notes.append("DEPARTMENT_MATCH")
 
-        area_norm = normalize_text(
-            fields.get("tdp")
-        )
         area_tokens = set(
             token
-            for token in area_norm.split()
+            for token in row_area_norm.split()
             if token
         )
 
@@ -651,6 +734,8 @@ def search_lien_he(user_text, limit=3):
         debug_print(
             "CONTACT",
             f"QUESTION: {user_text}",
+            f"DEPARTMENT_FILTER: {department_filter}",
+            f"AREA_FILTER: {area_filter}",
             "NO MATCH",
         )
         return []
