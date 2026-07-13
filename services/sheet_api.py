@@ -974,6 +974,7 @@ def sheet_health() -> Dict[str, Any]:
                     "MÃ_THỦ_TỤC",
                     "MA THU TUC",
                     "MÃ THỦ TỤC",
+                    "ID",
                 },
             ),
             (
@@ -997,7 +998,19 @@ def sheet_health() -> Dict[str, Any]:
                     "CƠ_QUAN_THỰC_HIỆN",
                 },
             ),
-            ("DOI_TUONG", {"DOI_TUONG", "ĐỐI_TƯỢNG", "DOI TUONG", "ĐỐI TƯỢNG"}),
+            (
+                "DOI_TUONG",
+                {
+                    "DOI_TUONG",
+                    "ĐỐI_TƯỢNG",
+                    "DOI TUONG",
+                    "ĐỐI TƯỢNG",
+                    "DOI_TUONG_AP_DUNG",
+                    "ĐỐI_TƯỢNG_ÁP_DỤNG",
+                    "DOI TUONG AP DUNG",
+                    "ĐỐI TƯỢNG ÁP DỤNG",
+                },
+            ),
             ("DIEU_KIEN", {"DIEU_KIEN", "ĐIỀU_KIỆN", "DIEU KIEN", "ĐIỀU KIỆN"}),
             ("HO_SO", {"HO_SO", "HỒ_SƠ", "HO SO", "HỒ SƠ"}),
             ("TRINH_TU", {"TRINH_TU", "TRÌNH_TỰ", "TRINH TU", "TRÌNH TỰ"}),
