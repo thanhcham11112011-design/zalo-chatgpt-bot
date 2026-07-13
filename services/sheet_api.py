@@ -599,27 +599,34 @@ def save_session(user_id: str, context: Dict[str, Any], updated_at: str) -> bool
         return False
 
 
-# =========================
-# DEBUG / HEALTH
-# =========================
-
+# Chức năng: Kiểm tra kết nối, sheet bắt buộc, cột lõi và tham chiếu dữ liệu trong Google Sheets.
+# Vai trò: Phát hiện sớm lỗi cấu trúc trước khi BOT đọc dữ liệu, định tuyến và trả lời người dân.
 def sheet_health() -> Dict[str, Any]:
-    # Chức năng: Kiểm tra tình trạng kết nối và sự tồn tại của các sheet bắt buộc.
-    # Vai trò: Hỗ trợ kiểm tra nhanh hệ thống BOT trước và sau khi deploy.
     result = {
         "ok": False,
         "spreadsheet_id": GOOGLE_SHEET_ID,
         "sheets": {},
+        "schema": {},
+        "procedure_sheets": [],
+        "missing": [],
+        "menu_references_missing": [],
+        "duplicate_menu_ids": [],
+        "menu_rows_missing_sheet": [],
         "total_required": 0,
         "total_missing": 0,
-        "missing": [],
+        "errors": [],
         "error": "",
     }
 
     try:
         ss = get_spreadsheet()
-        existing = {ws.title for ws in ss.worksheets()}
-        check_sheets = [
+        worksheets = {ws.title: ws for ws in ss.worksheets()}
+        existing = set(worksheets.keys())
+
+        procedure_sheets: List[str] = []
+        menu_references: List[str] = []
+
+        core_sheets = [
             SHEET_MENU,
             SHEET_FILTER_BAD_WORD,
             SHEET_SETTING_SYSTEM,
@@ -633,20 +640,348 @@ def sheet_health() -> Dict[str, Any]:
             SHEET_SESSION,
             SHEET_DATA_DICTIONARY,
             SHEET_BOT_31_SCHEMA,
-            *read_thu_tuc_sheet_names(),
         ]
 
-        for name in check_sheets:
-            exists = name in existing
-            result["sheets"][name] = exists
-            if not exists:
-                result["missing"].append(name)
+        if SHEET_MENU in worksheets:
+            menu_values = worksheets[SHEET_MENU].get_all_values()
+            menu_headers = [
+                _clean_key(value)
+                for value in (menu_values[0] if menu_values else [])
+            ]
 
-        result["total_required"] = len(check_sheets)
+            required_menu_headers = [
+                ("ID", {"ID", "MENU_ID"}),
+                (
+                    "TEN_CHUC_NANG",
+                    {
+                        "TEN_CHUC_NANG",
+                        "TÊN_CHỨC_NĂNG",
+                        "TEN CHUC NANG",
+                        "TÊN CHỨC NĂNG",
+                    },
+                ),
+                ("MO_TA", {"MO_TA", "MÔ_TẢ", "MO TA", "MÔ TẢ"}),
+                ("TU_KHOA", {"TU_KHOA", "TỪ_KHÓA", "TU KHOA", "TỪ KHÓA"}),
+                (
+                    "SHEET_DU_LIEU",
+                    {
+                        "SHEET_DU_LIEU",
+                        "SHEET DỮ LIỆU",
+                        "SHEET",
+                        "TEN_SHEET",
+                        "TÊN_SHEET",
+                    },
+                ),
+                (
+                    "TRANG_THAI",
+                    {
+                        "TRANG_THAI",
+                        "TRẠNG_THÁI",
+                        "STATUS",
+                        "ACTIVE",
+                    },
+                ),
+            ]
+
+            missing_headers = [
+                label
+                for label, aliases in required_menu_headers
+                if not any(alias in menu_headers for alias in aliases)
+            ]
+
+            result["schema"][SHEET_MENU] = {
+                "headers_ok": not missing_headers,
+                "missing_headers": missing_headers,
+            }
+
+            menu_ids: Dict[str, List[int]] = {}
+
+            for row_number, raw_row in enumerate(menu_values[1:], start=2):
+                row = {
+                    menu_headers[index]: _clean_value(
+                        raw_row[index] if index < len(raw_row) else ""
+                    )
+                    for index in range(len(menu_headers))
+                    if menu_headers[index]
+                }
+
+                if not any(row.values()) or not _is_active(row):
+                    continue
+
+                menu_id = _get_first(row, ["ID", "MENU_ID"])
+                if menu_id:
+                    menu_ids.setdefault(menu_id, []).append(row_number)
+
+                sheet_name = _get_first(
+                    row,
+                    [
+                        "SHEET_DU_LIEU",
+                        "SHEET DỮ LIỆU",
+                        "SHEET",
+                        "TEN_SHEET",
+                        "TÊN_SHEET",
+                    ],
+                )
+
+                if not sheet_name:
+                    result["menu_rows_missing_sheet"].append({
+                        "row": row_number,
+                        "id": menu_id,
+                        "name": _get_first(
+                            row,
+                            [
+                                "TEN_CHUC_NANG",
+                                "TÊN_CHỨC_NĂNG",
+                                "TEN CHUC NANG",
+                                "TÊN CHỨC NĂNG",
+                            ],
+                        ),
+                    })
+                    continue
+
+                if sheet_name not in menu_references:
+                    menu_references.append(sheet_name)
+
+                if (
+                    sheet_name.upper().startswith("THU_TUC_")
+                    and sheet_name not in procedure_sheets
+                ):
+                    procedure_sheets.append(sheet_name)
+
+            result["duplicate_menu_ids"] = [
+                {
+                    "id": menu_id,
+                    "rows": row_numbers,
+                }
+                for menu_id, row_numbers in menu_ids.items()
+                if len(row_numbers) > 1
+            ]
+
+        required_sheets: List[str] = []
+
+        for sheet_name in [*core_sheets, *procedure_sheets]:
+            sheet_name = _clean_value(sheet_name)
+
+            if sheet_name and sheet_name not in required_sheets:
+                required_sheets.append(sheet_name)
+
+        for sheet_name in required_sheets:
+            exists = sheet_name in existing
+            result["sheets"][sheet_name] = exists
+
+            if not exists:
+                result["missing"].append(sheet_name)
+
+        result["procedure_sheets"] = procedure_sheets
+        result["menu_references_missing"] = [
+            sheet_name
+            for sheet_name in menu_references
+            if sheet_name not in existing
+        ]
+
+        sheet_requirements = {
+            SHEET_TRA_CUU_LIEN_HE: [
+                ("BO_PHAN", {"BO_PHAN", "BỘ_PHẬN", "BO PHAN", "BỘ PHẬN"}),
+                ("TDP", {"TDP", "TO_DAN_PHO", "TỔ_DÂN_PHỐ", "TỔ DÂN PHỐ"}),
+                ("TU_KHOA", {"TU_KHOA", "TỪ_KHÓA", "TU KHOA", "TỪ KHÓA"}),
+                (
+                    "TEN_CO_QUAN",
+                    {
+                        "TEN_CO_QUAN",
+                        "TÊN_CƠ_QUAN",
+                        "TEN CO QUAN",
+                        "TÊN CƠ QUAN",
+                    },
+                ),
+                (
+                    "CHUC_NANG",
+                    {
+                        "CHUC_NANG",
+                        "CHỨC_NĂNG",
+                        "CHUC NANG",
+                        "CHỨC NĂNG",
+                    },
+                ),
+                (
+                    "SO_DIEN_THOAI",
+                    {
+                        "SO_DIEN_THOAI",
+                        "SỐ_ĐIỆN_THOẠI",
+                        "SO DIEN THOAI",
+                        "SỐ ĐIỆN THOẠI",
+                    },
+                ),
+                ("GOOGLE_MAP", {"GOOGLE_MAP", "GOOGLE MAP", "MAP"}),
+                ("GHI_CHU", {"GHI_CHU", "GHI_CHÚ", "GHI CHU", "GHI CHÚ"}),
+                (
+                    "TRANG_THAI",
+                    {
+                        "TRANG_THAI",
+                        "TRẠNG_THÁI",
+                        "STATUS",
+                        "ACTIVE",
+                    },
+                ),
+                ("UU_TIEN", {"UU_TIEN", "ƯU_TIÊN", "UU TIEN", "ƯU TIÊN"}),
+            ],
+            SHEET_FAQ: [
+                ("CAU_HOI", {"CAU_HOI", "CÂU_HỎI", "CAU HOI", "CÂU HỎI"}),
+                (
+                    "CAC_CACH_HOI",
+                    {
+                        "CAC_CACH_HOI",
+                        "CÁC_CÁCH_HỎI",
+                        "CAC CACH HOI",
+                        "CÁC CÁCH HỎI",
+                    },
+                ),
+                ("TU_KHOA", {"TU_KHOA", "TỪ_KHÓA", "TU KHOA", "TỪ KHÓA"}),
+                ("TRA_LOI", {"TRA_LOI", "TRẢ_LỜI", "TRA LOI", "TRẢ LỜI"}),
+                (
+                    "RELATED_ID",
+                    {
+                        "RELATED_ID",
+                        "RELATED",
+                        "MA_THU_TUC",
+                        "MÃ_THỦ_TỤC",
+                    },
+                ),
+                ("NGU_CANH", {"NGU_CANH", "NGỮ_CẢNH", "NGU CANH", "NGỮ CẢNH"}),
+                (
+                    "TRANG_THAI",
+                    {
+                        "TRANG_THAI",
+                        "TRẠNG_THÁI",
+                        "STATUS",
+                        "ACTIVE",
+                    },
+                ),
+            ],
+        }
+
+        for sheet_name, requirements in sheet_requirements.items():
+            if sheet_name not in worksheets:
+                continue
+
+            headers = {
+                _clean_key(value)
+                for value in worksheets[sheet_name].row_values(1)
+                if _clean_key(value)
+            }
+
+            missing_headers = [
+                label
+                for label, aliases in requirements
+                if not any(alias in headers for alias in aliases)
+            ]
+
+            result["schema"][sheet_name] = {
+                "headers_ok": not missing_headers,
+                "missing_headers": missing_headers,
+            }
+
+        procedure_requirements = [
+            (
+                "MA_THU_TUC",
+                {
+                    "MA_THU_TUC",
+                    "MÃ_THỦ_TỤC",
+                    "MA THU TUC",
+                    "MÃ THỦ TỤC",
+                },
+            ),
+            (
+                "TEN_THU_TUC",
+                {
+                    "TEN_THU_TUC",
+                    "TÊN_THỦ_TỤC",
+                    "TEN THU TUC",
+                    "TÊN THỦ TỤC",
+                },
+            ),
+            ("TU_KHOA", {"TU_KHOA", "TỪ_KHÓA", "TU KHOA", "TỪ KHÓA"}),
+            (
+                "NOI_NOP",
+                {
+                    "NOI_NOP",
+                    "NƠI_NỘP",
+                    "NOI_THUC_HIEN",
+                    "NƠI_THỰC_HIỆN",
+                    "CO_QUAN_THUC_HIEN",
+                    "CƠ_QUAN_THỰC_HIỆN",
+                },
+            ),
+            ("DOI_TUONG", {"DOI_TUONG", "ĐỐI_TƯỢNG", "DOI TUONG", "ĐỐI TƯỢNG"}),
+            ("DIEU_KIEN", {"DIEU_KIEN", "ĐIỀU_KIỆN", "DIEU KIEN", "ĐIỀU KIỆN"}),
+            ("HO_SO", {"HO_SO", "HỒ_SƠ", "HO SO", "HỒ SƠ"}),
+            ("TRINH_TU", {"TRINH_TU", "TRÌNH_TỰ", "TRINH TU", "TRÌNH TỰ"}),
+            ("THOI_HAN", {"THOI_HAN", "THỜI_HẠN", "THOI HAN", "THỜI HẠN"}),
+            ("LE_PHI", {"LE_PHI", "LỆ_PHÍ", "LE PHI", "LỆ PHÍ"}),
+            ("LINK_DVC", {"LINK_DVC", "LINK DVC", "DICH_VU_CONG"}),
+            (
+                "TRANG_THAI",
+                {
+                    "TRANG_THAI",
+                    "TRẠNG_THÁI",
+                    "STATUS",
+                    "ACTIVE",
+                },
+            ),
+        ]
+
+        for sheet_name in procedure_sheets:
+            if sheet_name not in worksheets:
+                continue
+
+            headers = {
+                _clean_key(value)
+                for value in worksheets[sheet_name].row_values(1)
+                if _clean_key(value)
+            }
+
+            missing_headers = [
+                label
+                for label, aliases in procedure_requirements
+                if not any(alias in headers for alias in aliases)
+            ]
+
+            result["schema"][sheet_name] = {
+                "headers_ok": not missing_headers,
+                "missing_headers": missing_headers,
+            }
+
+        for sheet_name, schema_result in result["schema"].items():
+            if not schema_result.get("headers_ok", False):
+                result["errors"].append(
+                    f"{sheet_name}: thiếu cột "
+                    + ", ".join(schema_result.get("missing_headers", []))
+                )
+
+        if result["duplicate_menu_ids"]:
+            result["errors"].append(
+                "MENU có ID trùng tại các dòng đang hoạt động"
+            )
+
+        if result["menu_rows_missing_sheet"]:
+            result["errors"].append(
+                "MENU có dòng đang hoạt động nhưng thiếu SHEET_DU_LIEU"
+            )
+
+        if result["menu_references_missing"]:
+            result["errors"].append(
+                "MENU trỏ tới sheet không tồn tại: "
+                + ", ".join(result["menu_references_missing"])
+            )
+
+        result["total_required"] = len(required_sheets)
         result["total_missing"] = len(result["missing"])
-        result["ok"] = result["total_missing"] == 0
+        result["ok"] = (
+            result["total_missing"] == 0
+            and not result["errors"]
+        )
 
     except Exception as e:
         result["error"] = str(e)
+        result["errors"].append(str(e))
 
     return result
