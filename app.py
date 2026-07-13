@@ -1,7 +1,9 @@
+import hmac
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 
-from config import PORT, check_config
+from config import PORT, INTERNAL_API_KEY, check_config
 from services.router_service import route_message_for_ai, get_welcome_message
 from services.gemini_service import ask_gemini_status
 from services.zalo_service import send_zalo_text
@@ -22,6 +24,15 @@ CORS(app)
 processed_messages = set()
 MAX_PROCESSED_MESSAGES = 5000
 
+# Chức năng: Kiểm tra khóa bảo vệ API nội bộ từ HTTP header.
+# Vai trò: Ngăn người ngoài gọi test-ai và api-chat để tiêu hao tài nguyên BOT.
+def is_internal_api_authorized():
+    provided_key = request.headers.get("X-Internal-API-Key", "").strip()
+
+    if not INTERNAL_API_KEY or not provided_key:
+        return False
+
+    return hmac.compare_digest(provided_key, INTERNAL_API_KEY)
 
 # Chức năng: Lấy giá trị cấu hình hội thoại từ sheet SETTING_CHAT.
 # Vai trò: Không để nội dung trả lời nằm cứng trong app.py.
@@ -324,6 +335,12 @@ def health():
 # Vai trò: Cho phép test nhanh router, AI optional và session.
 @app.route("/test-ai", methods=["GET", "POST"])
 def test_ai():
+    if not is_internal_api_authorized():
+        return jsonify({
+            "success": False,
+            "message": "Unauthorized",
+        }), 401
+
     if request.method == "POST":
         data = request.get_json(silent=True) or {}
         question = data.get("question", "")
@@ -340,6 +357,12 @@ def test_ai():
 # Vai trò: Hỗ trợ kiểm thử ngoài Zalo mà vẫn đi qua cùng một luồng xử lý.
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
+    if not is_internal_api_authorized():
+        return jsonify({
+            "success": False,
+            "message": "Unauthorized",
+        }), 401
+
     data = request.get_json(silent=True) or {}
     user_id = data.get("user_id", "web")
     question = data.get("question", "")
