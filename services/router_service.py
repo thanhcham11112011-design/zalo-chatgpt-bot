@@ -295,7 +295,32 @@ def is_contact_question(text):
         return True
 
     department = detect_bo_phan_contact(text)
-    return bool(department and _contact_department_guide(department))
+
+    if department and _contact_department_guide(department):
+        return True
+
+    results = search_lien_he(text, limit=5) or []
+
+    for row in results:
+        note = str(row.get("_NOTE") or "")
+        signals = set(note.split("+"))
+
+        if "NAME_MATCH_EXACT" in signals:
+            return True
+
+        if "PHONE_MATCH" in signals:
+            return True
+
+        if "DEPARTMENT_MATCH" in signals:
+            return True
+
+        if "ROLE_MATCH" in signals and "AREA_MATCH" in signals:
+            return True
+
+        if "KEYWORD_MATCH" in signals and "AREA_MATCH" in signals:
+            return True
+
+    return False
 
 
 # Chức năng: Kiểm tra yêu cầu liên hệ đã nêu rõ cán bộ, bộ phận, địa bàn hoặc số điện thoại hay chưa.
