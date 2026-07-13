@@ -361,7 +361,6 @@ def webhook():
     data = request.get_json(silent=True) or {}
 
     try:
-        print("WEBHOOK DATA:", data)
         event_name = data.get("event_name", "")
         user_id = data.get("sender", {}).get("id", "") or data.get("user_id_by_app", "")
         message_data = data.get("message", {}) or {}
