@@ -377,16 +377,67 @@ def webhook():
 
         question = message_data.get("text", "")
         if not question:
-            send_zalo_text(user_id=user_id, message=get_welcome_message())
-            return jsonify({"success": True, "message": "Empty text handled"}), 200
+            sent = send_zalo_text(
+                user_id=user_id,
+                message=get_welcome_message(),
+            )
 
-        answer, source = build_answer(user_id=user_id, question=question)
-        send_zalo_text(user_id=user_id, message=answer)
+            if not sent:
+                error_message = "Gửi tin nhắn chào mừng Zalo thất bại."
+                print("[ZALO SEND ERROR]", error_message)
+                log_error(
+                    user_id=user_id,
+                    user_message="",
+                    error_message=error_message,
+                    route="ZALO_SEND_ERROR",
+                    note="EMPTY_TEXT_REPLY",
+                    error_code="ZALO_SEND_FAILED",
+                )
+                return jsonify({
+                    "success": False,
+                    "message": "Zalo send failed",
+                }), 200
 
-        return jsonify({"success": True, "source": source}), 200
+            return jsonify({
+                "success": True,
+                "message": "Empty text handled",
+            }), 200
+
+        answer, source = build_answer(
+            user_id=user_id,
+            question=question,
+        )
+
+        sent = send_zalo_text(
+            user_id=user_id,
+            message=answer,
+        )
+
+        if not sent:
+            error_message = "Gửi câu trả lời Zalo thất bại."
+            print("[ZALO SEND ERROR]", error_message)
+            log_error(
+                user_id=user_id,
+                user_message=question,
+                error_message=error_message,
+                route="ZALO_SEND_ERROR",
+                note=f"SOURCE={source}",
+                error_code="ZALO_SEND_FAILED",
+            )
+            return jsonify({
+                "success": False,
+                "message": "Zalo send failed",
+                "source": source,
+            }), 200
+
+        return jsonify({
+            "success": True,
+            "source": source,
+        }), 200
 
     except Exception as e:
         import traceback
+
         error_message = f"Lỗi xử lý webhook: {e}"
         print("[WEBHOOK ERROR]", error_message)
         print(traceback.format_exc())
@@ -394,13 +445,31 @@ def webhook():
         try:
             user_id = data.get("sender", {}).get("id", "")
             question = data.get("message", {}).get("text", "")
+
             if user_id:
-                send_zalo_text(user_id=user_id, message=get_default_reply())
-            log_error(user_id=user_id, user_message=question, error_message=error_message)
+                fallback_sent = send_zalo_text(
+                    user_id=user_id,
+                    message=get_default_reply(),
+                )
+                if not fallback_sent:
+                    print(
+                        "[ZALO FALLBACK SEND ERROR]",
+                        "Không gửi được thông báo dự phòng.",
+                    )
+
+            log_error(
+                user_id=user_id,
+                user_message=question,
+                error_message=error_message,
+            )
+
         except Exception as log_e:
             print("[WEBHOOK LOG ERROR]", log_e)
 
-        return jsonify({"success": False, "message": str(e)}), 200
+        return jsonify({
+            "success": False,
+            "message": str(e),
+        }), 200
 
 
 if __name__ == "__main__":
