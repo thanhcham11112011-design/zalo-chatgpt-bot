@@ -1,7 +1,6 @@
 import hmac
 
 from flask import Flask, request, jsonify
-from flask_cors import CORS
 
 from config import PORT, INTERNAL_API_KEY, check_config
 from services.router_service import route_message_for_ai, get_welcome_message
@@ -19,7 +18,6 @@ from services.session_manager import get_context, save_context, clear_context
 from services.sheet_api import read_setting_system, read_setting_chat, read_setting_ai
 
 app = Flask(__name__)
-CORS(app)
 
 processed_messages = set()
 MAX_PROCESSED_MESSAGES = 5000
