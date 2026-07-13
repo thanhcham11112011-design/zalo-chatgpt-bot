@@ -102,4 +102,17 @@ def clear_context(user_id: Any) -> bool:
         return False
 
     _memory.pop(uid, None)
-    return save_context(uid, {})
+
+    try:
+        ws = ensure_session_sheet()
+        values = ws.get_all_values()
+        row_index = _find_user_row(values, uid)
+
+        if row_index:
+            ws.delete_rows(row_index)
+
+        return True
+
+    except Exception as e:
+        print(f"[SESSION CLEAR ERROR] {e}")
+        return False
