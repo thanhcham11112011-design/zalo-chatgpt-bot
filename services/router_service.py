@@ -999,7 +999,7 @@ def get_contact_lookup_message():
     return "📌 Tra cứu liên hệ\n\nQuý công dân vui lòng nhập nội dung liên hệ cần tra cứu."
 
 # Chức năng: Lấy thông báo hướng dẫn riêng cho bộ phận liên hệ từ SETTING_CHAT.
-# Vai trò: Áp dụng hướng dẫn khi câu hỏi chưa xác định được cán bộ hoặc địa bàn mà không hardcode bộ phận trong Python.
+# Vai trò: Cho phép khai báo nhiều bộ phận cần hướng dẫn riêng mà không hardcode nghiệp vụ trong Python.
 def _contact_department_guide(department):
     department_norm = normalize_text(department)
 
@@ -1009,16 +1009,18 @@ def _contact_department_guide(department):
     guide_configs = [
         (
             "CONTACT_GUIDE_DEPARTMENT",
-            "CONTACT_GUIDE",
+            "CONTACT_GUIDE_MESSAGE",
         ),
         (
-            "CONTACT_GUIDE_MESSAGE_DEPARTMENT",
-            "CONTACT_GUIDE_MESSAGE",
+            "CONTACT_GUIDE_DEPARTMENT_2",
+            "CONTACT_GUIDE_MESSAGE_2",
         ),
     ]
 
     for department_key, message_key in guide_configs:
-        configured_department = normalize_text(_chat_setting(department_key, ""))
+        configured_department = normalize_text(
+            _chat_setting(department_key, "")
+        )
 
         if not configured_department:
             continue
@@ -1029,7 +1031,7 @@ def _contact_department_guide(department):
         return _chat_setting(message_key, "")
 
     return ""
-
+    
 # Chức năng: Kiểm tra bộ phận liên hệ có được cấu hình phân trang hay không.
 # Vai trò: Chỉ phân trang các bộ phận khai báo trong SETTING_CHAT, không hardcode nghiệp vụ.
 def _contact_paging_enabled(department):
