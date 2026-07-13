@@ -405,32 +405,58 @@ def health():
             "errors": sheet_errors,
             "error": sheet_error,
         },
-    "cache": {
-        "available": cache_status.get(
-            "available",
-            False,
-        ),
-        "has_data": cache_status.get(
-            "has_data",
-            False,
-        ),
-        "sheet_count": cache_status.get(
-            "sheet_count",
-            0,
-        ),
-        "data_sheet_count": cache_status.get(
-            "data_sheet_count",
-            0,
-        ),
-        "oldest_age_seconds": cache_status.get(
-            "oldest_age_seconds",
-            0,
-        ),
-        "ttl_seconds": cache_status.get(
-            "ttl_seconds",
-            0,
-        ),
-    },
+        "cache": {
+            "available": cache_status.get(
+                "available",
+                False,
+            ),
+            "has_data": cache_status.get(
+                "has_data",
+                False,
+            ),
+            "sheet_count": cache_status.get(
+                "sheet_count",
+                0,
+            ),
+            "valid_sheet_count": cache_status.get(
+                "valid_sheet_count",
+                0,
+            ),
+            "data_sheet_count": cache_status.get(
+                "data_sheet_count",
+                0,
+            ),
+            "fresh_sheet_count": cache_status.get(
+                "fresh_sheet_count",
+                0,
+            ),
+            "fallback_sheet_count": cache_status.get(
+                "fallback_sheet_count",
+                0,
+            ),
+            "expired_sheet_count": cache_status.get(
+                "expired_sheet_count",
+                0,
+            ),
+            "oldest_age_seconds": cache_status.get(
+                "oldest_age_seconds",
+                0,
+            ),
+            "ttl_seconds": cache_status.get(
+                "ttl_seconds",
+                0,
+            ),
+            "max_stale_seconds": cache_status.get(
+                "max_stale_seconds",
+                0,
+            ),
+        },
+        "health_check": {
+            "cached": health_cached,
+            "age_seconds": health_age,
+            "ttl_seconds": HEALTH_CHECK_TTL_SECONDS,
+        },
+    }), http_status
         
 # Chức năng: Kiểm thử hội thoại qua trình duyệt hoặc Postman.
 # Vai trò: Cho phép test nhanh router, AI optional và session.
