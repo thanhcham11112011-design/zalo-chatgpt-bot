@@ -158,6 +158,43 @@ def _match_menu_by_data(text):
     return None
 
 
+# Chức năng: Tìm MENU khi người dân nhập đúng tên chức năng hoặc đúng một từ khóa đại diện.
+# Vai trò: Ưu tiên tên nhóm nhưng không để từ khóa MENU cụ thể che từ khóa của một thủ tục.
+def _match_exact_menu_by_data(text):
+    t = normalize_text(text)
+    if not t:
+        return None
+
+    for row in _menu_rows():
+        title = normalize_text(get_first(row, "TEN_CHUC_NANG", "TEN", "CHU_DE"))
+        if title and t == title:
+            return row
+
+    for row in _menu_rows():
+        sheet = get_first(row, "SHEET_DU_LIEU", "SHEET")
+        keywords = _split_keywords(get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS"))
+
+        if not any(t == normalize_text(keyword) for keyword in keywords if keyword):
+            continue
+
+        if sheet and sheet.startswith("THU_TUC_"):
+            procedure_keyword_match = False
+            for procedure in read_thu_tuc_sheet(sheet):
+                procedure_keywords = _split_keywords(
+                    get_first(procedure, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")
+                )
+                if any(t == normalize_text(keyword) for keyword in procedure_keywords if keyword):
+                    procedure_keyword_match = True
+                    break
+
+            if procedure_keyword_match:
+                continue
+
+        return row
+
+    return None
+
+
 # Chức năng: Chọn dòng MENU theo số thứ tự hoặc ID trong Google Sheets.
 # Vai trò: Bảo đảm người dân nhập số menu vẫn định tuyến đúng theo dữ liệu MENU.
 def _match_menu_by_number(text):
@@ -224,25 +261,85 @@ def is_location_question(text):
 
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
-# Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi người dân hỏi rõ về liên hệ, số điện thoại, cán bộ hoặc bộ phận.
+# Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi có số điện thoại, yêu cầu liên hệ rõ hoặc bộ phận được cấu hình hướng dẫn.
 def is_contact_question(text):
     t = normalize_text(text)
+    phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
+
+    if len(phone_digits) >= 9:
+        return True
+
+    if t in ["lien he", "so dien thoai", "sdt", "dien thoai", "hotline"]:
+        return True
+
+    if "lien he" in t:
+        return True
+
+    contact_intent_keys = [
+        "tra cuu lien he", "huong dan tra cuu lien he",
+        "tra cuu so dien thoai", "xin so dien thoai",
+        "cho toi so dien thoai", "so dien thoai cua",
+        "so dien thoai can bo", "xin sdt", "sdt cua",
+        "gap can bo", "gap dong chi", "gap dc",
+        "can bo phu trach", "ai phu trach", "truc ban",
+        "lien he can bo", "lien he dong chi", "lien he bo phan",
+        "lien he cskv", "lien he canh sat khu vuc",
+        "lien he ancs", "lien he an ninh trat tu o co so",
+        "lien he chi huy", "lien he lanh dao",
+        "truong cap", "truong cong an phuong",
+        "pho cap", "pho cong an phuong",
+        "pho truong cap", "pho truong cong an phuong",
+    ]
+
+    if any(key in t for key in contact_intent_keys):
+        return True
+
+    department = detect_bo_phan_contact(text)
+    return bool(department and _contact_department_guide(department))
+
+
+# Chức năng: Kiểm tra yêu cầu liên hệ đã nêu rõ cán bộ, bộ phận, địa bàn hoặc số điện thoại hay chưa.
+# Vai trò: Phân biệt tra cứu liên hệ cụ thể với yêu cầu hướng dẫn tra cứu chung.
+def _has_specific_contact_target(text):
+    t = normalize_text(text)
+    phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
+
+    if len(phone_digits) >= 9:
+        return True
 
     if detect_bo_phan_contact(text):
         return True
 
-    contact_intent_keys = [
-        "lien he", "so dien thoai", "sdt", "dien thoai",
-        "hotline", "gap can bo", "gap dong chi", "gap dc",
-        "can bo phu trach", "ai phu trach", "truc ban",
-        "cskv", "canh sat khu vuc", "to dan pho", "tdp",
-        "to an ninh", "to cstt", "to pctp", "to tong hop",
-        "an ninh trat tu o co so", "antt o co so",
-        "chi huy", "lanh dao", "truong cap", "truong cong an phuong",
-        "pho cap", "pho cong an phuong", "pho truong cap", "pho truong cong an phuong",
-    ]
+    results = search_lien_he(text, limit=5) or []
+    for row in results:
+        note = str(row.get("_NOTE") or "")
+        if any(signal in note for signal in ["NAME_MATCH", "PHONE_MATCH", "AREA_MATCH"]):
+            return True
 
-    return any(k in t for k in contact_intent_keys)
+    intent_phrases = [
+        "lien he", "gap can bo", "gap dong chi", "gap dc",
+        "so dien thoai cua", "sdt cua", "can bo phu trach",
+        "ai phu trach",
+    ]
+    generic_words = {
+        "toi", "muon", "can", "xin", "tra", "cuu", "lien", "he",
+        "so", "dien", "thoai", "sdt", "can", "bo", "dong", "chi",
+        "phu", "trach", "giup", "ho", "tro", "thong", "tin",
+    }
+
+    for phrase in intent_phrases:
+        if phrase not in t:
+            continue
+
+        remainder = t.split(phrase, 1)[1].strip()
+        remaining_tokens = [
+            token for token in remainder.split()
+            if len(token) >= 2 and token not in generic_words
+        ]
+        if len(remaining_tokens) >= 2:
+            return True
+
+    return False
 
 
 # Chức năng: Kiểm tra câu hỏi nối tiếp về chi tiết thủ tục.
@@ -437,12 +534,31 @@ def _procedure_id(row):
     return get_first(row, "ID", "MA", "MÃ")
 
 
+# Chức năng: Tìm thủ tục khi người dân nhập đúng mã hoặc nguyên tên thủ tục.
+# Vai trò: Ưu tiên thủ tục xác định tuyệt đối trước FAQ và tìm kiếm gần đúng.
+def _find_exact_procedure(text):
+    t = normalize_text(text)
+    if not t:
+        return None
+
+    for sheet_name in read_thu_tuc_sheet_names():
+        for row in read_thu_tuc_sheet(sheet_name):
+            procedure_id = normalize_text(_procedure_id(row))
+            procedure_name = normalize_text(get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC"))
+
+            if t == procedure_id or t == procedure_name:
+                return row
+
+    return None
+
+
 # Chức năng: Tính điểm khớp thủ tục chỉ bằng cột TU_KHOA.
-# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ hoặc nguyên cụm, không khớp chuỗi con.
+# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ, nguyên cụm hoặc đúng thứ tự từ.
 def _score_procedure_by_tu_khoa(text, row):
     t = normalize_text(text)
     t_box = f" {t} "
-    t_tokens = set(t.split())
+    t_words = t.split()
+    t_tokens = set(t_words)
     raw_text = " ".join(str(text or "").lower().split())
     raw_box = f" {raw_text} "
     score = 0
@@ -462,7 +578,7 @@ def _score_procedure_by_tu_khoa(text, row):
         if not n:
             continue
 
-        parts = [p for p in n.split() if len(p) >= 3]
+        parts = [part for part in n.split() if len(part) >= 3]
 
         if raw_text == raw_kw:
             score += 70
@@ -470,8 +586,20 @@ def _score_procedure_by_tu_khoa(text, row):
             score += 45
         elif len(parts) >= 2 and f" {n} " in t_box:
             score += 45
-        elif len(parts) >= 2 and all(p in t_tokens for p in parts):
-            score += 25
+        elif len(parts) >= 2:
+            search_from = 0
+            ordered_match = True
+
+            for part in parts:
+                try:
+                    search_from = t_words.index(part, search_from) + 1
+                except ValueError:
+                    ordered_match = False
+                    break
+
+            if ordered_match:
+                score += 25
+
         elif len(parts) == 1 and len(parts[0]) >= 5 and parts[0] in t_tokens:
             score += 25
 
@@ -575,6 +703,20 @@ def _faq_supplement_for_procedure(row, user_text, ngu_canh):
             return "\n\nℹ️ Thông tin bổ sung:\n" + compact(extra, 700)
 
     return ""
+
+
+# Chức năng: Kiểm tra câu hỏi có khớp chính xác câu hỏi, cách hỏi hoặc từ khóa của một dòng FAQ hay không.
+# Vai trò: Chỉ dùng FAQ hướng dẫn chung khi người dân hỏi chung, không che trường hợp tra cứu tên cụ thể.
+def _faq_matches_exact_text(text, faq_row):
+    t = normalize_text(text).strip(" ,./:;-_#")
+    values = [get_first(faq_row, "CAU_HOI", "CÂU_HỎI")]
+    values.extend(_split_keywords(get_first(faq_row, "CAC_CACH_HOI", "CÁC_CÁCH_HỎI")))
+    values.extend(_split_keywords(get_first(faq_row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")))
+    return any(
+        t == normalize_text(value).strip(" ,./:;-_#")
+        for value in values
+        if value
+    )
 
 
 # Chức năng: Lọc FAQ thường không có RELATED_ID và không phải THONGTIN.
@@ -1423,13 +1565,78 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
+    exact_menu = _match_exact_menu_by_data(text)
+    if exact_menu:
+        exact_sheet = get_first(exact_menu, "SHEET_DU_LIEU", "SHEET")
+        exact_title = get_first(exact_menu, "TEN_CHUC_NANG", "TEN", "CHU_DE")
+        exact_desc = get_first(exact_menu, "MO_TA", "MÔ_TẢ")
+        new_ctx = menu_context(exact_menu)
+
+        if exact_sheet and exact_sheet.startswith("THU_TUC_"):
+            reply, suggestions = answer_from_menu(exact_menu)
+            new_ctx["last_suggestions"] = suggestions
+            new_ctx["last_route"] = "MENU_GROUP"
+            return reply, "MENU_GROUP", new_ctx, ""
+
+        reply = f"📌 {exact_title}\n\n{str(exact_desc).strip()}" if exact_desc else get_contact_lookup_message()
+        new_ctx["last_route"] = "MENU"
+        return reply, "MENU", new_ctx, ""
+
+    exact_procedure = _find_exact_procedure(text)
+    if exact_procedure:
+        exact_sheet = exact_procedure.get("_SHEET", "")
+        route_name = "THU_TUC_VNEID" if _is_vneid_sheet(exact_sheet) else "THU_TUC_TU_KHOA_GLOBAL"
+        new_ctx = {
+            "sheet": exact_sheet,
+            "topic": get_first(exact_procedure, "CHU_DE", "CHỦ_ĐỀ"),
+            "procedure_id": get_first(exact_procedure, "ID", "MA", "MÃ"),
+            "procedure_name": get_first(exact_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
+            "stage": "procedure",
+            "page": 1,
+            "last_suggestions": [],
+            "last_route": route_name,
+        }
+        return format_thu_tuc(exact_procedure), route_name, new_ctx, ""
+
     faq = search_faq(text, limit=3)
     contact_intent = is_contact_question(text)
 
     if contact_intent:
-        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
+        contact_reply = _reply_contact_results(
+            text,
+            limit=5,
+            keep_context=False
+        )
         if contact_reply:
             return contact_reply
+
+        if not _has_specific_contact_target(text):
+            faq_routed = _route_from_faq_rows(text, faq, ctx) if faq else None
+            if faq_routed:
+                reply, _route, _faq_ctx, ai_context = faq_routed
+                new_ctx = {
+                    "stage": "contact_lookup",
+                    "sheet": "TRA_CUU_LIEN_HE",
+                    "topic": "Tra cứu liên hệ",
+                    "procedure_id": "",
+                    "procedure_name": "",
+                    "page": 1,
+                    "last_suggestions": [],
+                    "last_route": "CONTACT_GUIDE",
+                }
+                return reply, "CONTACT_GUIDE", new_ctx, ai_context
+
+            new_ctx = {
+                "stage": "contact_lookup",
+                "sheet": "TRA_CUU_LIEN_HE",
+                "topic": "Tra cứu liên hệ",
+                "procedure_id": "",
+                "procedure_name": "",
+                "page": 1,
+                "last_suggestions": [],
+                "last_route": "CONTACT_GUIDE",
+            }
+            return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
 
         new_ctx = {
             "stage": "contact_lookup",
@@ -1439,9 +1646,13 @@ def route_message(user_text, context=None):
             "procedure_name": "",
             "page": 1,
             "last_suggestions": [],
-            "last_route": "CONTACT_GUIDE",
+            "last_route": "CONTACT_NOT_FOUND",
         }
-        return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
+
+        return _chat_setting(
+            "CONTACT_NOT_FOUND",
+            "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng kiểm tra lại họ tên, bộ phận hoặc địa bàn phụ trách."
+        ), "CONTACT_NOT_FOUND", new_ctx, ""
 
     if not detect_bo_phan_contact(text):
         thongtin_reply = _reply_thongtin_from_faq_rows(faq)
@@ -1458,6 +1669,7 @@ def route_message(user_text, context=None):
         text,
         sheet=search_sheet,
         limit=5,
+        include_vneid=True,
     )
 
     specific_results = []
