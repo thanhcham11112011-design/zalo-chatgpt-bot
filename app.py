@@ -315,37 +315,128 @@ def build_answer(user_id, question):
 
     return answer, source
 
+# Chức năng: Lấy kết quả kiểm tra Google Sheets có cache giới hạn tần suất.
+# Vai trò: Tránh route health check liên tục gọi Google Sheets và gây vượt quota đọc.
+def _get_cached_sheet_health():
+    now = time.time()
+    checked_at = float(
+        _health_check_cache.get("checked_at") or 0
+    )
+    result = _health_check_cache.get("result")
 
-# Chức năng: Trả trạng thái cơ bản của ứng dụng.
-# Vai trò: Phục vụ kiểm tra nhanh BOT sau khi deploy.
+    is_cached = (
+        result is not None
+        and now - checked_at < HEALTH_CHECK_TTL_SECONDS
+    )
+
+    if not is_cached:
+        result = sheet_health()
+        checked_at = now
+        _health_check_cache["checked_at"] = checked_at
+        _health_check_cache["result"] = result
+
+    age_seconds = max(0, int(now - checked_at))
+
+    return result, is_cached, age_seconds
+
+
+# Chức năng: Trả trạng thái cơ bản của ứng dụng Flask.
+# Vai trò: Xác nhận dịch vụ Render đang chạy mà không gọi Google Sheets.
 @app.route("/", methods=["GET"])
 def home():
     return jsonify({
         "status": "ok",
-        "bot": get_system_setting("BOT_NAME", "BOT CAP"),
-        "version": get_system_setting("BOT_VERSION", "3.1"),
-        "data_source": get_system_setting("DATA_SOURCE", "GOOGLE_SHEETS"),
-        "ai_mode": get_ai_setting("AI_MODE", "OPTIONAL"),
-        "message": "Bot đang hoạt động",
-    })
+        "service": "online",
+        "message": "Ứng dụng Flask đang hoạt động",
+    }), 200
 
 
-# Chức năng: Kiểm tra cấu hình deploy và nguồn dữ liệu.
-# Vai trò: Hỗ trợ phát hiện thiếu biến môi trường hoặc sai cấu hình hệ thống.
+# Chức năng: Kiểm tra cấu hình, Google Sheets, cấu trúc dữ liệu và cache dự phòng.
+# Vai trò: Phân loại hệ thống thành healthy, degraded hoặc unhealthy.
 @app.route("/health", methods=["GET"])
 def health():
-    ok, missing = check_config()
-    return jsonify({
-        "status": "ok" if ok else "missing_config",
-        "missing": missing,
-        "data_source": get_system_setting("DATA_SOURCE", "GOOGLE_SHEETS"),
-        "use_knowledge_json": get_system_setting("USE_KNOWLEDGE_JSON", "FALSE"),
-        "ai_mode": get_ai_setting("AI_MODE", "OPTIONAL"),
-        "ai_is_core": get_ai_setting("AI_IS_CORE", "FALSE"),
-        "ai_enabled": get_ai_setting("AI_ENABLED", "TRUE"),
-        "ai_status": get_ai_setting("AI_STATUS", "ONLINE"),
-    })
+    config_ok, missing_config = check_config()
+    sheet_result, health_cached, health_age = (
+        _get_cached_sheet_health()
+    )
+    cache_status = get_sheet_cache_status()
 
+    sheet_ok = bool(sheet_result.get("ok"))
+    sheet_error = str(sheet_result.get("error") or "")
+    missing_sheets = list(
+        sheet_result.get("missing") or []
+    )
+    sheet_errors = list(
+        sheet_result.get("errors") or []
+    )
+
+    if not config_ok:
+        status = "unhealthy"
+        reason = "missing_config"
+        http_status = 503
+
+    elif sheet_ok:
+        status = "healthy"
+        reason = "system_ready"
+        http_status = 200
+
+    elif sheet_error and cache_status.get("has_data"):
+        status = "degraded"
+        reason = "google_sheets_error_using_cache"
+        http_status = 207
+
+    else:
+        status = "unhealthy"
+        reason = "google_sheets_or_schema_error"
+        http_status = 503
+
+    return jsonify({
+        "status": status,
+        "reason": reason,
+        "service": "online",
+        "config": {
+            "ok": config_ok,
+            "missing": missing_config,
+        },
+        "google_sheets": {
+            "ok": sheet_ok,
+            "using_cache": status == "degraded",
+            "missing_sheets": missing_sheets,
+            "errors": sheet_errors,
+            "error": sheet_error,
+        },
+        "cache": {
+            "available": cache_status.get(
+                "available",
+                False,
+            ),
+            "has_data": cache_status.get(
+                "has_data",
+                False,
+            ),
+            "sheet_count": cache_status.get(
+                "sheet_count",
+                0,
+            ),
+            "data_sheet_count": cache_status.get(
+                "data_sheet_count",
+                0,
+            ),
+            "oldest_age_seconds": cache_status.get(
+                "oldest_age_seconds",
+                0,
+            ),
+            "ttl_seconds": cache_status.get(
+                "ttl_seconds",
+                0,
+            ),
+        },
+        "health_check": {
+            "cached": health_cached,
+            "age_seconds": health_age,
+            "ttl_seconds": HEALTH_CHECK_TTL_SECONDS,
+        },
+    }), http_status
 
 # Chức năng: Kiểm thử hội thoại qua trình duyệt hoặc Postman.
 # Vai trò: Cho phép test nhanh router, AI optional và session.
