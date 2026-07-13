@@ -1,4 +1,6 @@
 import hmac
+import os
+import time
 
 from flask import Flask, request, jsonify
 
@@ -15,7 +17,23 @@ from services.logger import (
     log_ai_fallback,
 )
 from services.session_manager import get_context, save_context, clear_context
-from services.sheet_api import read_setting_system, read_setting_chat, read_setting_ai
+from services.sheet_api import (
+    read_setting_system,
+    read_setting_chat,
+    read_setting_ai,
+    sheet_health,
+    get_sheet_cache_status,
+)
+
+
+HEALTH_CHECK_TTL_SECONDS = int(
+    os.getenv("HEALTH_CHECK_TTL_SECONDS", "300")
+)
+
+_health_check_cache = {
+    "checked_at": 0.0,
+    "result": None,
+}
 
 app = Flask(__name__)
 
