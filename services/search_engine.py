@@ -353,71 +353,118 @@ def _name_token_score(user_text, name):
     return 0
 
 
-
+# Chức năng: Nhận diện bộ phận khi người dân nêu trực tiếp giá trị BO_PHAN trong câu hỏi.
+# Vai trò: Chỉ lọc bộ phận khi có căn cứ rõ, không để tên địa bàn hoặc chức danh làm lệch kết quả.
 def _detect_contact_department(user_text, rows):
-    # Chức năng: Nhận diện bộ phận khi câu hỏi có tín hiệu rõ trong BO_PHAN hoặc TU_KHOA.
-    # Vai trò: Phân biệt các dòng cùng địa bàn mà không bắt buộc mọi tra cứu phải có BO_PHAN.
     candidates = {}
 
     for row in rows:
         fields = _contact_field_values(row)
         department = str(fields.get("bo_phan") or "").strip()
         department_norm = normalize_text(department)
+
         if not department_norm:
             continue
 
         score = _exact_keyword_score(user_text, department, 20000)
-        area_tokens = set(normalize_text(fields.get("tdp")).split())
-
-        for keyword in split_keywords(fields.get("keywords")):
-            keyword_tokens = set(x for x in normalize_text(keyword).split() if len(x) >= 3)
-            if keyword_tokens and area_tokens and keyword_tokens.issubset(area_tokens):
-                continue
-            score += _exact_keyword_score(user_text, keyword, 10000)
 
         if score <= 0:
             continue
 
+        priority = safe_int(
+            get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"),
+            999,
+        )
+
         current = candidates.get(department_norm)
-        priority = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"), 999)
-        if not current or score > current[0] or (score == current[0] and priority < current[1]):
-            candidates[department_norm] = (score, priority, department)
+
+        if (
+            not current
+            or score > current[0]
+            or (score == current[0] and priority < current[1])
+        ):
+            candidates[department_norm] = (
+                score,
+                priority,
+                department,
+            )
 
     if not candidates:
         return ""
 
-    ranked = sorted(candidates.values(), key=lambda item: (-item[0], item[1], normalize_text(item[2])))
+    ranked = sorted(
+        candidates.values(),
+        key=lambda item: (
+            -item[0],
+            item[1],
+            normalize_text(item[2]),
+        ),
+    )
+
     if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
         return ""
 
     return ranked[0][2]
 
+
+# Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE theo tên, chức danh, bộ phận và địa bàn.
+# Vai trò: Ưu tiên đúng chức danh và từ khóa nghiệp vụ, không để tên địa bàn tự động chọn nhầm CSKV, ANCS hoặc BO_MAY_TDP.
 def search_lien_he(user_text, limit=3):
-    # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE.
-    # Vai trò: Chấm điểm hoàn toàn theo dữ liệu liên hệ, không hardcode cán bộ/bộ phận.
     text_norm = normalize_text(user_text)
+
     if not text_norm:
         return []
 
-    active_rows = [row for row in read_lien_he() if _active_status(row)]
-    phone_digits = re.sub(r"\D+", "", str(user_text or ""))
-    department_filter = _detect_contact_department(user_text, active_rows)
-    department_filter_norm = normalize_text(department_filter)
+    active_rows = [
+        row
+        for row in read_lien_he()
+        if _active_status(row)
+    ]
+
+    phone_digits = re.sub(
+        r"\D+",
+        "",
+        str(user_text or ""),
+    )
+
+    department_filter = _detect_contact_department(
+        user_text,
+        active_rows,
+    )
+    department_filter_norm = normalize_text(
+        department_filter
+    )
 
     if len(phone_digits) >= 9:
         phone_results = []
+
         for row in active_rows:
             fields = _contact_field_values(row)
-            phone_norm = re.sub(r"\D+", "", str(fields.get("phone") or ""))
-            if phone_norm and phone_digits in phone_norm:
-                phone_results.append(_add_meta(
+            phone_norm = re.sub(
+                r"\D+",
+                "",
+                str(fields.get("phone") or ""),
+            )
+
+            if not phone_norm or phone_digits not in phone_norm:
+                continue
+
+            phone_results.append(
+                _add_meta(
                     row=dict(row),
                     route="LIEN_HE",
                     score=100000,
                     sheet="TRA_CUU_LIEN_HE",
-                    row_id=get_first(row, "ID", "MA", "MÃ"),
+                    row_id=get_first(
+                        row,
+                        "ID",
+                        "MA",
+                        "MÃ",
+                    ),
                     note="PHONE_MATCH",
-                ))
+                )
+            )
+
         _sort_results(phone_results)
         return phone_results[:1]
 
@@ -426,8 +473,14 @@ def search_lien_he(user_text, limit=3):
 
     for row in active_rows:
         fields = _contact_field_values(row)
-        name_norm = normalize_text(fields.get("name"))
-        name_tokens = [x for x in name_norm.split() if x]
+        name_norm = normalize_text(
+            fields.get("name")
+        )
+        name_tokens = [
+            token
+            for token in name_norm.split()
+            if token
+        ]
 
         if len(name_tokens) < 2:
             continue
@@ -435,76 +488,188 @@ def search_lien_he(user_text, limit=3):
         if f" {name_norm} " not in text_box:
             continue
 
-        exact_name_results.append(_add_meta(
-            row=dict(row),
-            route="LIEN_HE",
-            score=100000,
-            sheet="TRA_CUU_LIEN_HE",
-            row_id=get_first(row, "ID", "MA", "MÃ"),
-            note="NAME_MATCH_EXACT",
-        ))
+        if (
+            department_filter_norm
+            and normalize_text(fields.get("bo_phan"))
+            != department_filter_norm
+        ):
+            continue
+
+        exact_name_results.append(
+            _add_meta(
+                row=dict(row),
+                route="LIEN_HE",
+                score=100000,
+                sheet="TRA_CUU_LIEN_HE",
+                row_id=get_first(
+                    row,
+                    "ID",
+                    "MA",
+                    "MÃ",
+                ),
+                note="NAME_MATCH_EXACT",
+            )
+        )
 
     if exact_name_results:
         exact_name_results.sort(
-            key=lambda r: safe_int(r.get("_UU_TIEN", 999))
+            key=lambda row: safe_int(
+                row.get("_UU_TIEN", 999)
+            )
         )
         return exact_name_results[:limit]
 
     scored = []
+
     for row in active_rows:
         fields = _contact_field_values(row)
+        row_department_norm = normalize_text(
+            fields.get("bo_phan")
+        )
 
-        if department_filter_norm and normalize_text(fields.get("bo_phan")) != department_filter_norm:
+        if (
+            department_filter_norm
+            and row_department_norm
+            != department_filter_norm
+        ):
             continue
 
         score = 0
         notes = []
 
-        area_score = _exact_keyword_score(user_text, fields["tdp"], 30000)
-        if area_score:
-            score += area_score
-            notes.append("AREA_MATCH")
+        name_score = _name_token_score(
+            user_text,
+            fields.get("name"),
+        )
 
-        keyword_score_value = _exact_keyword_score(user_text, fields["keywords"], 20000)
-        if keyword_score_value:
-            score += keyword_score_value
-            notes.append("KEYWORD_MATCH")
-
-        department_score = _exact_keyword_score(user_text, fields["bo_phan"], 15000)
-        if department_score:
-            score += department_score
-            notes.append("DEPARTMENT_MATCH")
-
-        name_score = _name_token_score(user_text, fields["name"])
         if name_score:
-            score += name_score
+            score += name_score * 5
             notes.append("NAME_MATCH")
 
-        role_score = _exact_keyword_score(user_text, fields["role"], 10000)
+        role_score = _exact_keyword_score(
+            user_text,
+            fields.get("role"),
+            40000,
+        )
+
         if role_score:
             score += role_score
             notes.append("ROLE_MATCH")
 
+        department_score = _exact_keyword_score(
+            user_text,
+            fields.get("bo_phan"),
+            30000,
+        )
+
+        if department_score:
+            score += department_score
+            notes.append("DEPARTMENT_MATCH")
+
+        area_norm = normalize_text(
+            fields.get("tdp")
+        )
+        area_tokens = set(
+            token
+            for token in area_norm.split()
+            if token
+        )
+
+        keyword_score_value = 0
+
+        for keyword in split_keywords(
+            fields.get("keywords")
+        ):
+            keyword_norm = normalize_text(keyword)
+
+            if not keyword_norm:
+                continue
+
+            keyword_tokens = set(
+                token
+                for token in keyword_norm.split()
+                if token
+            )
+
+            if (
+                keyword_tokens
+                and area_tokens
+                and keyword_tokens.issubset(area_tokens)
+            ):
+                continue
+
+            current_keyword_score = _exact_keyword_score(
+                user_text,
+                keyword,
+                35000,
+            )
+
+            if current_keyword_score > keyword_score_value:
+                keyword_score_value = current_keyword_score
+
+        if keyword_score_value:
+            score += keyword_score_value
+            notes.append("KEYWORD_MATCH")
+
+        area_score = _exact_keyword_score(
+            user_text,
+            fields.get("tdp"),
+            10000,
+        )
+
+        if area_score:
+            score += area_score
+            notes.append("AREA_MATCH")
+
         if score <= 0:
             continue
 
-        scored.append(_add_meta(
-            row=row,
-            route="LIEN_HE",
-            score=score,
-            sheet="TRA_CUU_LIEN_HE",
-            row_id=get_first(row, "ID", "MA", "MÃ"),
-            note="+".join(notes) or "CONTACT_MATCH",
-        ))
+        scored.append(
+            _add_meta(
+                row=dict(row),
+                route="LIEN_HE",
+                score=score,
+                sheet="TRA_CUU_LIEN_HE",
+                row_id=get_first(
+                    row,
+                    "ID",
+                    "MA",
+                    "MÃ",
+                ),
+                note="+".join(notes)
+                or "CONTACT_MATCH",
+            )
+        )
 
     if not scored:
-        debug_print("CONTACT", f"QUESTION: {user_text}", "NO MATCH")
+        debug_print(
+            "CONTACT",
+            f"QUESTION: {user_text}",
+            "NO MATCH",
+        )
         return []
 
-    scored.sort(key=lambda r: (-safe_int(r.get("_SCORE", 0)), safe_int(r.get("_UU_TIEN", 999))))
+    scored.sort(
+        key=lambda row: (
+            -safe_int(
+                row.get("_SCORE", 0)
+            ),
+            safe_int(
+                row.get("_UU_TIEN", 999)
+            ),
+        )
+    )
 
-    best_score = safe_int(scored[0].get("_SCORE", 0))
-    same_group = [row for row in scored if safe_int(row.get("_SCORE", 0)) == best_score]
+    best_score = safe_int(
+        scored[0].get("_SCORE", 0)
+    )
+
+    same_group = [
+        row
+        for row in scored
+        if safe_int(row.get("_SCORE", 0))
+        == best_score
+    ]
 
     if len(same_group) == 1:
         return same_group[:1]
