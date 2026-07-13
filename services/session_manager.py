@@ -2,7 +2,11 @@ import json
 from datetime import datetime
 from typing import Any, Dict
 
-from services.sheet_api import ensure_session_sheet
+from services.sheet_api import (
+    ensure_session_sheet,
+    read_session,
+    save_session,
+)
 
 _memory: Dict[str, Dict[str, Any]] = {}
 
@@ -69,31 +73,74 @@ def _normalize_context(context: Dict[str, Any]) -> Dict[str, Any]:
     return ctx
 
 
-# Chức năng: Đọc context hội thoại của một người dùng từ bộ nhớ tạm.
-# Vai trò: Không truy cập BOT_SESSION trong mỗi lượt nhắn, giảm request Google Sheets.
+# Chức năng: Đọc context hội thoại của một người dùng.
+# Vai trò: Ưu tiên bộ nhớ tạm và chỉ đọc BOT_SESSION khi chưa có cache.
 def get_context(user_id: Any) -> Dict[str, Any]:
     uid = _uid(user_id)
     if not uid:
         return {}
 
-    cached = _memory.get(uid)
-    if not cached:
+    if uid in _memory:
+        return dict(_memory[uid])
+
+    try:
+        stored_context = _safe_context(read_session(uid))
+
+        if not stored_context:
+            _memory[uid] = {}
+            return {}
+
+        ctx = _normalize_context(stored_context)
+        _memory[uid] = ctx
+        return dict(ctx)
+
+    except Exception as e:
+        print(f"[SESSION READ ERROR] {e}")
+        _memory[uid] = {}
         return {}
 
-    return dict(cached)
 
-# Chức năng: Lưu context hội thoại của một người dùng vào bộ nhớ tạm.
-# Vai trò: Không ghi BOT_SESSION trong mỗi lượt nhắn, tránh vượt quota Google Sheets.
+# Chức năng: Lưu context hội thoại của một người dùng.
+# Vai trò: Cập nhật cache và chỉ đồng bộ BOT_SESSION khi ngữ cảnh kỹ thuật thay đổi.
 def save_context(user_id: Any, context: Dict[str, Any]) -> bool:
     uid = _uid(user_id)
     if not uid:
         return False
 
+    previous_context = _safe_context(_memory.get(uid))
     ctx = _normalize_context(_safe_context(context))
-    ctx["updated_at"] = _now().isoformat(timespec="seconds")
+    updated_at = _now().isoformat(timespec="seconds")
+    ctx["updated_at"] = updated_at
     _memory[uid] = ctx
-    return True
 
+    tracked_keys = (
+        "sheet",
+        "topic",
+        "procedure_id",
+        "procedure_name",
+        "stage",
+        "page",
+        "last_suggestions",
+    )
+
+    context_changed = any(
+        previous_context.get(key) != ctx.get(key)
+        for key in tracked_keys
+    )
+
+    if not context_changed:
+        return True
+
+    try:
+        return save_session(
+            user_id=uid,
+            context=ctx,
+            updated_at=updated_at,
+        )
+
+    except Exception as e:
+        print(f"[SESSION SAVE ERROR] {e}")
+        return False
 # Chức năng: Xóa context hội thoại của một người dùng.
 # Vai trò: Reset phiên chat khi người dân quay lại menu hoặc kết thúc trao đổi.
 def clear_context(user_id: Any) -> bool:
