@@ -50,9 +50,9 @@ CACHE_TTL_SECONDS = int(os.getenv("SHEET_CACHE_TTL_SECONDS", "30"))
 # CLEAN DATA
 # =========================
 
+# Chức năng: Chuẩn hóa giá trị đọc từ Google Sheets.
+# Vai trò: Làm sạch dữ liệu chung mà không tự thay đổi số điện thoại, mã hoặc ID.
 def _clean_value(value: Any) -> str:
-    # Chức năng: Chuẩn hóa giá trị đọc từ Google Sheets.
-    # Vai trò: Bảo đảm dữ liệu đầu vào ổn định trước khi BOT xử lý.
     if value is None:
         return ""
 
@@ -64,11 +64,7 @@ def _clean_value(value: Any) -> str:
     if text.endswith(".0") and text.replace(".0", "", 1).isdigit():
         text = text[:-2]
 
-    if text.isdigit() and len(text) in [9, 10]:
-        text = "0" + text
-
     return text
-
 
 def _clean_key(key: Any) -> str:
     # Chức năng: Chuẩn hóa tên cột đọc từ Google Sheets.
