@@ -166,24 +166,37 @@ def ensure_worksheet(sheet_name: str, headers: Optional[List[str]] = None, rows:
 # READ HELPERS + CACHE
 # =========================
 
+# Chức năng: Đại diện lỗi kỹ thuật khi không thể đọc dữ liệu Google Sheets.
+# Vai trò: Phân biệt lỗi Google Sheets với trường hợp Sheet đọc thành công nhưng không có dữ liệu.
+class SheetReadError(RuntimeError):
+    pass
+
+
+# Chức năng: Xóa cache dữ liệu sheet.
+# Vai trò: Giúp BOT đọc lại dữ liệu mới sau khi Google Sheets được cập nhật.
 def clear_cache(sheet_name: Optional[str] = None):
-    # Chức năng: Xóa cache dữ liệu sheet.
-    # Vai trò: Giúp BOT đọc lại dữ liệu mới sau khi Google Sheets được cập nhật.
     if sheet_name:
         _cache.pop(sheet_name, None)
     else:
         _cache.clear()
 
-def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
-    # Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa và dùng cache dự phòng khi Google Sheets lỗi.
-    # Vai trò: Bảo đảm BOT vẫn có dữ liệu gần nhất khi API bị giới hạn 429 hoặc gián đoạn tạm thời.
+
+# Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa.
+# Vai trò: Trả danh sách rỗng khi không có dữ liệu và phát sinh SheetReadError khi Google Sheets bị lỗi.
+def read_sheet(
+    sheet_name: str,
+    use_cache: bool = True,
+) -> List[Dict[str, str]]:
     sheet_name = _clean_value(sheet_name)
+
     if not sheet_name:
-        return []
+        error_message = "Tên sheet trống hoặc không hợp lệ"
+        print(f"[SHEET READ ERROR] {error_message}")
+        raise SheetReadError(error_message)
 
     now = time.time()
-    cached_rows = []
-    cached_at = 0
+    cached_rows: List[Dict[str, str]] = []
+    cached_at = 0.0
 
     if sheet_name in _cache:
         cached_at, cached_rows = _cache[sheet_name]
@@ -198,25 +211,24 @@ def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
 
         for row in records:
             cleaned = _clean_row(row)
+
             if any(str(value).strip() for value in cleaned.values()):
                 rows.append(cleaned)
 
         _cache[sheet_name] = (now, rows)
+
+        if not rows:
+            print(
+                f"[SHEET EMPTY] {sheet_name}: "
+                "đọc thành công nhưng không có dữ liệu"
+            )
+
         return [dict(row) for row in rows]
 
-    except gspread.WorksheetNotFound:
-        print(f"[SHEET WARNING] Không tìm thấy sheet: {sheet_name}")
+    except gspread.WorksheetNotFound as e:
+        print(f"[SHEET READ ERROR] {sheet_name}: không tìm thấy worksheet")
 
-        if cached_rows:
-            print(f"[SHEET CACHE FALLBACK] {sheet_name}: dùng dữ liệu cache gần nhất")
-            return [dict(row) for row in cached_rows]
-
-        return []
-
-    except Exception as e:
-        print(f"[SHEET READ ERROR] {sheet_name}: {e}")
-
-        if cached_rows:
+        if use_cache and cached_rows:
             cache_age = int(now - cached_at)
             print(
                 f"[SHEET CACHE FALLBACK] {sheet_name}: "
@@ -224,24 +236,73 @@ def read_sheet(sheet_name: str, use_cache: bool = True) -> List[Dict[str, str]]:
             )
             return [dict(row) for row in cached_rows]
 
-        return []
+        raise SheetReadError(
+            f"Không tìm thấy worksheet: {sheet_name}"
+        ) from e
 
+    except Exception as e:
+        print(
+            f"[SHEET READ ERROR] {sheet_name}: "
+            f"{type(e).__name__}: {e}"
+        )
+
+        if use_cache and cached_rows:
+            cache_age = int(now - cached_at)
+            print(
+                f"[SHEET CACHE FALLBACK] {sheet_name}: "
+                f"dùng cache cũ {cache_age} giây"
+            )
+            return [dict(row) for row in cached_rows]
+
+        raise SheetReadError(
+            f"Không thể đọc sheet {sheet_name}: "
+            f"{type(e).__name__}: {e}"
+        ) from e
+
+
+# Chức năng: Kiểm tra trạng thái hoạt động của một dòng dữ liệu.
+# Vai trò: Giúp BOT chỉ sử dụng dữ liệu đang bật trong Google Sheets.
 def _is_active(row: Dict[str, Any]) -> bool:
-    # Chức năng: Kiểm tra trạng thái hoạt động của một dòng dữ liệu.
-    # Vai trò: Giúp BOT chỉ sử dụng dữ liệu đang bật trong Google Sheets.
-    status = _get_first(row, ["TRANG_THAI", "TRẠNG_THÁI", "STATUS", "ACTIVE", "HIEN_THI", "HIỂN_THỊ"]).lower()
+    status = _get_first(
+        row,
+        [
+            "TRANG_THAI",
+            "TRẠNG_THÁI",
+            "STATUS",
+            "ACTIVE",
+            "HIEN_THI",
+            "HIỂN_THỊ",
+        ],
+    ).lower()
 
     if not status:
         return True
 
-    inactive_values = {"off", "inactive", "false", "0", "no", "khong", "không", "ngung", "ngừng", "dung", "dừng"}
+    inactive_values = {
+        "off",
+        "inactive",
+        "false",
+        "0",
+        "no",
+        "khong",
+        "không",
+        "ngung",
+        "ngừng",
+        "dung",
+        "dừng",
+    }
+
     return status not in inactive_values
 
 
+# Chức năng: Đọc các dòng đang hoạt động trong một sheet.
+# Vai trò: Lọc dữ liệu hợp lệ và giữ nguyên lỗi Google Sheets để tầng xử lý phía trên nhận biết.
 def _read_active(sheet_name: str) -> List[Dict[str, str]]:
-    # Chức năng: Đọc các dòng đang hoạt động trong một sheet.
-    # Vai trò: Là lớp lọc dữ liệu hợp lệ trước khi BOT tìm kiếm, định tuyến và trả lời.
-    return [row for row in read_sheet(sheet_name) if _is_active(row)]
+    return [
+        row
+        for row in read_sheet(sheet_name)
+        if _is_active(row)
+    ]
 
 
 # =========================
