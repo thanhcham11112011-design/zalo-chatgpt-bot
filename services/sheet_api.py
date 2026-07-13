@@ -180,6 +180,31 @@ def clear_cache(sheet_name: Optional[str] = None):
     else:
         _cache.clear()
 
+# Chức năng: Tổng hợp trạng thái cache dữ liệu Google Sheets hiện có.
+# Vai trò: Giúp health check xác định BOT còn dữ liệu dự phòng khi Google Sheets tạm thời lỗi.
+def get_sheet_cache_status() -> Dict[str, Any]:
+    now = time.time()
+    sheet_count = 0
+    data_sheet_count = 0
+    oldest_age_seconds = 0
+
+    for cached_at, cached_rows in _cache.values():
+        sheet_count += 1
+        cache_age = max(0, int(now - cached_at))
+        oldest_age_seconds = max(oldest_age_seconds, cache_age)
+
+        if cached_rows:
+            data_sheet_count += 1
+
+    return {
+        "available": sheet_count > 0,
+        "has_data": data_sheet_count > 0,
+        "sheet_count": sheet_count,
+        "data_sheet_count": data_sheet_count,
+        "oldest_age_seconds": oldest_age_seconds,
+        "ttl_seconds": CACHE_TTL_SECONDS,
+    }
+
 
 # Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa.
 # Vai trò: Trả danh sách rỗng khi không có dữ liệu và phát sinh SheetReadError khi Google Sheets bị lỗi.
