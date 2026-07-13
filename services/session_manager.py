@@ -69,36 +69,18 @@ def _normalize_context(context: Dict[str, Any]) -> Dict[str, Any]:
     return ctx
 
 
-# Chức năng: Đọc context hội thoại của một người dùng.
-# Vai trò: Cung cấp ngữ cảnh kỹ thuật cho router xử lý câu hỏi nối tiếp.
+# Chức năng: Đọc context hội thoại của một người dùng từ bộ nhớ tạm.
+# Vai trò: Không truy cập BOT_SESSION trong mỗi lượt nhắn, giảm request Google Sheets.
 def get_context(user_id: Any) -> Dict[str, Any]:
     uid = _uid(user_id)
     if not uid:
         return {}
 
     cached = _memory.get(uid)
-    if cached:
-        return dict(cached)
+    if not cached:
+        return {}
 
-    try:
-        ws = ensure_session_sheet()
-        rows = ws.get_all_records(default_blank="")
-        for row in rows:
-            if str(row.get("USER_ID", "")).strip() != uid:
-                continue
-
-            ctx = _load_context_json(row.get("CONTEXT_JSON", "{}"))
-            updated_at = row.get("UPDATED_AT") or row.get("UPDATED_TIME") or ctx.get("updated_at") or ""
-            ctx["updated_at"] = str(updated_at or "")
-
-            _memory[uid] = ctx
-            return dict(ctx)
-
-    except Exception as e:
-        print(f"[SESSION READ ERROR] {e}")
-
-    return {}
-
+    return dict(cached)
 
 # Chức năng: Lưu context hội thoại của một người dùng.
 # Vai trò: Ghi ngữ cảnh kỹ thuật vào bộ nhớ tạm và sheet BOT_SESSION.
