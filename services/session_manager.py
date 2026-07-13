@@ -1,8 +1,7 @@
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict
 
-from config import SESSION_TTL_MINUTES
 from services.sheet_api import ensure_session_sheet
 
 _memory: Dict[str, Dict[str, Any]] = {}
@@ -12,24 +11,6 @@ _memory: Dict[str, Dict[str, Any]] = {}
 # Vai trò: Phục vụ kiểm tra hạn phiên và cập nhật thời gian session.
 def _now() -> datetime:
     return datetime.now()
-
-
-# Chức năng: Chuyển chuỗi thời gian ISO thành đối tượng datetime.
-# Vai trò: Giúp BOT kiểm tra session còn hạn hay đã hết hạn.
-def _parse_time(value: Any):
-    try:
-        return datetime.fromisoformat(str(value or ""))
-    except Exception:
-        return None
-
-
-# Chức năng: Kiểm tra context người dùng đã hết hạn hay chưa.
-# Vai trò: Tự động loại bỏ session cũ, tránh dùng nhầm ngữ cảnh hội thoại.
-def _expired(ctx: Dict[str, Any]) -> bool:
-    updated = _parse_time(ctx.get("updated_at") or ctx.get("UPDATED_AT"))
-    if not updated:
-        return False
-    return _now() - updated > timedelta(minutes=SESSION_TTL_MINUTES)
 
 
 # Chức năng: Chuẩn hóa khóa người dùng trước khi lưu hoặc đọc session.
@@ -97,9 +78,6 @@ def get_context(user_id: Any) -> Dict[str, Any]:
 
     cached = _memory.get(uid)
     if cached:
-        if _expired(cached):
-            _memory.pop(uid, None)
-            return {}
         return dict(cached)
 
     try:
@@ -112,9 +90,6 @@ def get_context(user_id: Any) -> Dict[str, Any]:
             ctx = _load_context_json(row.get("CONTEXT_JSON", "{}"))
             updated_at = row.get("UPDATED_AT") or row.get("UPDATED_TIME") or ctx.get("updated_at") or ""
             ctx["updated_at"] = str(updated_at or "")
-
-            if _expired(ctx):
-                return {}
 
             _memory[uid] = ctx
             return dict(ctx)
