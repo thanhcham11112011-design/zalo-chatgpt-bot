@@ -232,7 +232,7 @@ def is_contact_question(text):
         return True
 
     contact_intent_keys = [
-        "lien he", "so dien thoai", "sdt",
+        "lien he", "so dien thoai", "sdt", "dien thoai",
         "hotline", "gap can bo", "gap dong chi", "gap dc",
         "can bo phu trach", "ai phu trach", "truc ban",
         "cskv", "canh sat khu vuc", "to dan pho", "tdp",
@@ -438,12 +438,11 @@ def _procedure_id(row):
 
 
 # Chức năng: Tính điểm khớp thủ tục chỉ bằng cột TU_KHOA.
-# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ, nguyên cụm hoặc đúng thứ tự từ.
+# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ hoặc nguyên cụm, không khớp chuỗi con.
 def _score_procedure_by_tu_khoa(text, row):
     t = normalize_text(text)
     t_box = f" {t} "
-    t_words = t.split()
-    t_tokens = set(t_words)
+    t_tokens = set(t.split())
     raw_text = " ".join(str(text or "").lower().split())
     raw_box = f" {raw_text} "
     score = 0
@@ -463,7 +462,7 @@ def _score_procedure_by_tu_khoa(text, row):
         if not n:
             continue
 
-        parts = [part for part in n.split() if len(part) >= 3]
+        parts = [p for p in n.split() if len(p) >= 3]
 
         if raw_text == raw_kw:
             score += 70
@@ -471,20 +470,8 @@ def _score_procedure_by_tu_khoa(text, row):
             score += 45
         elif len(parts) >= 2 and f" {n} " in t_box:
             score += 45
-        elif len(parts) >= 2:
-            search_from = 0
-            ordered_match = True
-
-            for part in parts:
-                try:
-                    search_from = t_words.index(part, search_from) + 1
-                except ValueError:
-                    ordered_match = False
-                    break
-
-            if ordered_match:
-                score += 25
-
+        elif len(parts) >= 2 and all(p in t_tokens for p in parts):
+            score += 25
         elif len(parts) == 1 and len(parts[0]) >= 5 and parts[0] in t_tokens:
             score += 25
 
@@ -1440,11 +1427,7 @@ def route_message(user_text, context=None):
     contact_intent = is_contact_question(text)
 
     if contact_intent:
-        contact_reply = _reply_contact_results(
-            text,
-            limit=5,
-            keep_context=False
-        )
+        contact_reply = _reply_contact_results(text, limit=5, keep_context=False)
         if contact_reply:
             return contact_reply
 
@@ -1456,13 +1439,9 @@ def route_message(user_text, context=None):
             "procedure_name": "",
             "page": 1,
             "last_suggestions": [],
-            "last_route": "CONTACT_NOT_FOUND",
+            "last_route": "CONTACT_GUIDE",
         }
-
-        return _chat_setting(
-            "CONTACT_NOT_FOUND",
-            "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng kiểm tra lại họ tên, bộ phận hoặc địa bàn phụ trách."
-        ), "CONTACT_NOT_FOUND", new_ctx, ""
+        return get_contact_lookup_message(), "CONTACT_GUIDE", new_ctx, ""
 
     if not detect_bo_phan_contact(text):
         thongtin_reply = _reply_thongtin_from_faq_rows(faq)
