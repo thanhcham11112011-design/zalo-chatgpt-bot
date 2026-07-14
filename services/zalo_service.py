@@ -1,13 +1,13 @@
-import os
-import threading
-import time
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import requests
 
 from config import MAX_ZALO_TEXT_LENGTH
-from services.sheet_api import read_setting_system, update_setting_system
+from services.sheet_api import (
+    read_setting_chat,
+    read_setting_system,
+    update_setting_system,
+)
 
 ZALO_SEND_MESSAGE_URL = "https://openapi.zalo.me/v2.0/oa/message"
 ZALO_REFRESH_TOKEN_URL = "https://oauth.zaloapp.com/v4/oa/access_token"
@@ -445,12 +445,112 @@ def refresh_zalo_access_token(
             return False
 
 
-# Chức năng: Cắt nội dung tin nhắn theo giới hạn kỹ thuật của Zalo.
-# Vai trò: Tránh lỗi gửi tin do nội dung vượt quá độ dài cấu hình.
-def _trim_message(message: Any) -> str:
+# Chức năng: Lấy giới hạn độ dài mỗi phần tin nhắn từ SETTING_CHAT.
+# Vai trò: Dùng MAX_RESPONSE_LENGTH làm cấu hình chính và giới hạn Zalo làm mức bảo vệ kỹ thuật.
+def _get_message_length_limit() -> int:
+    technical_limit = max(
+        int(MAX_ZALO_TEXT_LENGTH or 1900),
+        1,
+    )
+
+    try:
+        chat_settings = read_setting_chat() or {}
+        configured_value = _clean(
+            chat_settings.get("MAX_RESPONSE_LENGTH")
+        )
+
+        if not configured_value:
+            return technical_limit
+
+        configured_limit = int(configured_value)
+
+        if configured_limit <= 0:
+            raise ValueError(
+                "MAX_RESPONSE_LENGTH phải lớn hơn 0"
+            )
+
+        return min(configured_limit, technical_limit)
+
+    except Exception as e:
+        print("[ZALO MESSAGE LIMIT ERROR]", e)
+        return technical_limit
+
+
+# Chức năng: Tìm vị trí chia phù hợp trong giới hạn một tin nhắn.
+# Vai trò: Ưu tiên xuống đoạn, xuống dòng, cuối câu và khoảng trắng trước khi cắt cứng.
+def _find_message_split_position(
+    text: str,
+    limit: int,
+) -> int:
+    minimum_position = max(int(limit * 0.5), 1)
+
+    for separator in ("\n\n", "\n"):
+        position = text.rfind(separator, 0, limit)
+
+        if position >= minimum_position:
+            return position + len(separator)
+
+    upper_bound = min(limit, len(text))
+
+    for index in range(
+        upper_bound - 1,
+        minimum_position - 1,
+        -1,
+    ):
+        if (
+            text[index] in ".!?;…"
+            and (
+                index + 1 >= len(text)
+                or text[index + 1].isspace()
+            )
+        ):
+            return index + 1
+
+    whitespace_position = max(
+        text.rfind(" ", 0, limit),
+        text.rfind("\t", 0, limit),
+    )
+
+    if whitespace_position >= minimum_position:
+        return whitespace_position + 1
+
+    return limit
+
+
+# Chức năng: Chia nội dung dài thành các phần phù hợp giới hạn gửi Zalo.
+# Vai trò: Giữ đủ nội dung và đúng thứ tự thay cho cơ chế cắt bỏ phần vượt giới hạn.
+def _split_message(message: Any) -> List[str]:
     text = _clean(message)
-    limit = max(int(MAX_ZALO_TEXT_LENGTH or 1900), 1)
-    return text[:limit]
+
+    if not text:
+        return []
+
+    limit = _get_message_length_limit()
+
+    if len(text) <= limit:
+        return [text]
+
+    parts: List[str] = []
+    remaining = text
+
+    while len(remaining) > limit:
+        split_position = _find_message_split_position(
+            remaining,
+            limit,
+        )
+        part = remaining[:split_position].strip()
+
+        if not part:
+            split_position = limit
+            part = remaining[:split_position]
+
+        parts.append(part)
+        remaining = remaining[split_position:].lstrip()
+
+    if remaining:
+        parts.append(remaining)
+
+    return parts
 
 
 # Chức năng: Gửi một tin nhắn Zalo một lần bằng access token hiện tại.
@@ -478,7 +578,7 @@ def _send_text_once(
             "user_id": _clean(user_id),
         },
         "message": {
-            "text": _trim_message(message),
+            "text": _clean(message),
         },
     }
 
@@ -519,12 +619,9 @@ def _send_text_once(
         )
 
 
-# Chức năng: Gửi tin nhắn văn bản về Zalo OA.
-# Vai trò: Tự refresh một lần khi token hết hạn và không refresh trùng giữa các thread.
-def send_zalo_text(user_id: str, message: str) -> bool:
-    if not _clean(user_id) or not _clean(message):
-        return False
-
+# Chức năng: Gửi một phần tin nhắn và xử lý access token hết hạn.
+# Vai trò: Giữ nguyên cơ chế refresh token cho từng phần khi gửi nội dung dài.
+def _send_text_part(user_id: str, message: str) -> bool:
     ok, data, token_used = _send_text_once(
         user_id,
         message,
@@ -562,6 +659,45 @@ def send_zalo_text(user_id: str, message: str) -> bool:
 
     print("[ZALO ERROR]", data)
     return False
+
+
+# Chức năng: Gửi tin nhắn văn bản về Zalo OA.
+# Vai trò: Chia nội dung dài và gửi tuần tự đầy đủ theo cấu hình SETTING_CHAT.
+def send_zalo_text(user_id: str, message: str) -> bool:
+    clean_user_id = _clean(user_id)
+    clean_message = _clean(message)
+
+    if not clean_user_id or not clean_message:
+        return False
+
+    message_parts = _split_message(clean_message)
+    total_parts = len(message_parts)
+
+    if total_parts > 1:
+        print(
+            "[ZALO MESSAGE SPLIT] "
+            f"parts={total_parts} "
+            f"total_length={len(clean_message)}"
+        )
+
+    for part_index, message_part in enumerate(
+        message_parts,
+        start=1,
+    ):
+        if _send_text_part(
+            clean_user_id,
+            message_part,
+        ):
+            continue
+
+        print(
+            "[ZALO MESSAGE PART ERROR] "
+            f"part={part_index}/{total_parts} "
+            f"length={len(message_part)}"
+        )
+        return False
+
+    return True
 
 
 # Chức năng: Alias gửi tin nhắn văn bản.
