@@ -163,7 +163,7 @@ def _get_runtime_config(settings=None):
         "timeout_seconds": _as_int(
             _get_setting(settings, "AI_TIMEOUT_SECONDS", "15"),
             15,
-            minimum=1,
+            minimum=10,
             maximum=120,
         ),
         "max_retries": _as_int(
@@ -314,9 +314,35 @@ def _classify_error(error):
         return "EMPTY_RESPONSE"
 
     if (
+        code in {400, 401, 403, 404}
+        or "api key" in text
+        or "api_key" in text
+        or "invalid argument" in text
+        or "invalid_argument" in text
+        or "minimum allowed deadline" in text
+        or "deadline" in text and "too short" in text
+        or "invalid model" in text
+        or "model not found" in text
+        or "permission denied" in text
+        or "permission_denied" in text
+        or "unauthenticated" in text
+    ):
+        return "CONFIG_ERROR"
+
+    if (
+        "quota" in text
+        or "resource exhausted" in text
+        or "resource_exhausted" in text
+        or "rate limit" in text
+        or "too many requests" in text
+        or code == 429
+    ):
+        return "QUOTA_EXCEEDED"
+
+    if (
         "timeout" in text
         or "timed out" in text
-        or "deadline" in text
+        or "deadline exceeded" in text
         or "deadline_exceeded" in text
     ):
         return "TIMEOUT"
@@ -330,16 +356,6 @@ def _classify_error(error):
     ):
         return "CONNECTION_ERROR"
 
-    if (
-        code == 429
-        or "quota" in text
-        or "resource exhausted" in text
-        or "resource_exhausted" in text
-        or "rate limit" in text
-        or "too many requests" in text
-    ):
-        return "QUOTA_EXCEEDED"
-
     if code in {500, 502, 503, 504}:
         return "SERVER_ERROR"
 
@@ -347,26 +363,10 @@ def _classify_error(error):
         "safety" in text
         or "blocked" in text
         or "prohibited content" in text
-        or "finish_reason" in text and "safety" in text
     ):
         return "SAFETY_BLOCKED"
 
-    if (
-        code in {400, 401, 403, 404}
-        or "api key" in text
-        or "api_key" in text
-        or "invalid argument" in text
-        or "invalid_argument" in text
-        or "invalid model" in text
-        or "model not found" in text
-        or "permission denied" in text
-        or "permission_denied" in text
-        or "unauthenticated" in text
-    ):
-        return "CONFIG_ERROR"
-
     return "API_ERROR"
-
 
 # Chức năng: Kiểm tra trạng thái lỗi có thuộc nhóm tạm thời không.
 # Vai trò: Chỉ cho phép retry timeout, kết nối, 429, lỗi máy chủ và phản hồi rỗng.
