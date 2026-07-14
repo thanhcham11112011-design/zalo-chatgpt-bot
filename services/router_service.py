@@ -16,7 +16,7 @@ from services.search_engine import (
     detect_bad_language,
 )
 
-PAGE_SIZE = 5
+
 TECHNICAL_FALLBACK_REPLY = "Xin lỗi, hiện hệ thống chưa xử lý được yêu cầu này. Quý công dân vui lòng nhập menu hoặc hỏi rõ hơn."
 
 
