@@ -18,7 +18,7 @@ GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON", "").strip()
 # Chức năng: Cấu hình kỹ thuật cho AI.
 # Vai trò: API/model được cấu hình bằng biến môi trường, prompt và nghiệp vụ đọc từ sheet PROMPT/SETTING_AI.
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip()
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash").strip()
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "").strip()
 
 # Chức năng: Cấu hình kết nối Zalo OA.
 # Vai trò: Cung cấp tham số kỹ thuật để gửi/nhận tin nhắn Zalo.
