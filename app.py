@@ -16,8 +16,6 @@ from services.logger import (
     log_error,
     debug_log,
     write_unknown_log,
-    log_ai_event,
-    log_ai_fallback,
 )
 from services.session_manager import get_context, save_context, clear_context
 from services.sheet_api import (
@@ -325,64 +323,93 @@ def remember_message(message_id):
 
 
 # Chức năng: Gọi Gemini theo cơ chế tùy chọn và nhận trạng thái AI.
-# Vai trò: Nếu Gemini lỗi, hết quota hoặc timeout thì quay về câu trả lời từ Google Sheets.
+# Vai trò: Trả kết quả AI về build_answer để chỉ ghi một dòng lịch sử hội thoại.
 def try_ai_answer(user_id, question, routed, fallback_answer):
     if not can_use_ai(routed):
-        return fallback_answer, routed.get("source", "DEFAULT"), "AI_NOT_USED", ""
+        return (
+            fallback_answer,
+            routed.get("source", "DEFAULT"),
+            "AI_NOT_USED",
+            "",
+            "AI_NOT_USED",
+        )
 
     ai_context = routed.get("ai_context", "")
     ai_model = get_ai_setting("MODEL", "")
 
     try:
-        result = ask_gemini_status(question, context=ai_context)
-        ai_status = str(result.get("ai_status") or "UNKNOWN").strip()
-        ai_error = str(result.get("error") or "").strip()
-        ai_text = str(result.get("text") or "").strip()
+        result = ask_gemini_status(
+            question,
+            context=ai_context,
+        )
 
-        if result.get("ok") and ai_text and ai_text != get_default_reply():
+        ai_status = str(
+            result.get("ai_status") or "UNKNOWN"
+        ).strip()
+        ai_error = str(
+            result.get("error") or ""
+        ).strip()
+        ai_text = str(
+            result.get("text") or ""
+        ).strip()
+
+        if (
+            result.get("ok")
+            and ai_text
+            and ai_text != get_default_reply()
+        ):
             answer = ai_text
             notice = get_ai_notice()
+
             if notice:
-                answer = answer + "\\n\\n────────────────\\n" + notice
+                answer = (
+                    answer
+                    + "\n\n────────────────\n"
+                    + notice
+                )
 
-            log_ai_event(
-                user_id=user_id,
-                user_message=question,
-                ai_status=ai_status or "ONLINE",
-                ai_model=ai_model,
-                bot_reply=answer,
-                route="AI_OK",
-                note="AI_OPTIONAL_SUCCESS",
+            return (
+                answer,
+                "GEMINI_AI",
+                ai_status or "ONLINE",
+                ai_model,
+                "AI_OPTIONAL_SUCCESS",
             )
-            return answer, "GEMINI_AI", ai_status or "ONLINE", ai_model
 
-        fallback = fallback_answer or ai_text or get_ai_unavailable_message()
-        log_ai_fallback(
-            user_id=user_id,
-            user_message=question,
-            ai_status=ai_status or "AI_FALLBACK",
-            fallback_message=fallback,
-            route="AI_FALLBACK",
-            ai_model=ai_model,
-            note=ai_error or "AI_OPTIONAL_FALLBACK",
+        fallback = (
+            fallback_answer
+            or ai_text
+            or get_ai_unavailable_message()
         )
-        return fallback, "AI_FALLBACK", ai_status or "AI_FALLBACK", ai_model
+
+        return (
+            fallback,
+            "AI_FALLBACK",
+            ai_status or "AI_FALLBACK",
+            ai_model,
+            ai_error or "AI_OPTIONAL_FALLBACK",
+        )
 
     except Exception as e:
-        console_log("ERROR", "AI", "Luồng AI Optional phát sinh ngoại lệ", error=e)
-        fallback = fallback_answer or get_ai_unavailable_message()
-        log_ai_fallback(
-            user_id=user_id,
-            user_message=question,
-            ai_status="API_ERROR",
-            fallback_message=fallback,
-            route="AI_EXCEPTION",
-            ai_model=ai_model,
-            note=str(e),
+        console_log(
+            "ERROR",
+            "AI",
+            "Luồng AI Optional phát sinh ngoại lệ",
+            error=e,
         )
-        return fallback, "AI_UNAVAILABLE", "API_ERROR", ai_model
 
+        fallback = (
+            fallback_answer
+            or get_ai_unavailable_message()
+        )
 
+        return (
+            fallback,
+            "AI_UNAVAILABLE",
+            "API_ERROR",
+            ai_model,
+            str(e),
+        )
 # Chức năng: Xây dựng câu trả lời cho một tin nhắn người dân.
 # Vai trò: Điều phối session, router, Gemini optional, log và không xử lý nghiệp vụ trực tiếp.
 def build_answer(user_id, question):
@@ -411,6 +438,7 @@ def build_answer(user_id, question):
     new_context = routed.get("context", context)
     ai_status = "AI_NOT_REQUESTED"
     ai_model = ""
+    ai_note = "AI_NOT_REQUESTED"
 
     if source == "RESET":
         clear_context(user_id)
@@ -419,7 +447,18 @@ def build_answer(user_id, question):
     else:
         save_context(user_id, new_context)
 
-    answer, source, ai_status, ai_model = try_ai_answer(user_id, question, routed, answer)
+    (
+        answer,
+        source,
+        ai_status,
+        ai_model,
+        ai_note,
+    ) = try_ai_answer(
+        user_id,
+        question,
+        routed,
+        answer,
+    )
 
     if routed.get("unknown_log") or source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "AI_UNAVAILABLE"}:
         log_unknown_safe(
@@ -437,7 +476,7 @@ def build_answer(user_id, question):
         bot_reply=answer,
         source=source,
         route=source,
-        note=ai_status,
+        note=ai_note,
         ai_status=ai_status,
         ai_model=ai_model,
         ai_called=source in {"GEMINI_AI", "AI_FALLBACK", "AI_UNAVAILABLE"},
