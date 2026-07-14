@@ -234,12 +234,6 @@ def is_reset_question(text):
     ]
 
 
-# Chức năng: Giữ tương thích với các lệnh xem tiếp đã sử dụng trước đây.
-# Vai trò: Vô hiệu hóa phân trang vì danh sách được gửi đầy đủ qua cơ chế chia tin Zalo.
-def is_next_page_question(text):
-    return False
-
-
 # Chức năng: Tạo thông điệp kết thúc phiên từ SETTING_CHAT.
 # Vai trò: Loại bỏ lời chào/kết thúc hardcode theo đơn vị.
 def get_end_message():
