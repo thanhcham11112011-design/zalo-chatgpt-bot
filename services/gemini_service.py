@@ -164,16 +164,30 @@ def _get_runtime_config(settings=None):
             _get_setting(settings, "AI_TIMEOUT_SECONDS", "15"),
             15,
             minimum=1,
+            maximum=120,
         ),
-        "retry_count": _as_int(
-            _get_setting(settings, "AI_RETRY_COUNT", "1"),
+        "max_retries": _as_int(
+            _get_setting(settings, "AI_MAX_RETRIES", "1"),
             1,
-            minimum=1,
+            minimum=0,
             maximum=5,
         ),
+        "retry_delay_seconds": _as_float(
+            _get_setting(
+                settings,
+                "AI_RETRY_DELAY_SECONDS",
+                "1",
+            ),
+            1.0,
+            minimum=0.0,
+            maximum=10.0,
+        ),
+        "retry_enabled": _as_bool(
+            _get_setting(settings, "AI_RETRY_ENABLED", "TRUE"),
+            True,
+        ),
     }
-
-
+    
 # Chức năng: Kiểm tra AI có được phép hoạt động không.
 # Vai trò: Bảo đảm Gemini chỉ là lớp phụ trợ và tuân thủ cổng dữ liệu Google Sheets.
 def _ai_allowed(context="", settings=None):
@@ -243,34 +257,15 @@ def _get_client(settings=None, runtime=None):
     if _client and _client_signature == signature:
         return _client
 
-    try:
-        http_options = types.HttpOptions(
-            timeout=timeout_ms,
-        )
-    except Exception:
-        http_options = {
-            "timeout": timeout_ms,
-        }
-
-    try:
-        _client = genai.Client(
-            api_key=api_key,
-            http_options=http_options,
-        )
-    except TypeError:
-        console_log(
-            "WARNING",
-            "AI_CONFIG",
-            "SDK hiện tại không hỗ trợ http_options tại Client",
-            timeout_seconds=runtime["timeout_seconds"],
-        )
-        _client = genai.Client(
-            api_key=api_key,
-        )
-
+    http_options = types.HttpOptions(
+        timeout=timeout_ms,
+    )
+    _client = genai.Client(
+        api_key=api_key,
+        http_options=http_options,
+    )
     _client_signature = signature
     return _client
-
 
 # Chức năng: Lấy câu fallback từ SETTING_CHAT.
 # Vai trò: Bảo đảm Gemini lỗi không làm gián đoạn câu trả lời từ Google Sheets.
@@ -280,6 +275,10 @@ def _fallback_reply(status="AI_FALLBACK"):
         "OFFLINE",
         "QUOTA_EXCEEDED",
         "TIMEOUT",
+        "CONNECTION_ERROR",
+        "SERVER_ERROR",
+        "EMPTY_RESPONSE",
+        "CONFIG_ERROR",
         "API_ERROR",
     }:
         message = _get_chat_message(
@@ -298,20 +297,21 @@ def _fallback_reply(status="AI_FALLBACK"):
         ),
     )
 
-
 # Chức năng: Phân loại lỗi Gemini thành trạng thái kỹ thuật.
-# Vai trò: Giúp BOT ghi log quota, timeout, cấu hình hoặc lỗi API thống nhất.
+# Vai trò: Giúp BOT xác định lỗi nào được retry và lỗi nào phải dừng ngay.
 def _classify_error(error):
-    text = str(error or "").lower()
+    code = getattr(error, "code", 0)
+    message = getattr(error, "message", "")
 
-    if (
-        "quota" in text
-        or "resource exhausted" in text
-        or "resource_exhausted" in text
-        or "429" in text
-        or "billing" in text
-    ):
-        return "QUOTA_EXCEEDED"
+    try:
+        code = int(code or 0)
+    except Exception:
+        code = 0
+
+    text = f"{message} {error or ''}".lower()
+
+    if "empty_response" in text:
+        return "EMPTY_RESPONSE"
 
     if (
         "timeout" in text
@@ -321,8 +321,63 @@ def _classify_error(error):
     ):
         return "TIMEOUT"
 
+    if (
+        "connection" in text
+        or "connect error" in text
+        or "network" in text
+        or "remoteprotocolerror" in text
+        or "server disconnected" in text
+    ):
+        return "CONNECTION_ERROR"
+
+    if (
+        code == 429
+        or "quota" in text
+        or "resource exhausted" in text
+        or "resource_exhausted" in text
+        or "rate limit" in text
+        or "too many requests" in text
+    ):
+        return "QUOTA_EXCEEDED"
+
+    if code in {500, 502, 503, 504}:
+        return "SERVER_ERROR"
+
+    if (
+        "safety" in text
+        or "blocked" in text
+        or "prohibited content" in text
+        or "finish_reason" in text and "safety" in text
+    ):
+        return "SAFETY_BLOCKED"
+
+    if (
+        code in {400, 401, 403, 404}
+        or "api key" in text
+        or "api_key" in text
+        or "invalid argument" in text
+        or "invalid_argument" in text
+        or "invalid model" in text
+        or "model not found" in text
+        or "permission denied" in text
+        or "permission_denied" in text
+        or "unauthenticated" in text
+    ):
+        return "CONFIG_ERROR"
+
     return "API_ERROR"
 
+
+# Chức năng: Kiểm tra trạng thái lỗi có thuộc nhóm tạm thời không.
+# Vai trò: Chỉ cho phép retry timeout, kết nối, 429, lỗi máy chủ và phản hồi rỗng.
+def _is_retryable_status(status):
+    return status in {
+        "TIMEOUT",
+        "CONNECTION_ERROR",
+        "QUOTA_EXCEEDED",
+        "SERVER_ERROR",
+        "EMPTY_RESPONSE",
+    }
 
 # Chức năng: Tạo prompt gửi Gemini từ PROMPT và dữ liệu tham khảo.
 # Vai trò: AI chỉ tổng hợp theo dữ liệu Google Sheets và giới hạn ký tự cấu hình.
@@ -455,20 +510,55 @@ def ask_gemini_status(question, context=""):
             "top_k": runtime["top_k"],
             "max_output_tokens": runtime["max_output_tokens"],
         }
+        prompt = build_prompt(question, context)
+        max_retries = (
+            runtime["max_retries"]
+            if runtime["retry_enabled"]
+            else 0
+        )
+        total_attempts = 1 + max_retries
         last_error = ""
+        final_status = "API_ERROR"
+        attempts_used = 0
 
-        for attempt in range(1, runtime["retry_count"] + 1):
+        for attempt in range(1, total_attempts + 1):
+            attempts_used = attempt
+
+            if attempt > 1:
+                console_log(
+                    "INFO",
+                    "GEMINI",
+                    "Bắt đầu retry Gemini",
+                    attempt=attempt,
+                    total_attempts=total_attempts,
+                    delay_seconds=runtime["retry_delay_seconds"],
+                )
+
+            started_at = time.monotonic()
+
             try:
                 response = client.models.generate_content(
                     model=model,
-                    contents=build_prompt(question, context),
+                    contents=prompt,
                     config=generation_config,
                 )
                 text = str(
                     getattr(response, "text", "") or ""
                 ).strip()
+                duration_ms = int(
+                    (time.monotonic() - started_at) * 1000
+                )
 
                 if text:
+                    console_log(
+                        "INFO",
+                        "GEMINI",
+                        "Yêu cầu Gemini thành công",
+                        model=model,
+                        attempt=attempt,
+                        total_attempts=total_attempts,
+                        duration_ms=duration_ms,
+                    )
                     return {
                         "ok": True,
                         "text": text[:runtime["max_output_chars"]],
@@ -477,25 +567,39 @@ def ask_gemini_status(question, context=""):
                     }
 
                 last_error = "EMPTY_RESPONSE"
+                final_status = "EMPTY_RESPONSE"
 
             except Exception as e:
                 last_error = str(e)
-                error_status = _classify_error(e)
+                final_status = _classify_error(e)
 
-                if error_status == "QUOTA_EXCEEDED":
-                    break
+            retryable = _is_retryable_status(final_status)
+            has_next_attempt = attempt < total_attempts
 
-                if attempt < runtime["retry_count"]:
-                    time.sleep(min(0.5 * attempt, 2.0))
+            console_log(
+                "WARNING",
+                "GEMINI",
+                "Yêu cầu Gemini chưa thành công",
+                status=final_status,
+                model=model,
+                attempt=attempt,
+                total_attempts=total_attempts,
+                retry=retryable and has_next_attempt,
+                error=last_error,
+            )
 
-        final_status = _classify_error(last_error)
+            if not retryable or not has_next_attempt:
+                break
+
+            time.sleep(runtime["retry_delay_seconds"])
+
         console_log(
             "ERROR",
             "GEMINI",
-            "Yêu cầu Gemini thất bại",
+            "Yêu cầu Gemini thất bại hoàn toàn",
             status=final_status,
             model=model,
-            attempts=runtime["retry_count"],
+            attempts=attempts_used,
             error=last_error,
         )
         return {
@@ -521,7 +625,6 @@ def ask_gemini_status(question, context=""):
             "ai_status": final_status,
             "error": str(e),
         }
-
 
 # Chức năng: Gửi câu hỏi tới Gemini khi router cần AI phụ trợ.
 # Vai trò: Giữ tương thích với các module cũ chỉ nhận nội dung văn bản.
