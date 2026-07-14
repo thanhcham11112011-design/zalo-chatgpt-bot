@@ -415,50 +415,49 @@ def menu_context(row):
         "stage": stage,
         "procedure_id": "",
         "procedure_name": "",
-        "page": 1,
         "last_suggestions": [],
     }
 
 
-# Chức năng: Tạo danh sách thủ tục theo sheet THU_TUC_* có phân trang.
-# Vai trò: Hiển thị lựa chọn thủ tục từ dữ liệu Google Sheets.
-def _make_procedure_list_reply(sheet, topic="", page=1):
+# Chức năng: Tạo toàn bộ danh sách thủ tục theo sheet THU_TUC_*.
+# Vai trò: Chuyển đầy đủ danh sách sang tầng gửi Zalo để tự động chia thành nhiều tin nhắn.
+def _make_procedure_list_reply(sheet, topic=""):
     if not sheet or not sheet.startswith("THU_TUC_"):
         return None
 
-    all_rows = list_procedures_by_sheet(sheet, limit=999)
+    all_rows = list_procedures_by_sheet(sheet)
     if not all_rows:
         return None
 
-    page = max(safe_int(page, default=1), 1)
-    start = (page - 1) * PAGE_SIZE
-    end = start + PAGE_SIZE
-    page_rows = all_rows[start:end]
-
-    if not page_rows:
-        page = max(((len(all_rows) - 1) // PAGE_SIZE) + 1, 1)
-        start = (page - 1) * PAGE_SIZE
-        end = start + PAGE_SIZE
-        page_rows = all_rows[start:end]
-
     suggestions = []
     lines = []
-    for i, row in enumerate(page_rows, start=start + 1):
+
+    for index, row in enumerate(all_rows, start=1):
         name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-        pid = get_first(row, "ID", "MA", "MÃ")
-        suggestions.append({"index": i, "id": pid, "name": name})
+        procedure_id = get_first(row, "ID", "MA", "MÃ")
+
+        suggestions.append(
+            {
+                "index": index,
+                "id": procedure_id,
+                "name": name,
+            }
+        )
+
         if name:
-            lines.append(f"{i}. {name}")
+            lines.append(f"{index}. {name}")
 
     title = topic or sheet.replace("THU_TUC_", "")
-    has_next = end < len(all_rows)
     reply_parts = [
         f"📌 {title}",
         "Quý công dân vui lòng chọn thủ tục:",
         "\n".join(lines),
-        "Nhắn số thứ tự để chọn thủ tục hoặc nhập từ khóa gần đúng của thủ tục cần hỏi.",
+        (
+            "Nhắn số thứ tự để chọn thủ tục hoặc "
+            "nhập từ khóa gần đúng của thủ tục cần hỏi."
+        ),
+        "Đã hiển thị toàn bộ danh sách thủ tục trong nhóm này.",
     ]
-    reply_parts.append("Nhắn \"xem tiếp\" để xem thêm thủ tục." if has_next else "Đã hiển thị hết danh sách thủ tục trong nhóm này.")
 
     new_ctx = {
         "sheet": sheet,
@@ -466,9 +465,9 @@ def _make_procedure_list_reply(sheet, topic="", page=1):
         "stage": "procedure_list",
         "procedure_id": "",
         "procedure_name": "",
-        "page": page,
         "last_suggestions": suggestions,
     }
+
     return "\n\n".join(reply_parts), new_ctx
 
 
@@ -483,7 +482,7 @@ def answer_from_menu(row):
         return str(desc or get_contact_lookup_message()).strip(), []
 
     if sheet and sheet.startswith("THU_TUC_"):
-        grouped = _make_procedure_list_reply(sheet, topic=title, page=1)
+        grouped = _make_procedure_list_reply(sheet, topic=title)
         if grouped:
             reply, new_ctx = grouped
             if desc:
@@ -961,10 +960,10 @@ def _find_procedure_in_current_sheet(text, ctx):
     return None
 
 
-# Chức năng: Tạo lại danh sách thủ tục dựa trên context hiện tại.
-# Vai trò: Dùng khi phân trang hoặc yêu cầu người dân chọn lại thủ tục.
+# Chức năng: Tạo lại toàn bộ danh sách thủ tục dựa trên context hiện tại.
+# Vai trò: Dùng khi cần yêu cầu người dân chọn lại thủ tục.
 def _procedure_list_reply_for_context(ctx):
-    return _make_procedure_list_reply(ctx.get("sheet", ""), topic=ctx.get("topic", ""), page=ctx.get("page", 1))
+    return _make_procedure_list_reply(ctx.get("sheet", ""), topic=ctx.get("topic", ""))
 
 
 # Chức năng: Tạo thông báo yêu cầu chọn thủ tục cụ thể.
@@ -1037,70 +1036,9 @@ def _contact_department_guide(department):
 
     return ""
     
-# Chức năng: Kiểm tra bộ phận liên hệ có được cấu hình phân trang hay không.
-# Vai trò: Chỉ phân trang các bộ phận khai báo trong SETTING_CHAT, không hardcode nghiệp vụ.
-def _contact_paging_enabled(department):
-    configured = _chat_setting("CONTACT_PAGING_DEPARTMENTS", "")
-    departments = [
-        normalize_text(item)
-        for item in _split_keywords(configured)
-        if normalize_text(item)
-    ]
-    return normalize_text(department) in departments
-
-
-# Chức năng: Tạo nội dung một trang danh sách liên hệ.
-# Vai trò: Hiển thị đúng số kết quả và lưu ngữ cảnh để người dân nhắn xem tiếp.
-def _make_contact_page_reply(text, department, page=1):
-    page_size = max(safe_int(_chat_setting("CONTACT_PAGE_SIZE", "5"), 5), 1)
-    all_results = search_lien_he(text, limit=999)
-
-    if not all_results:
-        return None
-
-    page = max(safe_int(page, 1), 1)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_results = all_results[start:end]
-
-    if not page_results:
-        return None
-
-    reply = format_multiple_results(
-        page_results,
-        format_lien_he,
-        limit=page_size,
-    )
-
-    has_next = end < len(all_results)
-
-    if has_next:
-        reply += "\n\n" + _chat_setting(
-            "CONTACT_NEXT_MESSAGE",
-            'Nhắn "xem tiếp" để xem danh sách tiếp theo.',
-        )
-    else:
-        reply += "\n\n✅ Đã hiển thị hết danh sách phù hợp."
-
-    new_ctx = {
-        "stage": "contact_list",
-        "sheet": "TRA_CUU_LIEN_HE",
-        "topic": department or "Tra cứu liên hệ",
-        "contact_department": department,
-        "contact_query": text,
-        "contact_page": page,
-        "procedure_id": "",
-        "procedure_name": "",
-        "page": 1,
-        "last_suggestions": [],
-        "last_route": "CONTACT_LIST_PAGE",
-    }
-
-    return reply, "CONTACT_LIST_PAGE", new_ctx, ""
-
-# Chức năng: Xử lý kết quả liên hệ, hướng dẫn làm rõ và phân trang theo cấu hình bộ phận.
-# Vai trò: Lọc chính xác địa bàn TDP từ dữ liệu Sheet trước khi định dạng kết quả trả lời.
-def _reply_contact_results(text, limit=5, keep_context=False, contact_results=None):
+# Chức năng: Xử lý toàn bộ kết quả liên hệ phù hợp và hướng dẫn làm rõ khi cần.
+# Vai trò: Lọc chính xác địa bàn TDP rồi chuyển đầy đủ kết quả sang tầng gửi Zalo.
+def _reply_contact_results(text, keep_context=False, contact_results=None):
     results = (
         contact_results
         if contact_results is not None
@@ -1221,7 +1159,6 @@ def _reply_contact_results(text, limit=5, keep_context=False, contact_results=No
                 "contact_department": department,
                 "procedure_id": "",
                 "procedure_name": "",
-                "page": 1,
                 "last_suggestions": [],
                 "last_route": "CONTACT_GUIDE_BY_DEPARTMENT",
             }
@@ -1233,28 +1170,11 @@ def _reply_contact_results(text, limit=5, keep_context=False, contact_results=No
                 "",
             )
 
-    if (
-        len(results) > limit
-        and has_specific_signal
-        and _contact_paging_enabled(department)
-    ):
-        return _make_contact_page_reply(
-            text=text,
-            department=department,
-            page=1,
-        )
-
     reply = format_multiple_results(
         results,
         format_lien_he,
-        limit=limit,
+        limit=len(results),
     )
-
-    if len(results) > limit:
-        reply += (
-            "\n\nℹ️ Có nhiều kết quả phù hợp. "
-            "Quý công dân vui lòng nhập rõ hơn họ tên để BOT tra cứu chính xác."
-        )
 
     new_ctx = {
         "stage": "contact_lookup" if keep_context else "",
@@ -1262,7 +1182,6 @@ def _reply_contact_results(text, limit=5, keep_context=False, contact_results=No
         "topic": "Tra cứu liên hệ",
         "procedure_id": "",
         "procedure_name": "",
-        "page": 1,
         "last_suggestions": [],
         "last_route": "TRA_CUU_LIEN_HE",
     }
@@ -1448,7 +1367,6 @@ def _context_from_related_procedure(procedure, ctx=None, route_name="FAQ_RELATED
         "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
         "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
         "stage": "procedure",
-        "page": 1,
         "last_suggestions": [],
         "last_route": route_name,
     }
@@ -1478,7 +1396,6 @@ def _route_from_single_faq(user_text, faq_row, ctx):
             "topic": "Tra cứu liên hệ",
             "procedure_id": "",
             "procedure_name": "",
-            "page": 1,
             "last_suggestions": [],
             "last_route": "FAQ_TRA_CUU_LIEN_HE",
         }
@@ -1538,7 +1455,6 @@ def _faq_plain_context(ctx, route="FAQ"):
     new_ctx["procedure_id"] = ""
     new_ctx["procedure_name"] = ""
     new_ctx["stage"] = ""
-    new_ctx["page"] = 1
     new_ctx["last_suggestions"] = []
     return new_ctx
 
@@ -1614,27 +1530,6 @@ def route_message(user_text, context=None):
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
         
-    if is_next_page_question(text) and ctx.get("stage") == "contact_list":
-        contact_query = ctx.get("contact_query", "")
-        department = ctx.get("contact_department", "")
-        next_page = safe_int(ctx.get("contact_page", 1), 1) + 1
-
-        paged = _make_contact_page_reply(
-            text=contact_query,
-            department=department,
-            page=next_page,
-        )
-
-        if paged:
-            return paged
-
-        ctx["last_route"] = "CONTACT_LIST_END"
-        return (
-            "✅ Đã hiển thị hết danh sách phù hợp.",
-            "CONTACT_LIST_END",
-            ctx,
-            "",
-        )
     selected = _select_from_suggestions(text, ctx)
     if selected:
         new_ctx = {
@@ -1643,7 +1538,6 @@ def route_message(user_text, context=None):
             "procedure_id": get_first(selected, "ID", "MA", "MÃ"),
             "procedure_name": get_first(selected, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
             "stage": "procedure",
-            "page": ctx.get("page", 1),
             "last_suggestions": [],
             "last_route": "THU_TUC_SELECT",
         }
@@ -1705,7 +1599,6 @@ def route_message(user_text, context=None):
             "procedure_id": get_first(exact_procedure, "ID", "MA", "MÃ"),
             "procedure_name": get_first(exact_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
             "stage": "procedure",
-            "page": 1,
             "last_suggestions": [],
             "last_route": route_name,
         }
@@ -1722,7 +1615,6 @@ def route_message(user_text, context=None):
     if contact_intent:
         contact_reply = _reply_contact_results(
             text,
-            limit=5,
             keep_context=False,
             contact_results=contact_results,
         )
@@ -1742,7 +1634,6 @@ def route_message(user_text, context=None):
                     "topic": "Tra cứu liên hệ",
                     "procedure_id": "",
                     "procedure_name": "",
-                    "page": 1,
                     "last_suggestions": [],
                     "last_route": "CONTACT_GUIDE",
                 }
@@ -1754,7 +1645,6 @@ def route_message(user_text, context=None):
                 "topic": "Tra cứu liên hệ",
                 "procedure_id": "",
                 "procedure_name": "",
-                "page": 1,
                 "last_suggestions": [],
                 "last_route": "CONTACT_GUIDE",
             }
@@ -1766,7 +1656,6 @@ def route_message(user_text, context=None):
             "topic": "Tra cứu liên hệ",
             "procedure_id": "",
             "procedure_name": "",
-            "page": 1,
             "last_suggestions": [],
             "last_route": "CONTACT_NOT_FOUND",
         }
@@ -1856,7 +1745,6 @@ def route_message(user_text, context=None):
                 "TÊN_THỦ_TỤC",
             ),
             "stage": "procedure",
-            "page": 1,
             "last_suggestions": [],
             "last_route": route_name,
         }
@@ -1892,7 +1780,6 @@ def route_message(user_text, context=None):
     if ctx.get("stage") == "contact_lookup":
         contact_reply = _reply_contact_results(
             text,
-            limit=5,
             keep_context=True,
             contact_results=contact_results,
         )
@@ -1918,7 +1805,7 @@ def route_message(user_text, context=None):
 
         if normalize_text(explicit_sheet) not in ["faq", "thu_tuc_vneid"]:
             if is_group_only_topic_request(text, explicit):
-                grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
+                grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic)
                 if grouped:
                     reply, new_ctx = grouped
                     new_ctx["last_route"] = "MENU_GROUP"
@@ -1944,7 +1831,6 @@ def route_message(user_text, context=None):
                         "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
                         "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                         "stage": "procedure",
-                        "page": 1,
                         "last_suggestions": [],
                         "last_route": "FAQ_RELATED",
                     }
@@ -1972,7 +1858,6 @@ def route_message(user_text, context=None):
                     "procedure_id": get_first(best, "ID", "MA", "MÃ"),
                     "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                     "stage": "procedure",
-                    "page": 1,
                     "last_suggestions": [],
                     "last_route": "THU_TUC_TU_KHOA" if not _is_vneid_sheet(explicit_sheet) else "THU_TUC_VNEID",
                 }
@@ -1995,28 +1880,18 @@ def route_message(user_text, context=None):
                 "stage": "clarify_procedure",
                 "procedure_id": "",
                 "procedure_name": "",
-                "page": 1,
                 "last_suggestions": suggestions,
                 "last_route": "CLARIFY_THU_TUC_TU_KHOA",
             }
             return "Tôi tìm thấy một số thủ tục gần giống trong nhóm này. Quý công dân vui lòng chọn số tương ứng:\n\n" + "\n".join(lines), "CLARIFY_THU_TUC_TU_KHOA", new_ctx, ""
 
-        grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic, page=1)
+        grouped = _make_procedure_list_reply(explicit_sheet, topic=explicit_topic)
         if grouped:
             reply, new_ctx = grouped
             new_ctx["last_route"] = "MENU_GROUP"
             return reply, "MENU_GROUP", new_ctx, ""
 
     if ctx.get("sheet", "").startswith("THU_TUC_") and not ctx.get("procedure_id"):
-        if is_next_page_question(text):
-            next_ctx = dict(ctx)
-            next_ctx["page"] = safe_int(ctx.get("page", 1), default=1) + 1
-            grouped = _procedure_list_reply_for_context(next_ctx)
-            if grouped:
-                reply, new_ctx = grouped
-                new_ctx["last_route"] = "PROCEDURE_LIST_NEXT"
-                return reply, "PROCEDURE_LIST_NEXT", new_ctx, ""
-
         sheet = ctx.get("sheet", "")
         if _is_vneid_sheet(sheet):
             procedure = _find_procedure_in_current_sheet(text, ctx)
@@ -2031,7 +1906,6 @@ def route_message(user_text, context=None):
                 "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
                 "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                 "stage": "procedure",
-                "page": ctx.get("page", 1),
                 "last_suggestions": [],
                 "last_route": "THU_TUC_IN_CONTEXT",
             }

@@ -1062,9 +1062,9 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
     _sort_results(results)
     return results[:limit]
 
-def list_procedures_by_sheet(sheet, limit=10):
-    # Chức năng: Liệt kê các thủ tục trong một sheet THU_TUC_*.
-    # Vai trò: Hiển thị danh sách thủ tục theo lĩnh vực để người dân chọn.
+# Chức năng: Liệt kê toàn bộ thủ tục trong một sheet THU_TUC_*.
+# Vai trò: Cung cấp đầy đủ danh sách để tầng gửi Zalo tự động chia thành nhiều tin nhắn.
+def list_procedures_by_sheet(sheet):
     rows = []
 
     for row in read_all_thu_tuc():
@@ -1079,7 +1079,7 @@ def list_procedures_by_sheet(sheet, limit=10):
             ))
 
     _sort_results(rows)
-    return rows[:limit]
+    return rows
 
 
 def find_procedure_by_id(procedure_id):
