@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict
 
+from services.console_logger import console_log
 from services.sheet_api import (
     ensure_session_sheet,
     read_session,
@@ -95,7 +96,7 @@ def get_context(user_id: Any) -> Dict[str, Any]:
         return dict(ctx)
 
     except Exception as e:
-        print(f"[SESSION READ ERROR] {e}")
+        console_log("ERROR", "SESSION", "Khôi phục context thất bại", user_id=uid, error=e)
         _memory[uid] = {}
         return {}
 
@@ -139,7 +140,7 @@ def save_context(user_id: Any, context: Dict[str, Any]) -> bool:
         )
 
     except Exception as e:
-        print(f"[SESSION SAVE ERROR] {e}")
+        console_log("ERROR", "SESSION", "Đồng bộ context thất bại", user_id=uid, error=e)
         return False
 # Chức năng: Xóa context hội thoại của một người dùng.
 # Vai trò: Reset phiên chat khi người dân quay lại menu hoặc kết thúc trao đổi.
@@ -161,5 +162,5 @@ def clear_context(user_id: Any) -> bool:
         return True
 
     except Exception as e:
-        print(f"[SESSION CLEAR ERROR] {e}")
+        console_log("ERROR", "SESSION", "Xóa context thất bại", user_id=uid, error=e)
         return False

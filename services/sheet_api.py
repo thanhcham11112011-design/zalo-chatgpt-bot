@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Tuple
 import gspread
 from google.oauth2.service_account import Credentials
 
+from services.console_logger import console_log
+
 from config import (
     GOOGLE_SHEET_ID,
     GOOGLE_CREDENTIALS_FILE,
@@ -204,16 +206,22 @@ def _get_cache_fallback(
     cache_age = max(0, int(now - cached_at))
 
     if cache_age <= CACHE_MAX_STALE_SECONDS:
-        print(
-            f"[SHEET CACHE FALLBACK] {sheet_name}: "
-            f"dùng cache cũ {cache_age} giây"
+        console_log(
+            "WARNING",
+            "SHEET_CACHE",
+            "Dùng cache cũ do Google Sheets không khả dụng",
+            sheet=sheet_name,
+            cache_age_seconds=cache_age,
         )
         return [dict(row) for row in cached_rows]
 
-    print(
-        f"[SHEET CACHE EXPIRED] {sheet_name}: "
-        f"cache đã cũ {cache_age} giây, "
-        f"giới hạn {CACHE_MAX_STALE_SECONDS} giây"
+    console_log(
+        "WARNING",
+        "SHEET_CACHE",
+        "Cache đã hết thời hạn dự phòng",
+        sheet=sheet_name,
+        cache_age_seconds=cache_age,
+        max_stale_seconds=CACHE_MAX_STALE_SECONDS,
     )
     _cache.pop(sheet_name, None)
     return None
@@ -281,7 +289,7 @@ def read_sheet(
 
     if not sheet_name:
         error_message = "Tên sheet trống hoặc không hợp lệ"
-        print(f"[SHEET READ ERROR] {error_message}")
+        console_log("ERROR", "SHEET_READ", error_message)
         raise SheetReadError(error_message)
 
     now = time.time()
@@ -318,17 +326,21 @@ def read_sheet(
         _cache[sheet_name] = (now, rows)
 
         if not rows:
-            print(
-                f"[SHEET EMPTY] {sheet_name}: "
-                "đọc thành công nhưng không có dữ liệu"
+            console_log(
+                "INFO",
+                "SHEET_READ",
+                "Đọc thành công nhưng sheet không có dữ liệu",
+                sheet=sheet_name,
             )
 
         return [dict(row) for row in rows]
 
     except gspread.WorksheetNotFound as e:
-        print(
-            f"[SHEET READ ERROR] {sheet_name}: "
-            "không tìm thấy worksheet"
+        console_log(
+            "ERROR",
+            "SHEET_READ",
+            "Không tìm thấy worksheet",
+            sheet=sheet_name,
         )
 
         fallback_rows = _get_cache_fallback(
@@ -347,9 +359,13 @@ def read_sheet(
         ) from e
 
     except Exception as e:
-        print(
-            f"[SHEET READ ERROR] {sheet_name}: "
-            f"{type(e).__name__}: {e}"
+        console_log(
+            "ERROR",
+            "SHEET_READ",
+            "Không thể đọc Google Sheets",
+            sheet=sheet_name,
+            error_type=type(e).__name__,
+            error=e,
         )
 
         fallback_rows = _get_cache_fallback(
@@ -580,7 +596,7 @@ def update_setting_system(key: str, value: Any) -> bool:
         return True
 
     except Exception as e:
-        print(f"[SETTING UPDATE ERROR] {key}: {e}")
+        console_log("ERROR", "SHEET_WRITE", "Cập nhật SETTING_SYSTEM thất bại", key=key, error=e)
         return False
 
 
@@ -642,7 +658,7 @@ def log_chat(
         return True
 
     except Exception as e:
-        print(f"[LOG CHAT ERROR] {e}")
+        console_log("ERROR", "SHEET_LOG", "Ghi LICH_SU_CHAT thất bại", error=e)
         return False
 
 
@@ -721,7 +737,7 @@ def read_session(user_id: str) -> Dict[str, Any]:
         return {}
 
     except Exception as e:
-        print(f"[SESSION READ ERROR] {user_id}: {e}")
+        console_log("ERROR", "SHEET_SESSION", "Đọc BOT_SESSION thất bại", user_id=user_id, error=e)
         return {}
 
 
@@ -766,7 +782,7 @@ def save_session(user_id: str, context: Dict[str, Any], updated_at: str) -> bool
         return True
 
     except Exception as e:
-        print(f"[SESSION SAVE ERROR] {user_id}: {e}")
+        console_log("ERROR", "SHEET_SESSION", "Lưu BOT_SESSION thất bại", user_id=user_id, error=e)
         return False
 
 

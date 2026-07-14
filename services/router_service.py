@@ -1,4 +1,5 @@
 from services.text_utils import normalize_text, get_first, safe_int, compact
+from services.console_logger import console_log
 from services.sheet_api import read_menu, read_lien_he, read_setting_chat, read_setting_ai, read_thongtin, read_thu_tuc_sheet_names, read_thu_tuc_sheet
 from services.search_engine import (
     search_menu,
@@ -1931,9 +1932,12 @@ def route_message(user_text, context=None):
         return format_multiple_results(normal_faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
-    print("===== DEFAULT REACHED =====")
-    print("QUESTION:", user_text)
-    print("===========================")
+    console_log(
+        "WARNING",
+        "ROUTER",
+        "Không xác định được nguồn dữ liệu phù hợp",
+        question=user_text,
+    )
     return get_default_reply(), "DEFAULT", ctx, ""
     
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
@@ -1960,7 +1964,7 @@ def route_message_for_ai(user_text, context=None):
             result["unknown_log"] = True
 
     except Exception as e:
-        print(f"[ROUTER ERROR] {e}")
+        console_log("ERROR", "ROUTER", "Định tuyến tin nhắn thất bại", error=e)
         result["reply"] = get_default_reply()
         result["source"] = "ROUTER_ERROR"
         result["use_ai"] = _should_use_ai(user_text, "ROUTER_ERROR", "")

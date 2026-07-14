@@ -7,6 +7,7 @@ from typing import Any, Dict, List, Tuple
 import requests
 
 from config import MAX_ZALO_TEXT_LENGTH
+from services.console_logger import console_log
 from services.sheet_api import (
     read_setting_chat,
     read_setting_system,
@@ -57,7 +58,7 @@ def _load_zalo_settings(force: bool = False) -> Dict[str, str]:
         try:
             sheet_settings = read_setting_system() or {}
         except Exception as e:
-            print("[ZALO SETTINGS READ ERROR]", e)
+            console_log("ERROR", "ZALO_CONFIG", "Đọc cấu hình Zalo thất bại", error=e)
             sheet_settings = {}
 
         keys = (
@@ -137,7 +138,7 @@ def _persist_token_values(
     )
 
     if not refresh_saved:
-        print("[ZALO TOKEN SAVE ERROR] Không lưu được refresh token mới")
+        console_log("ERROR", "ZALO_TOKEN", "Không lưu được refresh token mới")
         return False
 
     access_saved = update_setting_system(
@@ -146,7 +147,7 @@ def _persist_token_values(
     )
 
     if not access_saved:
-        print("[ZALO TOKEN SAVE ERROR] Không lưu được access token mới")
+        console_log("ERROR", "ZALO_TOKEN", "Không lưu được access token mới")
         return False
 
     update_setting_system("ZALO_TOKEN_STATUS", "OK")
@@ -185,7 +186,7 @@ def _retry_persist_tokens(
                 refresh_token,
                 expires_at,
             ):
-                print("[ZALO TOKEN] Đã lưu lại token sau lỗi tạm thời")
+                console_log("INFO", "ZALO_TOKEN", "Đã lưu lại token sau lỗi tạm thời")
                 return
 
     finally:
@@ -227,7 +228,7 @@ def _save_token_error_status(note: str) -> None:
             _clean(note)[:500],
         )
     except Exception as e:
-        print("[ZALO TOKEN STATUS ERROR]", e)
+        console_log("ERROR", "ZALO_TOKEN", "Lưu trạng thái lỗi token thất bại", error=e)
 
 
 # Chức năng: Refresh access token Zalo bằng refresh token hiện có.
@@ -256,7 +257,7 @@ def refresh_zalo_access_token(
             and now - _last_refresh_failure_at
             < ZALO_REFRESH_FAILURE_COOLDOWN_SECONDS
         ):
-            print("[ZALO REFRESH SKIPPED] Đang trong thời gian chờ sau lỗi refresh")
+            console_log("WARNING", "ZALO_TOKEN", "Bỏ qua refresh trong thời gian cooldown")
             return False
 
         if not _current_refresh_token:
@@ -273,9 +274,10 @@ def refresh_zalo_access_token(
             _save_token_error_status(
                 "MISSING_APP_CONFIG_OR_REFRESH_TOKEN"
             )
-            print(
-                "[ZALO REFRESH ERROR] "
-                "Thiếu APP_ID / APP_SECRET / REFRESH_TOKEN"
+            console_log(
+                "ERROR",
+                "ZALO_TOKEN",
+                "Thiếu APP_ID, APP_SECRET hoặc REFRESH_TOKEN",
             )
             return False
 
@@ -361,9 +363,10 @@ def refresh_zalo_access_token(
                 and latest_refresh_token != refresh_token_used
             ):
                 _current_refresh_token = latest_refresh_token
-                print(
-                    "[ZALO TOKEN] Phát hiện refresh token mới "
-                    "trong SETTING_SYSTEM, thử lại một lần"
+                console_log(
+                    "INFO",
+                    "ZALO_TOKEN",
+                    "Phát hiện refresh token mới trong SETTING_SYSTEM, thử lại một lần",
                 )
 
                 retry_response = requests.post(
@@ -439,13 +442,13 @@ def refresh_zalo_access_token(
 
             _last_refresh_failure_at = time.monotonic()
             _save_token_error_status(str(data))
-            print("[ZALO REFRESH ERROR]", data)
+            console_log("ERROR", "ZALO_TOKEN", "Refresh access token thất bại", response=data)
             return False
 
         except Exception as e:
             _last_refresh_failure_at = time.monotonic()
             _save_token_error_status(str(e))
-            print("[ZALO REFRESH EXCEPTION]", e)
+            console_log("ERROR", "ZALO_TOKEN", "Refresh access token phát sinh ngoại lệ", error=e)
             return False
 
 
@@ -476,7 +479,7 @@ def _get_message_length_limit() -> int:
         return min(configured_limit, technical_limit)
 
     except Exception as e:
-        print("[ZALO MESSAGE LIMIT ERROR]", e)
+        console_log("ERROR", "ZALO_SEND", "Đọc giới hạn độ dài tin nhắn thất bại", error=e)
         return technical_limit
 
 
@@ -635,9 +638,10 @@ def _send_text_part(user_id: str, message: str) -> bool:
         return True
 
     if data.get("error") == -216:
-        print(
-            "[ZALO TOKEN] "
-            "Access token hết hạn, đang refresh"
+        console_log(
+            "WARNING",
+            "ZALO_TOKEN",
+            "Access token hết hạn, đang refresh",
         )
 
         if refresh_zalo_access_token(
@@ -655,13 +659,15 @@ def _send_text_part(user_id: str, message: str) -> bool:
             if ok_after_refresh:
                 return True
 
-            print(
-                "[ZALO ERROR AFTER REFRESH]",
-                data_after_refresh,
+            console_log(
+                "ERROR",
+                "ZALO_SEND",
+                "Gửi lại sau refresh token thất bại",
+                response=data_after_refresh,
             )
             return False
 
-    print("[ZALO ERROR]", data)
+    console_log("ERROR", "ZALO_SEND", "Gửi tin nhắn Zalo thất bại", response=data)
     return False
 
 
@@ -678,10 +684,12 @@ def send_zalo_text(user_id: str, message: str) -> bool:
     total_parts = len(message_parts)
 
     if total_parts > 1:
-        print(
-            "[ZALO MESSAGE SPLIT] "
-            f"parts={total_parts} "
-            f"total_length={len(clean_message)}"
+        console_log(
+            "INFO",
+            "ZALO_SEND",
+            "Chia nội dung dài thành nhiều tin nhắn",
+            parts=total_parts,
+            total_length=len(clean_message),
         )
 
     for part_index, message_part in enumerate(
@@ -694,10 +702,12 @@ def send_zalo_text(user_id: str, message: str) -> bool:
         ):
             continue
 
-        print(
-            "[ZALO MESSAGE PART ERROR] "
-            f"part={part_index}/{total_parts} "
-            f"length={len(message_part)}"
+        console_log(
+            "ERROR",
+            "ZALO_SEND",
+            "Gửi một phần tin nhắn thất bại",
+            part=f"{part_index}/{total_parts}",
+            length=len(message_part),
         )
         return False
 

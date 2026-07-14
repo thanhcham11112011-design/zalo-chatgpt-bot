@@ -1,17 +1,69 @@
-from datetime import datetime
-from typing import Any, Optional
+import os
+import time
+from datetime import datetime, timedelta, timezone
+from threading import Lock
+from typing import Any, Dict, Optional
 
-from config import DEBUG_MODE
-from services.sheet_api import log_chat, log_unknown
-from services.sheet_api import read_setting_system
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
+
+from services.console_logger import console_log
+from services.sheet_api import log_chat, log_unknown, read_setting_system
+
+
+_debug_settings_lock = Lock()
+_debug_settings_cache: Dict[str, str] = {}
+_debug_settings_loaded_at = 0.0
+DEBUG_SETTINGS_CACHE_SECONDS = max(
+    int(os.getenv("DEBUG_SETTINGS_CACHE_SECONDS", "60")),
+    1,
+)
+
+
+# Chức năng: Đọc và cache nhóm cấu hình log kỹ thuật từ SETTING_SYSTEM.
+# Vai trò: Tránh gọi Google Sheets lặp lại mỗi lần kiểm tra DEBUG.
+def _runtime_log_settings() -> Dict[str, str]:
+    global _debug_settings_cache
+    global _debug_settings_loaded_at
+
+    now = time.monotonic()
+
+    with _debug_settings_lock:
+        if (
+            _debug_settings_loaded_at
+            and now - _debug_settings_loaded_at
+            < DEBUG_SETTINGS_CACHE_SECONDS
+        ):
+            return dict(_debug_settings_cache)
+
+        try:
+            settings = read_setting_system() or {}
+            _debug_settings_cache = {
+                str(key or "").strip().upper(): str(value or "").strip()
+                for key, value in settings.items()
+            }
+            _debug_settings_loaded_at = now
+        except Exception as e:
+            console_log(
+                "ERROR",
+                "LOGGER",
+                "Không đọc được cấu hình log từ SETTING_SYSTEM",
+                error=e,
+            )
+
+        return dict(_debug_settings_cache)
 
 
 # Chức năng: Kiểm tra một nhóm DEBUG có đang được bật trong SETTING_SYSTEM hay không.
 # Vai trò: Cho phép bật/tắt log kiểm thử từ Google Sheets mà không cần sửa code.
 def _debug_enabled(group=""):
-    settings = read_setting_system() or {}
+    settings = _runtime_log_settings()
+    debug_mode = str(
+        settings.get("DEBUG_MODE") or "OFF"
+    ).strip().upper()
 
-    debug_mode = str(settings.get("DEBUG_MODE") or "OFF").strip().upper()
     if debug_mode != "ON":
         return False
 
@@ -19,7 +71,9 @@ def _debug_enabled(group=""):
         return True
 
     key = f"DEBUG_{str(group).strip().upper()}"
-    return str(settings.get(key) or "OFF").strip().upper() == "ON"
+    return str(
+        settings.get(key) or "OFF"
+    ).strip().upper() == "ON"
 
 
 # Chức năng: In log DEBUG theo nhóm khi được bật trong SETTING_SYSTEM.
@@ -28,15 +82,33 @@ def debug_print(group, *values):
     if not _debug_enabled(group):
         return
 
-    print(f"===== DEBUG {str(group).upper()} =====")
-    for value in values:
-        print(value)
-    print("=" * 30)
+    console_log(
+        "DEBUG",
+        group or "GENERAL",
+        " | ".join(_safe_text(value) for value in values),
+    )
 
 # Chức năng: Lấy thời gian hiện tại theo định dạng chuẩn ghi log.
-# Vai trò: Thống nhất mốc thời gian cho lịch sử hội thoại, unknown log và lỗi hệ thống.
+# Vai trò: Thống nhất mốc thời gian Việt Nam cho lịch sử hội thoại, unknown log và lỗi hệ thống.
 def current_time() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    settings = _runtime_log_settings()
+    timezone_name = str(
+        settings.get("TIMEZONE")
+        or os.getenv("BOT_TIMEZONE")
+        or "Asia/Ho_Chi_Minh"
+    ).strip()
+
+    if ZoneInfo is not None:
+        try:
+            return datetime.now(ZoneInfo(timezone_name)).strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+        except Exception:
+            pass
+
+    return datetime.now(
+        timezone(timedelta(hours=7))
+    ).strftime("%Y-%m-%d %H:%M:%S")
 
 
 # Chức năng: Chuyển dữ liệu bất kỳ thành chuỗi an toàn để ghi log.
@@ -126,7 +198,7 @@ def write_log(
         )
 
     except Exception as e:
-        print(f"[LOGGER ERROR] {e}")
+        console_log("ERROR", "LOGGER", "Ghi lịch sử chat thất bại", error=e)
         return False
 
 
@@ -184,7 +256,7 @@ def write_unknown_log(
         )
 
     except Exception as e:
-        print(f"[UNKNOWN LOG ERROR] {e}")
+        console_log("ERROR", "LOGGER", "Ghi unknown log thất bại", error=e)
         return False
 
 
@@ -248,19 +320,17 @@ def log_ai_fallback(
     )
 
 
-# Chức năng: In log kỹ thuật khi bật DEBUG_MODE.
-# Vai trò: Hỗ trợ kiểm thử cục bộ mà không ảnh hưởng dữ liệu nghiệp vụ.
+# Chức năng: In log kỹ thuật theo giao diện tương thích với app.py.
+# Vai trò: Dùng cùng cơ chế DEBUG trong SETTING_SYSTEM và định dạng console thống nhất.
 def debug_log(title: str, data: Optional[Any] = None) -> None:
-    if not DEBUG_MODE:
+    if isinstance(data, dict):
+        debug_print(
+            title,
+            *[
+                f"{key}={_safe_text(value)}"
+                for key, value in data.items()
+            ],
+        )
         return
 
-    print("\n================ DEBUG BOT CAP ================")
-    print(f"[{_safe_text(title)}]")
-
-    if isinstance(data, dict):
-        for key, value in data.items():
-            print(f"{key}: {value}")
-    elif data is not None:
-        print(data)
-
-    print("================================================\n")
+    debug_print(title, data if data is not None else "")
