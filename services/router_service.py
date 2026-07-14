@@ -51,13 +51,18 @@ def _as_bool(value, default=False):
 
 
 # Chức năng: Kiểm tra AI có được phép hoạt động như lớp phụ trợ hay không.
-# Vai trò: Bảo đảm Gemini không trở thành luồng chính của BOT.
+# Vai trò: Dùng thống nhất AI_ENABLED, AI_MODE, AI_IS_CORE và AI_STATUS từ SETTING_AI.
 def _ai_optional_enabled():
-    if normalize_text(_ai_setting("AI_IS_CORE", "FALSE")) in ["true", "1", "yes", "on"]:
+    if not _as_bool(_ai_setting("AI_ENABLED", "TRUE"), True):
         return False
-    if normalize_text(_ai_setting("AI_MODE", "OPTIONAL")) not in ["optional", "tuy chon", "tùy chọn"]:
+
+    if _as_bool(_ai_setting("AI_IS_CORE", "FALSE"), False):
         return False
-    return _as_bool(_ai_setting("AI_ENABLED", "TRUE"), True)
+
+    if normalize_text(_ai_setting("AI_MODE", "OPTIONAL")) != "optional":
+        return False
+
+    return normalize_text(_ai_setting("AI_STATUS", "ONLINE")) == "online"
 
 
 # Chức năng: Kiểm tra câu hỏi có dấu hiệu là thủ tục/nghiệp vụ nhưng chưa có dữ liệu sheet.
@@ -73,20 +78,43 @@ def _looks_like_procedure_without_data(user_text):
 
 
 # Chức năng: Quyết định có chuyển câu hỏi sang Gemini hay không.
-# Vai trò: Chỉ cho phép AI khi phù hợp cấu hình và không làm thay nghiệp vụ Google Sheets.
+# Vai trò: Chỉ bật AI theo các cổng thống nhất trong SETTING_AI và không vượt dữ liệu Sheet.
 def _should_use_ai(user_text, source, ai_context=""):
     if not _ai_optional_enabled():
         return False
 
-    if ai_context and _as_bool(_ai_setting("ENABLE_AI_SUMMARIZE", "TRUE"), True):
-        return True
+    if ai_context:
+        return (
+            _as_bool(_ai_setting("ENABLE_CONTEXT", "TRUE"), True)
+            and _as_bool(_ai_setting("ENABLE_RAG", "TRUE"), True)
+            and _as_bool(_ai_setting("ENABLE_AI_SUMMARIZE", "TRUE"), True)
+        )
 
-    if source in ["DEFAULT", "ROUTER_ERROR", "EMPTY"]:
-        if _looks_like_procedure_without_data(user_text):
-            return _as_bool(_ai_setting("ALLOW_AI_PROCEDURE_WITHOUT_DATA", "FALSE"), False)
-        return _as_bool(_ai_setting("ENABLE_AI_GENERAL_KNOWLEDGE", "FALSE"), False)
+    if source not in ["DEFAULT", "ROUTER_ERROR", "EMPTY", "UNKNOWN"]:
+        return False
 
-    return False
+    if _as_bool(_ai_setting("STRICT_SHEET_ONLY", "TRUE"), True):
+        return False
+
+    if not _as_bool(
+        _ai_setting("ALLOW_AI_WITHOUT_SHEET_CONTEXT", "FALSE"),
+        False,
+    ):
+        return False
+
+    if not _as_bool(
+        _ai_setting("ENABLE_AI_GENERAL_KNOWLEDGE", "FALSE"),
+        False,
+    ):
+        return False
+
+    if _looks_like_procedure_without_data(user_text):
+        return _as_bool(
+            _ai_setting("ALLOW_AI_PROCEDURE_WITHOUT_DATA", "FALSE"),
+            False,
+        )
+
+    return True
 
 
 # Chức năng: Tách danh sách từ khóa từ một ô dữ liệu Google Sheets.
