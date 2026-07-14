@@ -10,6 +10,7 @@ from config import PORT, INTERNAL_API_KEY, check_config
 from services.router_service import route_message_for_ai, get_welcome_message
 from services.gemini_service import ask_gemini_status
 from services.zalo_service import send_zalo_text
+from services.console_logger import console_log
 from services.logger import (
     write_log,
     log_error,
@@ -182,7 +183,7 @@ def log_unknown_safe(user_id, question, route="UNKNOWN", note="NO_SHEET_MATCH", 
             ai_status=ai_status,
         )
     except Exception as e:
-        print(f"[UNKNOWN LOG ERROR] {e}")
+        console_log("ERROR", "UNKNOWN_LOG", "Ghi câu hỏi chưa có dữ liệu thất bại", error=e)
         return False
 
 
@@ -264,7 +265,7 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
         return fallback, "AI_FALLBACK", ai_status or "AI_FALLBACK", ai_model
 
     except Exception as e:
-        print(f"[AI OPTIONAL ERROR] {e}")
+        console_log("ERROR", "AI", "Luồng AI Optional phát sinh ngoại lệ", error=e)
         fallback = fallback_answer or get_ai_unavailable_message()
         log_ai_fallback(
             user_id=user_id,
@@ -564,7 +565,7 @@ def webhook():
 
             if not sent:
                 error_message = "Gửi tin nhắn chào mừng Zalo thất bại."
-                print("[ZALO SEND ERROR]", error_message)
+                console_log("ERROR", "ZALO_SEND", error_message, user_id=user_id)
                 log_error(
                     user_id=user_id,
                     user_message="",
@@ -595,7 +596,7 @@ def webhook():
 
         if not sent:
             error_message = "Gửi câu trả lời Zalo thất bại."
-            print("[ZALO SEND ERROR]", error_message)
+            console_log("ERROR", "ZALO_SEND", error_message, user_id=user_id, source=source)
             log_error(
                 user_id=user_id,
                 user_message=question,
@@ -619,8 +620,12 @@ def webhook():
         import traceback
 
         error_message = f"Lỗi xử lý webhook: {e}"
-        print("[WEBHOOK ERROR]", error_message)
-        print(traceback.format_exc())
+        console_log(
+            "ERROR",
+            "WEBHOOK",
+            error_message,
+            traceback=traceback.format_exc(),
+        )
 
         try:
             user_id = data.get("sender", {}).get("id", "")
@@ -632,9 +637,11 @@ def webhook():
                     message=get_default_reply(),
                 )
                 if not fallback_sent:
-                    print(
-                        "[ZALO FALLBACK SEND ERROR]",
-                        "Không gửi được thông báo dự phòng.",
+                    console_log(
+                        "ERROR",
+                        "ZALO_SEND",
+                        "Không gửi được thông báo dự phòng",
+                        user_id=user_id,
                     )
 
             log_error(
@@ -644,7 +651,7 @@ def webhook():
             )
 
         except Exception as log_e:
-            print("[WEBHOOK LOG ERROR]", log_e)
+            console_log("ERROR", "WEBHOOK", "Ghi log lỗi webhook thất bại", error=log_e)
 
         return jsonify({
             "success": False,
