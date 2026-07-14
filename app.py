@@ -26,6 +26,7 @@ from services.sheet_api import (
     read_setting_ai,
     sheet_health,
     get_sheet_cache_status,
+    get_data_validity_status,
 )
 
 
@@ -391,6 +392,7 @@ def health():
         _get_cached_sheet_health()
     )
     cache_status = get_sheet_cache_status()
+    data_validity_status = get_data_validity_status()
 
     sheet_ok = bool(sheet_result.get("ok"))
     sheet_error = str(sheet_result.get("error") or "")
@@ -482,6 +484,7 @@ def health():
                 0,
             ),
         },
+        "data_validity": data_validity_status,
         "health_check": {
             "cached": health_cached,
             "age_seconds": health_age,
