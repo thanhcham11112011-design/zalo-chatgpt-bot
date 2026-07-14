@@ -229,6 +229,13 @@ def get_ai_runtime_status():
         "max_output_chars": str(
             settings.get("AI_MAX_OUTPUT_CHARS") or "1500"
         ).strip(),
+        "enable_context": is_enabled(
+            settings.get("ENABLE_CONTEXT", "TRUE"),
+            True,
+        ),
+        "context_max_chars": str(
+            settings.get("AI_CONTEXT_MAX_CHARS") or "12000"
+        ).strip(),
     }
 
 
@@ -394,7 +401,8 @@ def build_answer(user_id, question):
         "source": routed.get("source"),
         "use_ai": routed.get("use_ai"),
         "context_after": routed.get("context"),
-        "ai_context": routed.get("ai_context"),
+        "ai_context_type": routed.get("ai_context_type"),
+        "ai_context_length": routed.get("ai_context_length", 0),
         "unknown_log": routed.get("unknown_log"),
     })
 
