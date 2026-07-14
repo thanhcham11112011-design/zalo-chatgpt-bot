@@ -689,9 +689,36 @@ def _find_exact_procedure(text):
 
     return None
 
+# Chức năng: Tính độ dài chuỗi từ liên tiếp giống nhau giữa câu hỏi và dữ liệu thủ tục.
+# Vai trò: Nhận diện tên thủ tục nằm trong câu dài mà không hardcode nghiệp vụ.
+def _longest_contiguous_token_match(text_tokens, candidate_tokens):
+    if not text_tokens or not candidate_tokens:
+        return 0
 
-# Chức năng: Tính điểm khớp thủ tục chỉ bằng cột TU_KHOA.
-# Vai trò: Chỉ chấm điểm khi từ khóa khớp nguyên từ, nguyên cụm hoặc đúng thứ tự từ.
+    longest = 0
+    previous = [0] * (len(candidate_tokens) + 1)
+
+    for text_token in text_tokens:
+        current = [0]
+
+        for index, candidate_token in enumerate(
+            candidate_tokens,
+            start=1,
+        ):
+            if text_token == candidate_token:
+                matched = previous[index - 1] + 1
+                current.append(matched)
+                longest = max(longest, matched)
+            else:
+                current.append(0)
+
+        previous = current
+
+    return longest
+
+
+# Chức năng: Tính điểm khớp thủ tục bằng mã, tên và cột TU_KHOA.
+# Vai trò: Đưa thủ tục có tên rõ trong câu hỏi vào danh sách ứng viên trước khi giữ context cũ.
 def _score_procedure_by_tu_khoa(text, row):
     t = normalize_text(text)
     t_box = f" {t} "
@@ -705,24 +732,59 @@ def _score_procedure_by_tu_khoa(text, row):
     if pid and (t == pid or f" {pid} " in t_box):
         score += 80
 
-    keywords = _split_keywords(
-        get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")
+    procedure_name = normalize_text(
+        get_first(
+            row,
+            "TEN_THU_TUC",
+            "TÊN_THỦ_TỤC",
+        )
     )
 
-    for kw in keywords:
-        n = normalize_text(kw)
-        raw_kw = " ".join(str(kw or "").lower().split())
+    if procedure_name:
+        if t == procedure_name:
+            score += 120
+        elif f" {procedure_name} " in t_box:
+            score += 95
+        else:
+            name_match_length = _longest_contiguous_token_match(
+                t_words,
+                procedure_name.split(),
+            )
 
-        if not n:
+            if name_match_length >= 4:
+                score += 75 + name_match_length
+            elif name_match_length == 3:
+                score += 60
+
+    keywords = _split_keywords(
+        get_first(
+            row,
+            "TU_KHOA",
+            "TỪ_KHÓA",
+            "KEYWORDS",
+        )
+    )
+
+    for keyword in keywords:
+        keyword_norm = normalize_text(keyword)
+        raw_keyword = " ".join(
+            str(keyword or "").lower().split()
+        )
+
+        if not keyword_norm:
             continue
 
-        parts = [part for part in n.split() if len(part) >= 3]
+        parts = [
+            part
+            for part in keyword_norm.split()
+            if len(part) >= 3 or part.isdigit()
+        ]
 
-        if raw_text == raw_kw:
+        if raw_text == raw_keyword:
             score += 70
-        elif raw_kw and f" {raw_kw} " in raw_box:
+        elif raw_keyword and f" {raw_keyword} " in raw_box:
             score += 45
-        elif len(parts) >= 2 and f" {n} " in t_box:
+        elif len(parts) >= 2 and f" {keyword_norm} " in t_box:
             score += 45
         elif len(parts) >= 2:
             search_from = 0
@@ -730,24 +792,46 @@ def _score_procedure_by_tu_khoa(text, row):
 
             for part in parts:
                 try:
-                    search_from = t_words.index(part, search_from) + 1
+                    search_from = (
+                        t_words.index(
+                            part,
+                            search_from,
+                        )
+                        + 1
+                    )
                 except ValueError:
                     ordered_match = False
                     break
 
             if ordered_match:
                 score += 25
+            else:
+                keyword_match_length = (
+                    _longest_contiguous_token_match(
+                        t_words,
+                        keyword_norm.split(),
+                    )
+                )
 
-        elif len(parts) == 1 and len(parts[0]) >= 5 and parts[0] in t_tokens:
+                if keyword_match_length >= 3:
+                    score += 40
+
+        elif (
+            len(parts) == 1
+            and len(parts[0]) >= 5
+            and parts[0] in t_tokens
+        ):
             score += 25
 
     return score
 
+
 # Chức năng: Tính mức độ câu hỏi nêu rõ một thủ tục bằng tên và TU_KHOA trong Google Sheets.
-# Vai trò: Phân biệt tên thủ tục cụ thể với từ hỏi chi tiết chung trước khi đổi ngữ cảnh.
+# Vai trò: Cho thủ tục mới ghi đè context cũ khi có cụm tên liên tiếp đủ rõ.
 def _specific_procedure_match_score(text, row):
     t = normalize_text(text)
     t_box = f" {t} "
+    t_words = t.split()
     score = 0
 
     pid = normalize_text(_procedure_id(row))
@@ -755,40 +839,66 @@ def _specific_procedure_match_score(text, row):
         score = max(score, 1000)
 
     procedure_name = normalize_text(
-        get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
+        get_first(
+            row,
+            "TEN_THU_TUC",
+            "TÊN_THỦ_TỤC",
+        )
     )
-    procedure_tokens = {
-        token for token in procedure_name.split() if len(token) >= 3
-    }
 
     if procedure_name:
         if t == procedure_name:
-            score = max(score, 900 + len(procedure_tokens))
+            score = max(score, 900)
         elif f" {procedure_name} " in t_box:
-            score = max(score, 800 + len(procedure_tokens))
+            score = max(score, 800)
+        else:
+            name_match_length = _longest_contiguous_token_match(
+                t_words,
+                procedure_name.split(),
+            )
+
+            if name_match_length >= 4:
+                score = max(
+                    score,
+                    760 + name_match_length,
+                )
+            elif name_match_length == 3:
+                score = max(score, 720)
 
     keywords = _split_keywords(
-        get_first(row, "TU_KHOA", "TỪ_KHÓA", "KEYWORDS")
+        get_first(
+            row,
+            "TU_KHOA",
+            "TỪ_KHÓA",
+            "KEYWORDS",
+        )
     )
 
     for keyword in keywords:
         keyword_norm = normalize_text(keyword)
+
         if not keyword_norm:
             continue
 
-        keyword_tokens = {
-            token for token in keyword_norm.split() if len(token) >= 3
-        }
-        if not keyword_tokens.intersection(procedure_tokens):
-            continue
-
         if t == keyword_norm:
-            score = max(score, 700 + len(keyword_tokens))
+            score = max(score, 700)
         elif f" {keyword_norm} " in t_box:
-            score = max(score, 600 + len(keyword_tokens))
+            score = max(score, 650)
+        else:
+            keyword_match_length = (
+                _longest_contiguous_token_match(
+                    t_words,
+                    keyword_norm.split(),
+                )
+            )
+
+            if keyword_match_length >= 3:
+                score = max(
+                    score,
+                    620 + keyword_match_length,
+                )
 
     return score
-
 
 # Chức năng: Tìm thủ tục theo TU_KHOA trong các sheet THU_TUC_*.
 # Vai trò: Dùng Google Sheets làm nguồn định tuyến chính cho thủ tục thường.
