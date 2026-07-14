@@ -7,9 +7,16 @@ Nguyên tắc: Google Sheets là nguồn dữ liệu nghiệp vụ duy nhất; f
 import json
 import os
 import time
+from datetime import date, datetime, timedelta, timezone
+from threading import Lock
 from typing import Any, Dict, List, Optional, Tuple
 import gspread
 from google.oauth2.service_account import Credentials
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    ZoneInfo = None
 
 from services.console_logger import console_log
 
@@ -54,6 +61,33 @@ CACHE_MAX_STALE_SECONDS = max(
     CACHE_TTL_SECONDS,
     int(os.getenv("SHEET_CACHE_MAX_STALE_SECONDS", "1800")),
 )
+
+VALID_FROM_KEYS = [
+    "HIEU_LUC_TU",
+    "HIỆU_LỰC_TỪ",
+    "NGAY_HIEU_LUC",
+    "NGÀY_HIỆU_LỰC",
+    "TU_NGAY",
+    "TỪ_NGÀY",
+    "VALID_FROM",
+    "START_DATE",
+]
+
+VALID_TO_KEYS = [
+    "HIEU_LUC_DEN",
+    "HIỆU_LỰC_ĐẾN",
+    "NGAY_HET_HAN",
+    "NGÀY_HẾT_HẠN",
+    "DEN_NGAY",
+    "ĐẾN_NGÀY",
+    "VALID_TO",
+    "END_DATE",
+    "EXPIRES_AT",
+]
+
+_data_validity_lock = Lock()
+_data_validity_status: Dict[str, Dict[str, Any]] = {}
+_data_validity_warning_signatures: Dict[str, str] = {}
 
 
 # =========================
@@ -385,9 +419,66 @@ def read_sheet(
         ) from e
 
 
-# Chức năng: Kiểm tra trạng thái hoạt động của một dòng dữ liệu.
-# Vai trò: Giúp BOT chỉ sử dụng dữ liệu đang bật trong Google Sheets.
-def _is_active(row: Dict[str, Any]) -> bool:
+# Chức năng: Lấy ngày hiện tại theo múi giờ kỹ thuật của hệ thống.
+# Vai trò: So sánh ngày hiệu lực dữ liệu thống nhất với múi giờ vận hành BOT.
+def _local_today() -> date:
+    timezone_name = str(
+        os.getenv("BOT_TIMEZONE")
+        or os.getenv("TZ")
+        or "Asia/Ho_Chi_Minh"
+    ).strip()
+
+    if ZoneInfo is not None:
+        try:
+            return datetime.now(ZoneInfo(timezone_name)).date()
+        except Exception:
+            pass
+
+    return datetime.now(timezone(timedelta(hours=7))).date()
+
+
+# Chức năng: Chuyển giá trị ngày trong Google Sheets thành ngày chuẩn.
+# Vai trò: Hỗ trợ các định dạng ngày phổ biến mà không phụ thuộc định dạng hiển thị của một sheet.
+def _parse_sheet_date(value: Any) -> Tuple[Optional[date], bool]:
+    text = _clean_value(value)
+
+    if not text:
+        return None, True
+
+    iso_text = text.replace("Z", "+00:00")
+
+    try:
+        return datetime.fromisoformat(iso_text).date(), True
+    except Exception:
+        pass
+
+    formats = (
+        "%d/%m/%Y",
+        "%d-%m-%Y",
+        "%d.%m.%Y",
+        "%Y-%m-%d",
+        "%Y/%m/%d",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y %H:%M:%S",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+    )
+
+    for date_format in formats:
+        try:
+            return datetime.strptime(text, date_format).date(), True
+        except ValueError:
+            continue
+
+    return None, False
+
+
+# Chức năng: Xác định trạng thái sử dụng của một dòng theo trạng thái và thời hạn dữ liệu.
+# Vai trò: Loại dữ liệu tắt, chưa có hiệu lực, đã hết hạn hoặc có ngày không hợp lệ trước khi định tuyến.
+def _row_validity_state(
+    row: Dict[str, Any],
+    today: Optional[date] = None,
+) -> str:
     status = _get_first(
         row,
         [
@@ -399,9 +490,6 @@ def _is_active(row: Dict[str, Any]) -> bool:
             "HIỂN_THỊ",
         ],
     ).lower()
-
-    if not status:
-        return True
 
     inactive_values = {
         "off",
@@ -417,19 +505,175 @@ def _is_active(row: Dict[str, Any]) -> bool:
         "dừng",
     }
 
-    return status not in inactive_values
+    if status in inactive_values:
+        return "inactive_status"
+
+    valid_from_raw = _get_first(row, VALID_FROM_KEYS)
+    valid_to_raw = _get_first(row, VALID_TO_KEYS)
+    valid_from, valid_from_ok = _parse_sheet_date(valid_from_raw)
+    valid_to, valid_to_ok = _parse_sheet_date(valid_to_raw)
+
+    if not valid_from_ok or not valid_to_ok:
+        return "invalid_date"
+
+    if valid_from and valid_to and valid_from > valid_to:
+        return "invalid_range"
+
+    current_date = today or _local_today()
+
+    if valid_from and current_date < valid_from:
+        return "not_started"
+
+    if valid_to and current_date > valid_to:
+        return "expired"
+
+    return "active"
 
 
-# Chức năng: Đọc các dòng đang hoạt động trong một sheet.
+# Chức năng: Lưu thống kê thời hạn mới nhất của từng sheet vào bộ nhớ tiến trình.
+# Vai trò: Cung cấp trạng thái quản trị qua health check mà không phát sinh lượt đọc Google Sheets riêng.
+def _save_data_validity_status(
+    sheet_name: str,
+    counts: Dict[str, int],
+    invalid_samples: List[str],
+) -> None:
+    normalized_sheet = _clean_value(sheet_name) or "UNKNOWN"
+    snapshot = {
+        "total_rows": sum(counts.values()),
+        "active_rows": counts.get("active", 0),
+        "inactive_status_rows": counts.get("inactive_status", 0),
+        "not_started_rows": counts.get("not_started", 0),
+        "expired_rows": counts.get("expired", 0),
+        "invalid_date_rows": (
+            counts.get("invalid_date", 0)
+            + counts.get("invalid_range", 0)
+        ),
+        "checked_date": _local_today().isoformat(),
+        "invalid_samples": invalid_samples[:5],
+    }
+
+    with _data_validity_lock:
+        _data_validity_status[normalized_sheet] = snapshot
+        signature = "|".join(invalid_samples[:20])
+        previous_signature = _data_validity_warning_signatures.get(
+            normalized_sheet,
+            "",
+        )
+        _data_validity_warning_signatures[normalized_sheet] = signature
+
+    if signature and signature != previous_signature:
+        console_log(
+            "WARNING",
+            "DATA_VALIDITY",
+            "Phát hiện dữ liệu có ngày hiệu lực không hợp lệ",
+            sheet=normalized_sheet,
+            invalid_count=snapshot["invalid_date_rows"],
+            samples=invalid_samples[:5],
+        )
+
+
+# Chức năng: Lọc danh sách dòng theo trạng thái và thời hạn hiệu lực.
+# Vai trò: Áp dụng một quy tắc thời hạn chung cho MENU, FAQ, liên hệ, thủ tục và cấu hình Sheet.
+def _filter_active_rows(
+    sheet_name: str,
+    rows: List[Dict[str, str]],
+) -> List[Dict[str, str]]:
+    today = _local_today()
+    counts = {
+        "active": 0,
+        "inactive_status": 0,
+        "not_started": 0,
+        "expired": 0,
+        "invalid_date": 0,
+        "invalid_range": 0,
+    }
+    active_rows: List[Dict[str, str]] = []
+    invalid_samples: List[str] = []
+
+    for row_number, row in enumerate(rows, start=2):
+        state = _row_validity_state(row, today=today)
+        counts[state] = counts.get(state, 0) + 1
+
+        if state == "active":
+            active_rows.append(row)
+            continue
+
+        if state not in {"invalid_date", "invalid_range"}:
+            continue
+
+        row_id = _get_first(
+            row,
+            [
+                "ID",
+                "MA",
+                "MÃ",
+                "MA_THU_TUC",
+                "MÃ_THỦ_TỤC",
+                "KEY",
+                "TEN_THU_TUC",
+                "TÊN_THỦ_TỤC",
+                "TEN_CO_QUAN",
+                "TÊN_CƠ_QUAN",
+            ],
+            default=f"ROW_{row_number}",
+        )
+        invalid_samples.append(
+            f"{row_id}:{state}"
+        )
+
+    _save_data_validity_status(
+        sheet_name=sheet_name,
+        counts=counts,
+        invalid_samples=invalid_samples,
+    )
+    return active_rows
+
+
+# Chức năng: Kiểm tra trạng thái hoạt động và thời hạn của một dòng dữ liệu.
+# Vai trò: Giữ tương thích với các vùng kiểm tra cấu trúc đang gọi trực tiếp hàm này.
+def _is_active(row: Dict[str, Any]) -> bool:
+    return _row_validity_state(row) == "active"
+
+
+# Chức năng: Đọc các dòng đang hoạt động và còn thời hạn trong một sheet.
 # Vai trò: Lọc dữ liệu hợp lệ và giữ nguyên lỗi Google Sheets để tầng xử lý phía trên nhận biết.
 def _read_active(
     sheet_name: str,
 ) -> List[Dict[str, str]]:
-    return [
-        row
-        for row in read_sheet(sheet_name)
-        if _is_active(row)
-    ]
+    return _filter_active_rows(
+        sheet_name=sheet_name,
+        rows=read_sheet(sheet_name),
+    )
+
+
+# Chức năng: Tổng hợp trạng thái thời hạn dữ liệu đã được kiểm tra trong tiến trình hiện tại.
+# Vai trò: Cung cấp số liệu quản trị cho health check mà không đọc lại Google Sheets.
+def get_data_validity_status() -> Dict[str, Any]:
+    with _data_validity_lock:
+        sheets = {
+            sheet_name: dict(status)
+            for sheet_name, status in _data_validity_status.items()
+        }
+
+    totals = {
+        "total_rows": 0,
+        "active_rows": 0,
+        "inactive_status_rows": 0,
+        "not_started_rows": 0,
+        "expired_rows": 0,
+        "invalid_date_rows": 0,
+    }
+
+    for status in sheets.values():
+        for key in totals:
+            totals[key] += int(status.get(key, 0) or 0)
+
+    return {
+        "ok": totals["invalid_date_rows"] == 0,
+        "tracked_sheet_count": len(sheets),
+        **totals,
+        "sheets": sheets,
+    }
 
 # =========================
 # PUBLIC READ FUNCTIONS
@@ -551,11 +795,12 @@ def _key_value_sheet(sheet_name: str) -> Dict[str, str]:
     # Chức năng: Đọc sheet dạng KEY/VALUE thành dict cấu hình.
     # Vai trò: Cung cấp cấu hình hệ thống, AI, chat, prompt và thông tin đơn vị cho BOT.
     data: Dict[str, str] = {}
+    active_rows = _filter_active_rows(
+        sheet_name=sheet_name,
+        rows=read_sheet(sheet_name),
+    )
 
-    for row in read_sheet(sheet_name):
-        if not _is_active(row):
-            continue
-
+    for row in active_rows:
         key = _get_first(row, ["KEY", "MA", "MÃ", "TEN", "TÊN", "ID", "PROMPT_NAME", "SETTING_KEY"])
         value = _get_first(row, ["VALUE", "GIA_TRI", "GIÁ_TRỊ", "NOI_DUNG", "NỘI_DUNG", "MO_TA", "MÔ_TẢ", "PROMPT", "TEXT"])
 
