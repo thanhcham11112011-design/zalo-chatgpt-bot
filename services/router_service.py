@@ -554,7 +554,7 @@ def _make_procedure_list_reply(sheet, topic=""):
 
     for index, row in enumerate(all_rows, start=1):
         name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-        procedure_id = get_first(row, "ID", "MA", "MÃ")
+        procedure_id = _procedure_id(row)
 
         suggestions.append(
             {
@@ -667,9 +667,16 @@ def _is_vneid_sheet(sheet_name):
 
 
 # Chức năng: Lấy mã thủ tục chuẩn từ một dòng thủ tục.
-# Vai trò: Dùng RELATED_ID của FAQ để bổ sung đúng thủ tục đã xác định.
+# Vai trò: Hỗ trợ thống nhất mã thủ tục theo cấu trúc Google Sheets thực tế.
 def _procedure_id(row):
-    return get_first(row, "ID", "MA", "MÃ")
+    return get_first(
+        row,
+        "MA_THU_TUC",
+        "MÃ_THỦ_TỤC",
+        "ID",
+        "MA",
+        "MÃ",
+    )
 
 
 # Chức năng: Tìm thủ tục khi người dân nhập đúng mã hoặc nguyên tên thủ tục.
@@ -1594,7 +1601,7 @@ def _context_from_related_procedure(procedure, ctx=None, route_name="FAQ_RELATED
     return {
         "sheet": procedure.get("_SHEET", base_ctx.get("sheet", "")),
         "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=base_ctx.get("topic", "")),
-        "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
+        "procedure_id": _procedure_id(procedure),
         "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
         "stage": "procedure",
         "last_suggestions": [],
@@ -1765,7 +1772,7 @@ def route_message(user_text, context=None):
         new_ctx = {
             "sheet": selected.get("_SHEET", ctx.get("sheet", "")),
             "topic": get_first(selected, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-            "procedure_id": get_first(selected, "ID", "MA", "MÃ"),
+            "procedure_id": _procedure_id(selected),
             "procedure_name": get_first(selected, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
             "stage": "procedure",
             "last_suggestions": [],
@@ -1826,7 +1833,7 @@ def route_message(user_text, context=None):
         new_ctx = {
             "sheet": exact_sheet,
             "topic": get_first(exact_procedure, "CHU_DE", "CHỦ_ĐỀ"),
-            "procedure_id": get_first(exact_procedure, "ID", "MA", "MÃ"),
+            "procedure_id": _procedure_id(exact_procedure),
             "procedure_name": get_first(exact_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
             "stage": "procedure",
             "last_suggestions": [],
@@ -1945,7 +1952,7 @@ def route_message(user_text, context=None):
         else 0
     )
     best_id = normalize_text(
-        get_first(best, "ID", "MA", "MÃ")
+        _procedure_id(best)
     ) if best else ""
 
     strong_match = bool(
@@ -1968,7 +1975,7 @@ def route_message(user_text, context=None):
         new_ctx = {
             "sheet": best.get("_SHEET", ""),
             "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ"),
-            "procedure_id": get_first(best, "ID", "MA", "MÃ"),
+            "procedure_id": _procedure_id(best),
             "procedure_name": get_first(
                 best,
                 "TEN_THU_TUC",
@@ -2058,7 +2065,9 @@ def route_message(user_text, context=None):
                     new_ctx = {
                         "sheet": related_procedure.get("_SHEET", explicit_sheet),
                         "topic": get_first(related_procedure, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
-                        "procedure_id": get_first(related_procedure, "ID", "MA", "MÃ"),
+                        "procedure_id": _procedure_id(
+                            related_procedure
+                        ),
                         "procedure_name": get_first(related_procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                         "stage": "procedure",
                         "last_suggestions": [],
@@ -2085,7 +2094,7 @@ def route_message(user_text, context=None):
                 new_ctx = {
                     "sheet": best.get("_SHEET", explicit_sheet),
                     "topic": get_first(best, "CHU_DE", "CHỦ_ĐỀ", default=explicit_topic),
-                    "procedure_id": get_first(best, "ID", "MA", "MÃ"),
+                    "procedure_id": _procedure_id(best),
                     "procedure_name": get_first(best, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                     "stage": "procedure",
                     "last_suggestions": [],
@@ -2099,7 +2108,7 @@ def route_message(user_text, context=None):
             lines = []
             for i, row in enumerate(procedure_results[:5], start=1):
                 name = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-                pid = get_first(row, "ID", "MA", "MÃ")
+                pid = _procedure_id(row)
                 suggestions.append({"index": i, "id": pid, "name": name})
                 if name:
                     lines.append(f"{i}. {name}")
@@ -2133,7 +2142,7 @@ def route_message(user_text, context=None):
             new_ctx = {
                 "sheet": procedure.get("_SHEET", ctx.get("sheet", "")),
                 "topic": get_first(procedure, "CHU_DE", "CHỦ_ĐỀ", default=ctx.get("topic", "")),
-                "procedure_id": get_first(procedure, "ID", "MA", "MÃ"),
+                "procedure_id": _procedure_id(procedure),
                 "procedure_name": get_first(procedure, "TEN_THU_TUC", "TÊN_THỦ_TỤC"),
                 "stage": "procedure",
                 "last_suggestions": [],
