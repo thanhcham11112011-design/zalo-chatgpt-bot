@@ -110,12 +110,18 @@ def get_ai_notice():
 
 
 # Chức năng: Kiểm tra BOT có được phép gọi Gemini hay không.
-# Vai trò: Thực thi nguyên tắc AI optional, Google Sheets là luồng chính.
+# Vai trò: Áp dụng thống nhất toàn bộ cổng điều khiển AI từ sheet SETTING_AI.
 def can_use_ai(routed):
     if not is_enabled(get_ai_setting("AI_ENABLED", "TRUE"), True):
         return False
 
     if is_enabled(get_ai_setting("AI_IS_CORE", "FALSE"), False):
+        return False
+
+    if str(get_ai_setting("AI_MODE", "OPTIONAL")).strip().upper() != "OPTIONAL":
+        return False
+
+    if str(get_ai_setting("AI_STATUS", "ONLINE")).strip().upper() != "ONLINE":
         return False
 
     if not bool(routed.get("use_ai", False)):
@@ -125,15 +131,105 @@ def can_use_ai(routed):
     source = str(routed.get("source") or "").strip().upper()
 
     if ai_context:
-        return is_enabled(get_ai_setting("ENABLE_AI_SUMMARIZE", "TRUE"), True)
+        return (
+            is_enabled(get_ai_setting("ENABLE_CONTEXT", "TRUE"), True)
+            and is_enabled(get_ai_setting("ENABLE_RAG", "TRUE"), True)
+            and is_enabled(get_ai_setting("ENABLE_AI_SUMMARIZE", "TRUE"), True)
+        )
 
-    if source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "ROUTER_ERROR"}:
+    if source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "ROUTER_ERROR", "EMPTY"}:
+        if is_enabled(get_ai_setting("STRICT_SHEET_ONLY", "TRUE"), True):
+            return False
+
         return (
             is_enabled(get_ai_setting("ENABLE_AI_GENERAL_KNOWLEDGE", "FALSE"), False)
             and is_enabled(get_ai_setting("ALLOW_AI_WITHOUT_SHEET_CONTEXT", "FALSE"), False)
         )
 
     return False
+
+
+# Chức năng: Tổng hợp trạng thái cấu hình AI an toàn để hiển thị tại health check.
+# Vai trò: Cho phép kiểm tra Bước 18 mà không công khai GEMINI_API_KEY.
+def get_ai_runtime_status():
+    settings = read_setting_ai() or {}
+    enabled = is_enabled(
+        settings.get("AI_ENABLED", "TRUE"),
+        True,
+    )
+    is_core = is_enabled(
+        settings.get("AI_IS_CORE", "FALSE"),
+        False,
+    )
+    mode = str(
+        settings.get("AI_MODE") or "OPTIONAL"
+    ).strip().upper()
+    ai_status = str(
+        settings.get("AI_STATUS") or "ONLINE"
+    ).strip().upper()
+    model = str(
+        settings.get("MODEL") or ""
+    ).strip()
+
+    return {
+        "operational": bool(
+            enabled
+            and not is_core
+            and mode == "OPTIONAL"
+            and ai_status == "ONLINE"
+            and model
+        ),
+        "enabled": enabled,
+        "mode": mode,
+        "is_core": is_core,
+        "status": ai_status,
+        "model": model,
+        "strict_sheet_only": is_enabled(
+            settings.get("STRICT_SHEET_ONLY", "TRUE"),
+            True,
+        ),
+        "enable_rag": is_enabled(
+            settings.get("ENABLE_RAG", "TRUE"),
+            True,
+        ),
+        "enable_summarize": is_enabled(
+            settings.get("ENABLE_AI_SUMMARIZE", "TRUE"),
+            True,
+        ),
+        "general_knowledge": is_enabled(
+            settings.get(
+                "ENABLE_AI_GENERAL_KNOWLEDGE",
+                "FALSE",
+            ),
+            False,
+        ),
+        "allow_without_sheet_context": is_enabled(
+            settings.get(
+                "ALLOW_AI_WITHOUT_SHEET_CONTEXT",
+                "FALSE",
+            ),
+            False,
+        ),
+        "allow_procedure_without_data": is_enabled(
+            settings.get(
+                "ALLOW_AI_PROCEDURE_WITHOUT_DATA",
+                "FALSE",
+            ),
+            False,
+        ),
+        "retry_count": str(
+            settings.get("AI_RETRY_COUNT") or "1"
+        ).strip(),
+        "timeout_seconds": str(
+            settings.get("AI_TIMEOUT_SECONDS") or "15"
+        ).strip(),
+        "max_output_tokens": str(
+            settings.get("MAX_OUTPUT_TOKEN") or "2048"
+        ).strip(),
+        "max_output_chars": str(
+            settings.get("AI_MAX_OUTPUT_CHARS") or "1500"
+        ).strip(),
+    }
 
 
 # Chức năng: Ghi log hội thoại với khả năng tương thích logger mới.
@@ -228,7 +324,7 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
         return fallback_answer, routed.get("source", "DEFAULT"), "AI_NOT_USED", ""
 
     ai_context = routed.get("ai_context", "")
-    ai_model = get_ai_setting("GEMINI_MODEL", get_ai_setting("MODEL", ""))
+    ai_model = get_ai_setting("MODEL", "")
 
     try:
         result = ask_gemini_status(question, context=ai_context)
@@ -485,6 +581,7 @@ def health():
             ),
         },
         "data_validity": data_validity_status,
+        "ai": get_ai_runtime_status(),
         "health_check": {
             "cached": health_cached,
             "age_seconds": health_age,
