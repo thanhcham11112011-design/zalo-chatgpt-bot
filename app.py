@@ -447,18 +447,19 @@ def build_answer(user_id, question):
     else:
         save_context(user_id, new_context)
 
-    (
-        answer,
-        source,
-        ai_status,
-        ai_model,
-        ai_note,
-    ) = try_ai_answer(
-        user_id,
-        question,
-        routed,
-        answer,
-    )
+    if routed.get("use_ai") is True:
+        (
+            answer,
+            source,
+            ai_status,
+            ai_model,
+            ai_note,
+        ) = try_ai_answer(
+            user_id,
+            question,
+            routed,
+            answer,
+        )
 
     if routed.get("unknown_log") or source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "AI_UNAVAILABLE"}:
         log_unknown_safe(
