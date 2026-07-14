@@ -117,6 +117,97 @@ def _should_use_ai(user_text, source, ai_context=""):
     return True
 
 
+# Chức năng: Lấy giới hạn dữ liệu Google Sheets được phép đưa vào ai_context.
+# Vai trò: Ngăn gửi context quá lớn và giữ cấu hình tại SETTING_AI.
+def _get_ai_context_limit():
+    value = safe_int(
+        _ai_setting("AI_CONTEXT_MAX_CHARS", "12000"),
+        default=12000,
+    )
+    return min(max(value, 1000), 50000)
+
+
+# Chức năng: Xác định loại dữ liệu đủ điều kiện tạo ai_context.
+# Vai trò: Chỉ cho AI diễn đạt thủ tục hoặc FAQ đã có căn cứ từ Google Sheets.
+def _get_ai_context_type(source, context):
+    ctx = dict(context or {})
+    source_name = str(source or "").strip().upper()
+
+    if ctx.get("procedure_id"):
+        return "THU_TUC"
+
+    if source_name == "FAQ":
+        return "FAQ"
+
+    return ""
+
+
+# Chức năng: Tạo ai_context tối thiểu từ câu trả lời đã xác minh bằng Google Sheets.
+# Vai trò: Cho Gemini chỉ diễn đạt lại dữ liệu đúng nguồn, không nhận dữ liệu thừa hoặc tự suy luận.
+def _build_ai_context(user_text, reply, source, context):
+    context_type = _get_ai_context_type(source, context)
+    verified_reply = str(reply or "").strip()
+
+    if not context_type or not verified_reply:
+        return "", ""
+
+    ctx = dict(context or {})
+    source_name = str(source or "").strip().upper()
+    sheet_name = str(ctx.get("sheet") or ("FAQ" if context_type == "FAQ" else "")).strip()
+    row_id = str(ctx.get("procedure_id") or "").strip()
+    record_name = str(ctx.get("procedure_name") or "").strip()
+    question = str(user_text or "").strip()
+
+    header_lines = [
+        "AI_CONTEXT_VERSION: 1",
+        "DATA_SOURCE: GOOGLE_SHEETS",
+        f"DATA_TYPE: {context_type}",
+        f"ROUTE: {source_name}",
+    ]
+
+    if sheet_name:
+        header_lines.append(f"SHEET: {sheet_name}")
+    if row_id:
+        header_lines.append(f"ROW_ID: {row_id}")
+    if record_name:
+        header_lines.append(f"RECORD_NAME: {record_name}")
+    if question:
+        header_lines.append(f"USER_INTENT: {question}")
+
+    rule_lines = [
+        "RESPONSE_RULES:",
+        "- Chỉ sử dụng nội dung trong VERIFIED_CONTENT.",
+        "- Không bổ sung thông tin ngoài Google Sheets.",
+        "- Giữ nguyên tên riêng, mã, số điện thoại, địa chỉ, ngày, lệ phí, thời hạn và đường link.",
+        "- Chỉ diễn đạt lại cho rõ ràng, lịch sự và đúng trọng tâm câu hỏi.",
+    ]
+
+    ai_context = "\n".join([
+        *header_lines,
+        "VERIFIED_CONTENT_BEGIN",
+        verified_reply,
+        "VERIFIED_CONTENT_END",
+        *rule_lines,
+    ])
+
+    context_limit = _get_ai_context_limit()
+
+    if len(ai_context) > context_limit:
+        console_log(
+            "WARNING",
+            "AI_CONTEXT",
+            "Bỏ qua AI vì dữ liệu tham khảo vượt giới hạn",
+            source=source_name,
+            sheet=sheet_name,
+            row_id=row_id,
+            context_length=len(ai_context),
+            context_limit=context_limit,
+        )
+        return "", ""
+
+    return ai_context, context_type
+
+
 # Chức năng: Tách danh sách từ khóa từ một ô dữ liệu Google Sheets.
 # Vai trò: Dùng dữ liệu sheet thay cho hardcode từ khóa nghiệp vụ trong router.
 def _split_keywords(value):
@@ -1977,27 +2068,60 @@ def route_message_for_ai(user_text, context=None):
         "use_ai": False,
         "context": dict(context or {}),
         "ai_context": "",
+        "ai_context_type": "",
+        "ai_context_length": 0,
         "ai_mode": _ai_setting("AI_MODE", "OPTIONAL"),
     }
 
     try:
-        reply, source, new_context, ai_context = route_message(user_text=user_text, context=context)
+        reply, source, new_context, ai_context = route_message(
+            user_text=user_text,
+            context=context,
+        )
+
+        ai_context_type = "CUSTOM" if ai_context else ""
+
+        if not ai_context:
+            ai_context, ai_context_type = _build_ai_context(
+                user_text=user_text,
+                reply=reply,
+                source=source,
+                context=new_context,
+            )
+
         result["reply"] = reply
         result["source"] = source
         result["context"] = new_context
         result["ai_context"] = ai_context
-        result["use_ai"] = _should_use_ai(user_text, source, ai_context)
+        result["ai_context_type"] = ai_context_type
+        result["ai_context_length"] = len(ai_context)
+        result["use_ai"] = _should_use_ai(
+            user_text,
+            source,
+            ai_context,
+        )
 
         if source == "DEFAULT" and not result["use_ai"]:
             result["unknown_log"] = True
 
     except Exception as e:
-        console_log("ERROR", "ROUTER", "Định tuyến tin nhắn thất bại", error=e)
+        console_log(
+            "ERROR",
+            "ROUTER",
+            "Định tuyến tin nhắn thất bại",
+            error=e,
+        )
         result["reply"] = get_default_reply()
         result["source"] = "ROUTER_ERROR"
-        result["use_ai"] = _should_use_ai(user_text, "ROUTER_ERROR", "")
+        result["use_ai"] = _should_use_ai(
+            user_text,
+            "ROUTER_ERROR",
+            "",
+        )
         result["context"] = dict(context or {})
         result["ai_context"] = ""
+        result["ai_context_type"] = ""
+        result["ai_context_length"] = 0
         result["unknown_log"] = not result["use_ai"]
 
     return result
