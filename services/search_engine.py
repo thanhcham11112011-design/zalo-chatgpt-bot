@@ -366,26 +366,46 @@ def _name_token_score(user_text, name):
     return 0
 
 
-# Chức năng: Nhận diện bộ phận khi người dân nêu trực tiếp giá trị BO_PHAN trong câu hỏi.
-# Vai trò: Chỉ lọc bộ phận khi có căn cứ rõ, không để tên địa bàn hoặc chức danh làm lệch kết quả.
+# Chức năng: Nhận diện bộ phận từ BO_PHAN và các cách gọi trong TU_KHOA.
+# Vai trò: Ánh xạ cách gọi của người dân về mã bộ phận chuẩn trong Google Sheets.
 def _detect_contact_department(user_text, rows):
     candidates = {}
 
     for row in rows:
         fields = _contact_field_values(row)
-        department = str(fields.get("bo_phan") or "").strip()
+        department = str(
+            fields.get("bo_phan") or ""
+        ).strip()
         department_norm = normalize_text(department)
 
         if not department_norm:
             continue
 
-        score = _exact_keyword_score(user_text, department, 20000)
+        department_score = _exact_keyword_score(
+            user_text,
+            department,
+            20000,
+        )
+        keyword_score = _exact_keyword_score(
+            user_text,
+            fields.get("keywords"),
+            18000,
+        )
+        score = max(
+            department_score,
+            keyword_score,
+        )
 
         if score <= 0:
             continue
 
         priority = safe_int(
-            get_first(row, "MUC_UU_TIEN", "UU_TIEN", "ƯU_TIÊN"),
+            get_first(
+                row,
+                "MUC_UU_TIEN",
+                "UU_TIEN",
+                "ƯU_TIÊN",
+            ),
             999,
         )
 
@@ -394,7 +414,10 @@ def _detect_contact_department(user_text, rows):
         if (
             not current
             or score > current[0]
-            or (score == current[0] and priority < current[1])
+            or (
+                score == current[0]
+                and priority < current[1]
+            )
         ):
             candidates[department_norm] = (
                 score,
@@ -414,7 +437,10 @@ def _detect_contact_department(user_text, rows):
         ),
     )
 
-    if len(ranked) > 1 and ranked[0][0] == ranked[1][0]:
+    if (
+        len(ranked) > 1
+        and ranked[0][0] == ranked[1][0]
+    ):
         return ""
 
     return ranked[0][2]
