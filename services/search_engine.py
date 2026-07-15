@@ -150,7 +150,7 @@ def _add_meta(row, route="", score=0, sheet="", row_id="", note=""):
     row["_ROUTE"] = route
     row["_SCORE"] = score
     row["_SHEET"] = sheet or row.get("_SHEET", "")
-    row["_ROW_ID"] = row_id or get_first(row, "ID", "MA", "MÃ")
+    row["_ROW_ID"] = row_id or get_first(row, "MA_THU_TUC", "MÃ_THỦ_TỤC", "ID", "MA", "MÃ")
     row["_NOTE"] = note
     row["_UU_TIEN"] = safe_int(get_first(row, "MUC_UU_TIEN", "UU_TIEN", default=999))
     return row
@@ -168,6 +168,19 @@ def _active_status(row):
     # Vai trò: Dùng chung cho các hàm tìm kiếm để chỉ xử lý dữ liệu đang bật.
     trang_thai = normalize_text(get_first(row, "TRANG_THAI", "TRẠNG_THÁI", "STATUS", "ACTIVE"))
     return trang_thai not in ["off", "inactive", "false", "0", "no", "khong", "không", "ngung", "ngừng", "dung", "dừng"]
+
+
+# Chức năng: Lấy mã thủ tục theo cấu trúc chuẩn của các sheet THU_TUC_*.
+# Vai trò: Dùng thống nhất MA_THU_TUC khi tìm kiếm, giữ context và ghi nguồn kết quả.
+def _procedure_id(row):
+    return get_first(
+        row,
+        "MA_THU_TUC",
+        "MÃ_THỦ_TỤC",
+        "ID",
+        "MA",
+        "MÃ",
+    )
 
 
 def detect_bo_phan_contact(user_text):
@@ -1015,7 +1028,7 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
 
         keywords = get_first(row, "TU_KHOA", "TỪ_KHÓA")
         ten = get_first(row, "TEN_THU_TUC", "TÊN_THỦ_TỤC")
-        ma = get_first(row, "ID", "MA", "MÃ")
+        ma = _procedure_id(row)
         mo_ta = get_first(row, "MO_TA", "MÔ_TẢ")
         chu_de = get_first(row, "CHU_DE", "CHỦ_ĐỀ")
         goi_y = get_first(row, "GOI_Y_CAU_HOI", "GỢI_Ý_CÂU_HỎI")
@@ -1055,7 +1068,7 @@ def search_thu_tuc(user_text, limit=5, sheet=None):
             route="THU_TUC",
             score=score,
             sheet=row_sheet,
-            row_id=get_first(row, "ID", "MA", "MÃ"),
+            row_id=_procedure_id(row),
             note="PROCEDURE_MATCH",
         ))
 
@@ -1074,7 +1087,7 @@ def list_procedures_by_sheet(sheet):
                 route="THU_TUC_LIST",
                 score=0,
                 sheet=sheet,
-                row_id=get_first(row, "ID", "MA", "MÃ"),
+                row_id=_procedure_id(row),
                 note="LIST_BY_SHEET",
             ))
 
@@ -1091,7 +1104,7 @@ def find_procedure_by_id(procedure_id):
         return None
 
     for row in read_all_thu_tuc():
-        row_id = str(get_first(row, "ID", "MA", "MÃ") or "").strip()
+        row_id = str(_procedure_id(row) or "").strip()
         if row_id == pid:
             return _add_meta(
                 row=row,
