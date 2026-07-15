@@ -5,10 +5,11 @@ Nguyên tắc: Google Sheets là nguồn dữ liệu nghiệp vụ duy nhất; f
 """
 
 import json
+from copy import deepcopy
 import os
 import time
 from datetime import date, datetime, timedelta, timezone
-from threading import Lock
+from threading import Lock, RLock
 from typing import Any, Dict, List, Optional, Tuple
 import gspread
 from google.oauth2.service_account import Credentials
@@ -51,7 +52,21 @@ SCOPES = [
 
 _client = None
 _spreadsheet = None
+_worksheet_cache: Dict[str, Any] = {}
 _cache: Dict[str, Tuple[float, List[Dict[str, Any]]]] = {}
+_sheet_locks: Dict[str, Lock] = {}
+_google_read_retry_after = 0.0
+
+_client_lock = Lock()
+_spreadsheet_lock = Lock()
+_worksheet_lock = RLock()
+_cache_lock = RLock()
+_sheet_locks_lock = Lock()
+_log_write_lock = Lock()
+_session_write_lock = Lock()
+_sheet_health_lock = Lock()
+_sheet_health_cache_at = 0.0
+_sheet_health_cache_data: Dict[str, Any] = {}
 
 CACHE_TTL_SECONDS = int(
     os.getenv("SHEET_CACHE_TTL_SECONDS", "300")
@@ -60,6 +75,16 @@ CACHE_TTL_SECONDS = int(
 CACHE_MAX_STALE_SECONDS = max(
     CACHE_TTL_SECONDS,
     int(os.getenv("SHEET_CACHE_MAX_STALE_SECONDS", "1800")),
+)
+
+SHEET_429_COOLDOWN_SECONDS = max(
+    30,
+    int(os.getenv("SHEET_429_COOLDOWN_SECONDS", "60")),
+)
+
+SHEET_HEALTH_CACHE_SECONDS = max(
+    60,
+    int(os.getenv("SHEET_HEALTH_CACHE_SECONDS", "300")),
 )
 
 VALID_FROM_KEYS = [
@@ -167,43 +192,112 @@ def _credentials_from_env() -> Credentials:
 
 
 def get_client():
-    # Chức năng: Khởi tạo client gspread.
-    # Vai trò: Tái sử dụng kết nối Google Sheets trong toàn bộ BOT.
+    # Chức năng: Khởi tạo client gspread an toàn khi nhiều luồng cùng truy cập.
+    # Vai trò: Tái sử dụng một kết nối Google Sheets trong toàn bộ tiến trình BOT.
     global _client
-    if _client is None:
-        creds = _credentials_from_env()
-        _client = gspread.authorize(creds)
+
+    if _client is not None:
+        return _client
+
+    with _client_lock:
+        if _client is None:
+            creds = _credentials_from_env()
+            _client = gspread.authorize(creds)
+
     return _client
 
 
 def get_spreadsheet():
-    # Chức năng: Mở Google Spreadsheet theo GOOGLE_SHEET_ID.
-    # Vai trò: Cung cấp workbook trung tâm dữ liệu cho BOT.
+    # Chức năng: Mở Google Spreadsheet một lần và dùng lại trong toàn bộ tiến trình.
+    # Vai trò: Tránh nhiều luồng cùng tạo kết nối workbook sau khi Render khởi động.
     global _spreadsheet
-    if _spreadsheet is None:
-        if not GOOGLE_SHEET_ID:
-            raise ValueError("Thiếu GOOGLE_SHEET_ID")
-        _spreadsheet = get_client().open_by_key(GOOGLE_SHEET_ID)
+
+    if _spreadsheet is not None:
+        return _spreadsheet
+
+    with _spreadsheet_lock:
+        if _spreadsheet is None:
+            if not GOOGLE_SHEET_ID:
+                raise ValueError("Thiếu GOOGLE_SHEET_ID")
+            _spreadsheet = get_client().open_by_key(
+                GOOGLE_SHEET_ID
+            )
+
     return _spreadsheet
 
 
+def _load_worksheet_cache() -> None:
+    # Chức năng: Nạp danh sách worksheet vào bộ nhớ bằng một lần đọc metadata.
+    # Vai trò: Tránh gọi Spreadsheet.worksheet riêng cho từng sheet và từng lượt ghi.
+    if _worksheet_cache:
+        return
+
+    worksheets = get_spreadsheet().worksheets()
+
+    for worksheet in worksheets:
+        _worksheet_cache[worksheet.title] = worksheet
+
+
 def get_worksheet(sheet_name: str):
-    # Chức năng: Lấy worksheet theo tên sheet.
-    # Vai trò: Cung cấp dữ liệu từng bảng cho BOT theo tên được cấu hình trong Google Sheets.
-    return get_spreadsheet().worksheet(sheet_name)
+    # Chức năng: Lấy worksheet từ cache metadata theo tên sheet.
+    # Vai trò: Giảm lượt đọc metadata Google Sheets trong các luồng đọc và ghi.
+    normalized_name = _clean_value(sheet_name)
+
+    if not normalized_name:
+        raise gspread.WorksheetNotFound(
+            "Tên worksheet trống"
+        )
+
+    with _worksheet_lock:
+        _load_worksheet_cache()
+        worksheet = _worksheet_cache.get(normalized_name)
+
+        if worksheet is not None:
+            return worksheet
+
+        _worksheet_cache.clear()
+        _load_worksheet_cache()
+        worksheet = _worksheet_cache.get(normalized_name)
+
+        if worksheet is None:
+            raise gspread.WorksheetNotFound(
+                normalized_name
+            )
+
+        return worksheet
 
 
-def ensure_worksheet(sheet_name: str, headers: Optional[List[str]] = None, rows: int = 1000, cols: int = 20):
-    # Chức năng: Lấy worksheet, nếu chưa có thì tạo mới.
-    # Vai trò: Bảo đảm các sheet hệ thống/log/session luôn tồn tại khi BOT cần ghi dữ liệu.
-    ss = get_spreadsheet()
-    try:
-        ws = ss.worksheet(sheet_name)
-    except gspread.WorksheetNotFound:
-        ws = ss.add_worksheet(title=sheet_name, rows=rows, cols=cols)
+def ensure_worksheet(
+    sheet_name: str,
+    headers: Optional[List[str]] = None,
+    rows: int = 1000,
+    cols: int = 20,
+):
+    # Chức năng: Lấy worksheet từ cache, nếu chưa có thì tạo mới một lần.
+    # Vai trò: Bảo đảm sheet hệ thống tồn tại mà không đọc metadata ở mỗi lượt ghi.
+    normalized_name = _clean_value(sheet_name)
+
+    if not normalized_name:
+        raise ValueError("Tên worksheet trống")
+
+    with _worksheet_lock:
+        _load_worksheet_cache()
+        worksheet = _worksheet_cache.get(normalized_name)
+
+        if worksheet is not None:
+            return worksheet
+
+        worksheet = get_spreadsheet().add_worksheet(
+            title=normalized_name,
+            rows=rows,
+            cols=cols,
+        )
+
         if headers:
-            ws.append_row(headers)
-    return ws
+            worksheet.append_row(headers)
+
+        _worksheet_cache[normalized_name] = worksheet
+        return worksheet
 
 
 # =========================
@@ -219,10 +313,39 @@ class SheetReadError(RuntimeError):
 # Chức năng: Xóa cache dữ liệu sheet.
 # Vai trò: Giúp BOT đọc lại dữ liệu mới sau khi Google Sheets được cập nhật.
 def clear_cache(sheet_name: Optional[str] = None):
-    if sheet_name:
-        _cache.pop(sheet_name, None)
-    else:
-        _cache.clear()
+    with _cache_lock:
+        if sheet_name:
+            _cache.pop(sheet_name, None)
+        else:
+            _cache.clear()
+
+
+def _get_sheet_lock(sheet_name: str) -> Lock:
+    # Chức năng: Lấy khóa đọc riêng cho từng sheet.
+    # Vai trò: Ngăn nhiều thread cùng nạp một sheet khi cache trống hoặc hết hạn.
+    with _sheet_locks_lock:
+        lock = _sheet_locks.get(sheet_name)
+
+        if lock is None:
+            lock = Lock()
+            _sheet_locks[sheet_name] = lock
+
+        return lock
+
+
+def _is_quota_error(error: Exception) -> bool:
+    # Chức năng: Nhận diện lỗi vượt quota Google Sheets API.
+    # Vai trò: Kích hoạt thời gian tạm dừng đọc để tránh các webhook tiếp tục gọi dồn dập.
+    response = getattr(error, "response", None)
+    status_code = getattr(response, "status_code", None)
+    error_text = str(error or "").lower()
+
+    return (
+        status_code == 429
+        or "[429]" in error_text
+        or "quota exceeded" in error_text
+        or "too many requests" in error_text
+    )
 
 
 # Chức năng: Kiểm tra cache cũ có còn được phép dùng làm dữ liệu dự phòng hay không.
@@ -257,7 +380,10 @@ def _get_cache_fallback(
         cache_age_seconds=cache_age,
         max_stale_seconds=CACHE_MAX_STALE_SECONDS,
     )
-    _cache.pop(sheet_name, None)
+
+    with _cache_lock:
+        _cache.pop(sheet_name, None)
+
     return None
 
 
@@ -272,7 +398,17 @@ def get_sheet_cache_status() -> Dict[str, Any]:
     expired_sheet_count = 0
     oldest_age_seconds = 0
 
-    for cached_at, cached_rows in _cache.values():
+    with _cache_lock:
+        cache_snapshot = [
+            (
+                cached_at,
+                [dict(row) for row in cached_rows],
+            )
+            for cached_at, cached_rows in _cache.values()
+        ]
+        retry_after = _google_read_retry_after
+
+    for cached_at, cached_rows in cache_snapshot:
         sheet_count += 1
         cache_age = max(0, int(now - cached_at))
         oldest_age_seconds = max(
@@ -310,15 +446,22 @@ def get_sheet_cache_status() -> Dict[str, Any]:
         "oldest_age_seconds": oldest_age_seconds,
         "ttl_seconds": CACHE_TTL_SECONDS,
         "max_stale_seconds": CACHE_MAX_STALE_SECONDS,
+        "quota_cooldown_active": retry_after > now,
+        "quota_retry_after_seconds": max(
+            0,
+            int(retry_after - now),
+        ),
     }
 
 
-# Chức năng: Đọc dữ liệu một sheet thành danh sách dict đã chuẩn hóa.
-# Vai trò: Dùng cache có giới hạn khi Google Sheets lỗi và từ chối cache đã quá cũ.
+# Chức năng: Đọc một sheet với cache, khóa chống đọc trùng và tạm dừng khi gặp lỗi 429.
+# Vai trò: Giảm lượt gọi Google Sheets trong môi trường có nhiều người dùng đồng thời.
 def read_sheet(
     sheet_name: str,
     use_cache: bool = True,
 ) -> List[Dict[str, str]]:
+    global _google_read_retry_after
+
     sheet_name = _clean_value(sheet_name)
 
     if not sheet_name:
@@ -326,97 +469,144 @@ def read_sheet(
         console_log("ERROR", "SHEET_READ", error_message)
         raise SheetReadError(error_message)
 
-    now = time.time()
-    cached_rows: List[Dict[str, str]] = []
-    cached_at = 0.0
+    sheet_lock = _get_sheet_lock(sheet_name)
 
-    if sheet_name in _cache:
-        cached_at, cached_rows = _cache[sheet_name]
-        cache_age = max(0, int(now - cached_at))
+    with sheet_lock:
+        now = time.time()
+
+        with _cache_lock:
+            cached_at, cached_rows = _cache.get(
+                sheet_name,
+                (0.0, []),
+            )
+            cached_rows = [
+                dict(row)
+                for row in cached_rows
+            ]
+            retry_after = _google_read_retry_after
+
+        cache_age = max(
+            0,
+            int(now - cached_at),
+        ) if cached_at else 0
 
         if (
             use_cache
+            and cached_at
             and cache_age <= CACHE_TTL_SECONDS
         ):
-            return [dict(row) for row in cached_rows]
+            return cached_rows
 
-    try:
-        ws = get_worksheet(sheet_name)
-        records = ws.get_all_records(
-            default_blank="",
-            numericise_ignore=["all"],
-        )
-        rows: List[Dict[str, str]] = []
+        if retry_after > now:
+            fallback_rows = _get_cache_fallback(
+                sheet_name=sheet_name,
+                cached_at=cached_at,
+                cached_rows=cached_rows,
+                now=now,
+                use_cache=use_cache,
+            )
 
-        for row in records:
-            cleaned = _clean_row(row)
+            if fallback_rows is not None:
+                return fallback_rows
 
-            if any(
-                str(value).strip()
-                for value in cleaned.values()
-            ):
-                rows.append(cleaned)
+            raise SheetReadError(
+                f"Google Sheets đang tạm dừng đọc sau lỗi 429; "
+                f"thử lại sau {max(1, int(retry_after - now))} giây"
+            )
 
-        _cache[sheet_name] = (now, rows)
+        try:
+            worksheet = get_worksheet(sheet_name)
+            records = worksheet.get_all_records(
+                default_blank="",
+                numericise_ignore=["all"],
+            )
+            rows: List[Dict[str, str]] = []
 
-        if not rows:
+            for row in records:
+                cleaned = _clean_row(row)
+
+                if any(
+                    str(value).strip()
+                    for value in cleaned.values()
+                ):
+                    rows.append(cleaned)
+
+            cached_time = time.time()
+
+            with _cache_lock:
+                _cache[sheet_name] = (
+                    cached_time,
+                    rows,
+                )
+
+            if not rows:
+                console_log(
+                    "INFO",
+                    "SHEET_READ",
+                    "Đọc thành công nhưng sheet không có dữ liệu",
+                    sheet=sheet_name,
+                )
+
+            return [
+                dict(row)
+                for row in rows
+            ]
+
+        except gspread.WorksheetNotFound as error:
             console_log(
-                "INFO",
+                "ERROR",
                 "SHEET_READ",
-                "Đọc thành công nhưng sheet không có dữ liệu",
+                "Không tìm thấy worksheet",
                 sheet=sheet_name,
             )
 
-        return [dict(row) for row in rows]
+            fallback_rows = _get_cache_fallback(
+                sheet_name=sheet_name,
+                cached_at=cached_at,
+                cached_rows=cached_rows,
+                now=now,
+                use_cache=use_cache,
+            )
 
-    except gspread.WorksheetNotFound as e:
-        console_log(
-            "ERROR",
-            "SHEET_READ",
-            "Không tìm thấy worksheet",
-            sheet=sheet_name,
-        )
+            if fallback_rows is not None:
+                return fallback_rows
 
-        fallback_rows = _get_cache_fallback(
-            sheet_name=sheet_name,
-            cached_at=cached_at,
-            cached_rows=cached_rows,
-            now=now,
-            use_cache=use_cache,
-        )
+            raise SheetReadError(
+                f"Không tìm thấy worksheet: {sheet_name}"
+            ) from error
 
-        if fallback_rows is not None:
-            return fallback_rows
+        except Exception as error:
+            if _is_quota_error(error):
+                with _cache_lock:
+                    _google_read_retry_after = (
+                        time.time()
+                        + SHEET_429_COOLDOWN_SECONDS
+                    )
 
-        raise SheetReadError(
-            f"Không tìm thấy worksheet: {sheet_name}"
-        ) from e
+            console_log(
+                "ERROR",
+                "SHEET_READ",
+                "Không thể đọc Google Sheets",
+                sheet=sheet_name,
+                error_type=type(error).__name__,
+                error=error,
+            )
 
-    except Exception as e:
-        console_log(
-            "ERROR",
-            "SHEET_READ",
-            "Không thể đọc Google Sheets",
-            sheet=sheet_name,
-            error_type=type(e).__name__,
-            error=e,
-        )
+            fallback_rows = _get_cache_fallback(
+                sheet_name=sheet_name,
+                cached_at=cached_at,
+                cached_rows=cached_rows,
+                now=now,
+                use_cache=use_cache,
+            )
 
-        fallback_rows = _get_cache_fallback(
-            sheet_name=sheet_name,
-            cached_at=cached_at,
-            cached_rows=cached_rows,
-            now=now,
-            use_cache=use_cache,
-        )
+            if fallback_rows is not None:
+                return fallback_rows
 
-        if fallback_rows is not None:
-            return fallback_rows
-
-        raise SheetReadError(
-            f"Không thể đọc sheet {sheet_name}: "
-            f"{type(e).__name__}: {e}"
-        ) from e
+            raise SheetReadError(
+                f"Không thể đọc sheet {sheet_name}: "
+                f"{type(error).__name__}: {error}"
+            ) from error
 
 
 # Chức năng: Lấy ngày hiện tại theo múi giờ kỹ thuật của hệ thống.
@@ -883,27 +1073,33 @@ def log_chat(
     row_id: str = "",
     note: str = "",
 ) -> bool:
-    # Chức năng: Ghi một lượt hội thoại vào sheet LICH_SU_CHAT.
-    # Vai trò: Phục vụ kiểm tra chất lượng trả lời, truy vết nguồn dữ liệu và cải tiến BOT.
+    # Chức năng: Ghi tuần tự một lượt hội thoại vào sheet LICH_SU_CHAT.
+    # Vai trò: Tránh nhiều thread cùng mở worksheet và ghi chồng trong môi trường đa người dùng.
     try:
-        ws = ensure_log_sheet()
-        ws.append_row([
-            _clean_value(thoi_gian),
-            _clean_value(user_id),
-            _clean_value(user_message),
-            _clean_value(bot_reply),
-            _clean_value(source),
-            _clean_value(route),
-            _clean_value(score),
-            _clean_value(sheet),
-            _clean_value(row_id),
-            _clean_value(note),
-        ])
-        clear_cache(SHEET_LICH_SU_CHAT)
+        with _log_write_lock:
+            worksheet = ensure_log_sheet()
+            worksheet.append_row([
+                _clean_value(thoi_gian),
+                _clean_value(user_id),
+                _clean_value(user_message),
+                _clean_value(bot_reply),
+                _clean_value(source),
+                _clean_value(route),
+                _clean_value(score),
+                _clean_value(sheet),
+                _clean_value(row_id),
+                _clean_value(note),
+            ])
+
         return True
 
-    except Exception as e:
-        console_log("ERROR", "SHEET_LOG", "Ghi LICH_SU_CHAT thất bại", error=e)
+    except Exception as error:
+        console_log(
+            "ERROR",
+            "SHEET_LOG",
+            "Ghi LICH_SU_CHAT thất bại",
+            error=error,
+        )
         return False
 
 
@@ -956,84 +1152,179 @@ def ensure_session_sheet():
 
 
 def read_session(user_id: str) -> Dict[str, Any]:
-    # Chức năng: Đọc ngữ cảnh hội thoại của một người dùng từ sheet BOT_SESSION.
-    # Vai trò: Giúp BOT hiểu các câu hỏi nối tiếp trong cùng phiên chat.
+    # Chức năng: Đọc ngữ cảnh người dùng từ cache BOT_SESSION trước khi gọi Google Sheets.
+    # Vai trò: Tránh buộc đọc toàn bộ BOT_SESSION ở mỗi lượt nhắn hoặc cache miss của session RAM.
     user_id = _clean_value(user_id)
+
     if not user_id:
         return {}
 
     try:
-        rows = read_sheet(SHEET_SESSION, use_cache=False)
+        rows = read_sheet(
+            SHEET_SESSION,
+            use_cache=True,
+        )
+
         for row in rows:
-            if _clean_value(row.get("USER_ID")) == user_id:
-                raw = _clean_value(row.get("CONTEXT_JSON"))
-                if not raw:
+            if _clean_value(
+                row.get("USER_ID")
+            ) != user_id:
+                continue
+
+            raw = _clean_value(
+                row.get("CONTEXT_JSON")
+            )
+
+            if not raw:
+                return {}
+
+            try:
+                data = json.loads(raw)
+
+                if not isinstance(data, dict):
                     return {}
-                try:
-                    data = json.loads(raw)
-                    if not isinstance(data, dict):
-                        return {}
-                    updated_at = _clean_value(row.get("UPDATED_AT") or row.get("UPDATED_TIME"))
-                    if updated_at and not data.get("updated_at"):
-                        data["updated_at"] = updated_at
-                    return data
-                except Exception:
-                    return {}
+
+                updated_at = _clean_value(
+                    row.get("UPDATED_AT")
+                    or row.get("UPDATED_TIME")
+                )
+
+                if (
+                    updated_at
+                    and not data.get("updated_at")
+                ):
+                    data["updated_at"] = updated_at
+
+                return data
+
+            except Exception:
+                return {}
+
         return {}
 
-    except Exception as e:
-        console_log("ERROR", "SHEET_SESSION", "Đọc BOT_SESSION thất bại", user_id=user_id, error=e)
+    except Exception as error:
+        console_log(
+            "ERROR",
+            "SHEET_SESSION",
+            "Đọc BOT_SESSION thất bại",
+            user_id=user_id,
+            error=error,
+        )
         return {}
 
 
-def save_session(user_id: str, context: Dict[str, Any], updated_at: str) -> bool:
-    # Chức năng: Lưu hoặc cập nhật ngữ cảnh hội thoại của một người dùng.
-    # Vai trò: Duy trì bộ nhớ phiên chat để BOT trả lời theo ngữ cảnh.
+def save_session(
+    user_id: str,
+    context: Dict[str, Any],
+    updated_at: str,
+) -> bool:
+    # Chức năng: Lưu session và cập nhật ngay cache BOT_SESSION trong bộ nhớ.
+    # Vai trò: Không đọc get_all_values và không xóa cache sau mỗi lần cập nhật ngữ cảnh.
     user_id = _clean_value(user_id)
+
     if not user_id:
         return False
 
     try:
-        ws = ensure_session_sheet()
-        values = ws.get_all_values()
+        with _session_write_lock:
+            worksheet = ensure_session_sheet()
+            rows = read_sheet(
+                SHEET_SESSION,
+                use_cache=True,
+            )
+            context = context or {}
+            context_json = json.dumps(
+                context,
+                ensure_ascii=False,
+            )
+            cache_row = {
+                "USER_ID": user_id,
+                "CONTEXT_JSON": context_json,
+                "LAST_ROUTE": _clean_value(
+                    context.get("last_route")
+                    or context.get("route")
+                ),
+                "LAST_SHEET": _clean_value(
+                    context.get("sheet")
+                ),
+                "LAST_RECORD_ID": _clean_value(
+                    context.get("procedure_id")
+                    or context.get("record_id")
+                    or context.get("row_id")
+                ),
+                "LAST_MENU": _clean_value(
+                    context.get("topic")
+                    or context.get("last_menu")
+                ),
+                "LAST_PROCEDURE": _clean_value(
+                    context.get("procedure_name")
+                    or context.get("last_procedure")
+                ),
+                "PAGE": _clean_value(
+                    context.get("page")
+                ),
+                "UPDATED_AT": _clean_value(
+                    updated_at
+                ),
+            }
+            row_values = [
+                cache_row["USER_ID"],
+                cache_row["CONTEXT_JSON"],
+                cache_row["LAST_ROUTE"],
+                cache_row["LAST_SHEET"],
+                cache_row["LAST_RECORD_ID"],
+                cache_row["LAST_MENU"],
+                cache_row["LAST_PROCEDURE"],
+                cache_row["PAGE"],
+                cache_row["UPDATED_AT"],
+            ]
+            row_number = 0
 
-        if not values:
-            ws.append_row(["USER_ID", "CONTEXT_JSON", "UPDATED_AT"])
-            values = ws.get_all_values()
+            for index, row in enumerate(
+                rows,
+                start=2,
+            ):
+                if _clean_value(
+                    row.get("USER_ID")
+                ) == user_id:
+                    row_number = index
+                    break
 
-        context = context or {}
-        context_json = json.dumps(context, ensure_ascii=False)
-        row_values = [
-            user_id,
-            context_json,
-            _clean_value(context.get("last_route") or context.get("route")),
-            _clean_value(context.get("sheet")),
-            _clean_value(context.get("procedure_id") or context.get("record_id") or context.get("row_id")),
-            _clean_value(context.get("topic") or context.get("last_menu")),
-            _clean_value(context.get("procedure_name") or context.get("last_procedure")),
-            _clean_value(context.get("page")),
-            _clean_value(updated_at),
-        ]
+            if row_number:
+                worksheet.update(
+                    f"A{row_number}:I{row_number}",
+                    [row_values],
+                )
+                rows[row_number - 2] = cache_row
+            else:
+                worksheet.append_row(row_values)
+                rows.append(cache_row)
 
-        for idx, row in enumerate(values[1:], start=2):
-            current_user_id = _clean_value(row[0] if len(row) > 0 else "")
-            if current_user_id == user_id:
-                ws.update(f"A{idx}:I{idx}", [row_values])
-                clear_cache(SHEET_SESSION)
-                return True
+            with _cache_lock:
+                _cache[SHEET_SESSION] = (
+                    time.time(),
+                    [
+                        dict(row)
+                        for row in rows
+                    ],
+                )
 
-        ws.append_row(row_values)
-        clear_cache(SHEET_SESSION)
         return True
 
-    except Exception as e:
-        console_log("ERROR", "SHEET_SESSION", "Lưu BOT_SESSION thất bại", user_id=user_id, error=e)
+    except Exception as error:
+        console_log(
+            "ERROR",
+            "SHEET_SESSION",
+            "Lưu BOT_SESSION thất bại",
+            user_id=user_id,
+            error=error,
+        )
         return False
 
 
 # Chức năng: Kiểm tra kết nối, sheet bắt buộc, cột lõi và tham chiếu dữ liệu trong Google Sheets.
 # Vai trò: Phát hiện sớm lỗi cấu trúc trước khi BOT đọc dữ liệu, định tuyến và trả lời người dân.
-def sheet_health() -> Dict[str, Any]:
+def _build_sheet_health() -> Dict[str, Any]:
     result = {
         "ok": False,
         "spreadsheet_id": GOOGLE_SHEET_ID,
@@ -1430,3 +1721,33 @@ def sheet_health() -> Dict[str, Any]:
         result["errors"].append(str(e))
 
     return result
+
+# Chức năng: Trả trạng thái Google Sheets từ cache và chỉ kiểm tra cấu trúc theo chu kỳ.
+# Vai trò: Ngăn endpoint health tạo nhiều lượt đọc metadata và dữ liệu trong mỗi phút.
+def sheet_health() -> Dict[str, Any]:
+    global _sheet_health_cache_at
+    global _sheet_health_cache_data
+
+    now = time.time()
+
+    with _sheet_health_lock:
+        cache_age = max(
+            0,
+            int(now - _sheet_health_cache_at),
+        ) if _sheet_health_cache_at else 0
+
+        if (
+            _sheet_health_cache_data
+            and cache_age <= SHEET_HEALTH_CACHE_SECONDS
+        ):
+            return deepcopy(
+                _sheet_health_cache_data
+            )
+
+        result = _build_sheet_health()
+        _sheet_health_cache_at = time.time()
+        _sheet_health_cache_data = deepcopy(
+            result
+        )
+        return deepcopy(result)
+
