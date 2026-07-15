@@ -394,8 +394,53 @@ def _name_token_score(user_text, name):
     return 0
 
 
+def _contiguous_keyword_score(user_text, keywords, base_score=0):
+    # Chức năng: Chấm điểm từ khóa chỉ khi từ đơn hoặc cụm từ xuất hiện liền nhau.
+    # Vai trò: Nhận diện bộ phận rõ ràng, tránh nối các cụm thuộc hai ý định khác nhau.
+    user_norm = normalize_text(user_text)
+    user_box = f" {user_norm} "
+    user_words = set(user_norm.split())
+    score = 0
+
+    for keyword in split_keywords(keywords):
+        keyword_norm = normalize_text(keyword)
+
+        if not keyword_norm:
+            continue
+
+        keyword_words = [
+            word
+            for word in keyword_norm.split()
+            if word
+        ]
+
+        if not keyword_words:
+            continue
+
+        if len(keyword_words) == 1:
+            if (
+                len(keyword_norm) >= 3
+                and keyword_norm in user_words
+            ):
+                score += (
+                    base_score
+                    + 2000
+                    + len(keyword_norm) * 5
+                )
+            continue
+
+        if f" {keyword_norm} " in user_box:
+            score += (
+                base_score
+                + 12000
+                + len(keyword_norm) * 10
+            )
+
+    return score
+
+
 # Chức năng: Nhận diện bộ phận từ BO_PHAN và các cách gọi trong TU_KHOA.
-# Vai trò: Ánh xạ cách gọi của người dân về mã bộ phận chuẩn trong Google Sheets.
+# Vai trò: Chỉ dùng tín hiệu bộ phận liền nhau sau khi loại địa bàn khỏi từ khóa.
 def _detect_contact_department(user_text, rows):
     candidates = {}
 
@@ -408,16 +453,11 @@ def _detect_contact_department(user_text, rows):
         area_norm = normalize_text(
             fields.get("tdp")
         )
-        area_tokens = set(
-            token
-            for token in area_norm.split()
-            if token
-        )
 
         if not department_norm:
             continue
 
-        department_score = _exact_keyword_score(
+        department_score = _contiguous_keyword_score(
             user_text,
             department,
             20000,
@@ -433,22 +473,27 @@ def _detect_contact_department(user_text, rows):
             if not keyword_norm:
                 continue
 
-            keyword_tokens = set(
-                token
-                for token in keyword_norm.split()
-                if token
-            )
+            department_keyword_norm = keyword_norm
 
-            if (
-                keyword_tokens
-                and area_tokens
-                and keyword_tokens.issubset(area_tokens)
-            ):
+            if area_norm:
+                keyword_box = f" {keyword_norm} "
+                area_box = f" {area_norm} "
+
+                department_keyword_norm = re.sub(
+                    r"\s+",
+                    " ",
+                    keyword_box.replace(
+                        area_box,
+                        " ",
+                    ),
+                ).strip()
+
+            if not department_keyword_norm:
                 continue
 
-            current_keyword_score = _exact_keyword_score(
+            current_keyword_score = _contiguous_keyword_score(
                 user_text,
-                keyword,
+                department_keyword_norm,
                 18000,
             )
 
