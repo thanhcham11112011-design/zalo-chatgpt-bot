@@ -75,18 +75,25 @@ TECHNICAL_FALLBACK_REPLY = os.getenv(
 
 
 def check_config():
-    # Chức năng: Kiểm tra các biến môi trường bắt buộc.
-    # Vai trò: Hỗ trợ phát hiện thiếu cấu hình trước khi BOT kết nối Google Sheets/Zalo/AI.
+    # Chức năng: Kiểm tra các biến môi trường bắt buộc và nguồn credentials thực tế.
+    # Vai trò: Phát hiện cấu hình deploy thiếu trước khi BOT kết nối Google Sheets và Zalo.
     missing = []
 
     if not GOOGLE_SHEET_ID:
         missing.append("GOOGLE_SHEET_ID")
 
-    if not GOOGLE_CREDENTIALS_JSON and not GOOGLE_CREDENTIALS_FILE:
-        missing.append("GOOGLE_CREDENTIALS_JSON hoặc GOOGLE_CREDENTIALS_FILE")
+    credentials_file_exists = bool(
+        GOOGLE_CREDENTIALS_FILE
+        and os.path.isfile(GOOGLE_CREDENTIALS_FILE)
+    )
+    if not GOOGLE_CREDENTIALS_JSON and not credentials_file_exists:
+        missing.append("GOOGLE_CREDENTIALS_JSON hoặc GOOGLE_CREDENTIALS_FILE hợp lệ")
 
     if not ZALO_ACCESS_TOKEN:
         missing.append("ZALO_ACCESS_TOKEN")
+
+    if not INTERNAL_API_KEY:
+        missing.append("INTERNAL_API_KEY")
 
     return len(missing) == 0, missing
 
