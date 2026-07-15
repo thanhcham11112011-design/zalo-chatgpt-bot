@@ -22,7 +22,8 @@ def normalize_text(text: Any) -> str:
     value = unicodedata.normalize("NFD", value)
     value = "".join(ch for ch in value if unicodedata.category(ch) != "Mn")
     value = value.replace("đ", "d")
-    value = re.sub(r"[^a-z0-9\s,./:;_\-#]", " ", value)
+    value = re.sub(r"[,./:;]+", " ", value)
+    value = re.sub(r"[^a-z0-9\s_\-#]", " ", value)
     value = re.sub(r"\s+", " ", value).strip()
     return value
 
