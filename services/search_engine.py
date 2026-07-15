@@ -314,10 +314,11 @@ def _contact_field_values(row):
 
 
 def _exact_keyword_score(user_text, keywords, base_score=0):
-    # Chức năng: Chấm điểm khi người dân nhập đúng một từ khóa/cụm từ trong sheet.
-    # Vai trò: Ưu tiên dữ liệu TU_KHOA thay vì suy luận nghiệp vụ trong Python.
+    # Chức năng: Chấm điểm từ khóa khớp nguyên cụm hoặc đủ token đúng thứ tự trong câu hỏi.
+    # Vai trò: Ưu tiên TU_KHOA trong Google Sheets và cho phép từ phụ xen giữa các token.
     user_norm = normalize_text(user_text)
-    user_words = set(user_norm.split())
+    user_tokens = [x for x in user_norm.split() if x]
+    user_words = set(user_tokens)
     score = 0
 
     for kw in split_keywords(keywords):
@@ -332,8 +333,41 @@ def _exact_keyword_score(user_text, keywords, base_score=0):
         if len(kw_words) == 1:
             if len(kw_norm) >= 3 and kw_norm in user_words:
                 score += base_score + 2000 + len(kw_norm) * 5
-        elif kw_norm in user_norm:
+            continue
+
+        if kw_norm in user_norm:
             score += base_score + 12000 + len(kw_norm) * 10
+            continue
+
+        next_position = 0
+        matched_positions = []
+
+        for kw_word in kw_words:
+            found_position = -1
+
+            for index in range(next_position, len(user_tokens)):
+                if user_tokens[index] == kw_word:
+                    found_position = index
+                    break
+
+            if found_position == -1:
+                matched_positions = []
+                break
+
+            matched_positions.append(found_position)
+            next_position = found_position + 1
+
+        if len(matched_positions) == len(kw_words):
+            token_span = matched_positions[-1] - matched_positions[0] + 1
+            inserted_words = max(0, token_span - len(kw_words))
+            distance_penalty = min(inserted_words * 50, 2000)
+
+            score += (
+                base_score
+                + 8000
+                + len(kw_norm) * 10
+                - distance_penalty
+            )
 
     return score
 
