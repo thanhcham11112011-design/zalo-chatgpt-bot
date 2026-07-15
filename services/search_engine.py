@@ -294,12 +294,6 @@ def search_menu(user_text):
     return results[0] if results else None
 
 
-
-
-
-
-
-
 def _contact_field_values(row):
     # Chức năng: Gom các trường dùng để tra cứu liên hệ từ một dòng TRA_CUU_LIEN_HE.
     # Vai trò: Để Google Sheets quyết định từ khóa, bộ phận, địa bàn, chức năng và họ tên.
@@ -411,6 +405,14 @@ def _detect_contact_department(user_text, rows):
             fields.get("bo_phan") or ""
         ).strip()
         department_norm = normalize_text(department)
+        area_norm = normalize_text(
+            fields.get("tdp")
+        )
+        area_tokens = set(
+            token
+            for token in area_norm.split()
+            if token
+        )
 
         if not department_norm:
             continue
@@ -420,11 +422,39 @@ def _detect_contact_department(user_text, rows):
             department,
             20000,
         )
-        keyword_score = _exact_keyword_score(
-            user_text,
-            fields.get("keywords"),
-            18000,
-        )
+
+        keyword_score = 0
+
+        for keyword in split_keywords(
+            fields.get("keywords")
+        ):
+            keyword_norm = normalize_text(keyword)
+
+            if not keyword_norm:
+                continue
+
+            keyword_tokens = set(
+                token
+                for token in keyword_norm.split()
+                if token
+            )
+
+            if (
+                keyword_tokens
+                and area_tokens
+                and keyword_tokens.issubset(area_tokens)
+            ):
+                continue
+
+            current_keyword_score = _exact_keyword_score(
+                user_text,
+                keyword,
+                18000,
+            )
+
+            if current_keyword_score > keyword_score:
+                keyword_score = current_keyword_score
+
         score = max(
             department_score,
             keyword_score,
