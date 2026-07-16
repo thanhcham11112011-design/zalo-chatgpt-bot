@@ -618,7 +618,11 @@ def _detect_contact_area(user_text, rows):
 
 # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE theo tên, chức danh, bộ phận và địa bàn.
 # Vai trò: Lọc đúng địa bàn đã nêu trước khi chấm điểm, không để các TDP khác lọt vào kết quả.
-def search_lien_he(user_text, limit=3):
+def search_lien_he(
+    user_text,
+    limit=3,
+    analysis=None,
+):
     text_norm = normalize_text(user_text)
 
     if not text_norm:
@@ -651,6 +655,10 @@ def search_lien_he(user_text, limit=3):
     area_filter_norm = normalize_text(
         area_filter
     )
+
+    if isinstance(analysis, dict):
+        analysis["department"] = department_filter
+        analysis["area"] = area_filter
 
     if len(phone_digits) >= 9:
         phone_results = []

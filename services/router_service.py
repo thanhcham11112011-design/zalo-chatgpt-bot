@@ -405,7 +405,11 @@ def is_location_question(text):
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
 # Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi có số điện thoại, yêu cầu liên hệ rõ hoặc bộ phận được cấu hình hướng dẫn.
-def is_contact_question(text, contact_results=None):
+def is_contact_question(
+    text,
+    contact_results=None,
+    detected_department=None,
+):
     t = normalize_text(text)
     phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
 
@@ -437,7 +441,11 @@ def is_contact_question(text, contact_results=None):
     if any(key in t for key in contact_intent_keys):
         return True
 
-    department = detect_bo_phan_contact(text)
+    department = (
+        detect_bo_phan_contact(text)
+        if detected_department is None
+        else str(detected_department or "").strip()
+    )
 
     if department and _contact_department_guide(department):
         return True
@@ -468,14 +476,24 @@ def is_contact_question(text, contact_results=None):
 
 # Chức năng: Kiểm tra yêu cầu liên hệ đã nêu rõ cán bộ, bộ phận, địa bàn hoặc số điện thoại hay chưa.
 # Vai trò: Phân biệt tra cứu liên hệ cụ thể với yêu cầu hướng dẫn tra cứu chung.
-def _has_specific_contact_target(text, contact_results=None):
+def _has_specific_contact_target(
+    text,
+    contact_results=None,
+    detected_department=None,
+):
     t = normalize_text(text)
     phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
 
     if len(phone_digits) >= 9:
         return True
 
-    if detect_bo_phan_contact(text):
+    department = (
+        detect_bo_phan_contact(text)
+        if detected_department is None
+        else str(detected_department or "").strip()
+    )
+
+    if department:
         return True
 
     results = contact_results if contact_results is not None else (search_lien_he(text, limit=5) or [])
@@ -1267,12 +1285,27 @@ def _contact_department_guide(department):
     
 # Chức năng: Xử lý toàn bộ kết quả liên hệ phù hợp và hướng dẫn làm rõ khi cần.
 # Vai trò: Lọc chính xác địa bàn TDP rồi chuyển đầy đủ kết quả sang tầng gửi Zalo.
-def _reply_contact_results(text, keep_context=False, contact_results=None):
-    results = (
-        contact_results
-        if contact_results is not None
-        else search_lien_he(text, limit=999)
-    )
+def _reply_contact_results(
+    text,
+    keep_context=False,
+    contact_results=None,
+    detected_department=None,
+):
+    contact_analysis = {}
+    results = contact_results
+
+    if results is None:
+        results = search_lien_he(
+            text,
+            limit=999,
+            analysis=contact_analysis,
+        )
+
+        if detected_department is None:
+            detected_department = contact_analysis.get(
+                "department",
+                "",
+            )
 
     if not results:
         return None
@@ -1319,7 +1352,11 @@ def _reply_contact_results(text, keep_context=False, contact_results=None):
             if (word_count, text_length) == best_area_rank
         ]
 
-    department = detect_bo_phan_contact(text)
+    department = (
+        detect_bo_phan_contact(text)
+        if detected_department is None
+        else str(detected_department or "").strip()
+    )
 
     if not department:
         departments = {}
@@ -1845,8 +1882,16 @@ def route_message(user_text, context=None):
         result_count=len(faq or []),
     )
     
+    contact_analysis = {}
     stage_started_at = time.monotonic()
-    contact_results = search_lien_he(text, limit=999) or []
+    contact_results = search_lien_he(
+        text,
+        limit=999,
+        analysis=contact_analysis,
+    ) or []
+    contact_department = str(
+        contact_analysis.get("department") or ""
+    ).strip()
     _log_router_performance(
         "CONTACT_SEARCH",
         stage_started_at,
@@ -1857,6 +1902,7 @@ def route_message(user_text, context=None):
     contact_intent = is_contact_question(
         text,
         contact_results=contact_results,
+        detected_department=contact_department,
     )
     _log_router_performance(
         "CONTACT_INTENT",
@@ -1869,6 +1915,7 @@ def route_message(user_text, context=None):
             text,
             keep_context=False,
             contact_results=contact_results,
+            detected_department=contact_department,
         )
         if contact_reply:
             return contact_reply
@@ -1876,6 +1923,7 @@ def route_message(user_text, context=None):
         if not _has_specific_contact_target(
             text,
             contact_results=contact_results,
+            detected_department=contact_department,
         ):
             faq_routed = _route_from_faq_rows(text, faq, ctx) if faq else None
             if faq_routed:
@@ -1918,7 +1966,7 @@ def route_message(user_text, context=None):
         ), "CONTACT_NOT_FOUND", new_ctx, ""
 
     stage_started_at = time.monotonic()
-    has_contact_department = detect_bo_phan_contact(text)
+    has_contact_department = bool(contact_department)
     _log_router_performance(
         "CONTACT_DEPARTMENT",
         stage_started_at,
@@ -2073,6 +2121,7 @@ def route_message(user_text, context=None):
             text,
             keep_context=True,
             contact_results=contact_results,
+            detected_department=contact_department,
         )
         if contact_reply:
             return contact_reply
