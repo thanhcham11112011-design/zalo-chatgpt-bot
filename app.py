@@ -2,7 +2,7 @@ import hmac
 import os
 import time
 from collections import OrderedDict
-from threading import Lock
+from threading import Lock, Thread
 
 from flask import Flask, request, jsonify
 
@@ -39,6 +39,7 @@ from services.sheet_api import (
     get_sheet_cache_status,
     get_data_validity_status,
     register_webhook_event,
+    warm_runtime_cache,
 )
 
 
@@ -63,6 +64,48 @@ MAX_PROCESSED_MESSAGES = max(
 )
 processed_messages = OrderedDict()
 processed_messages_lock = Lock()
+runtime_cache_warmup_lock = Lock()
+runtime_cache_warmup_started = False
+
+
+# Chức năng: Khởi động luồng làm ấm cache kỹ thuật sau khi worker Render sẵn sàng.
+# Vai trò: Giảm thời gian đọc Google Sheets ở tin nhắn đầu tiên mà không đổi Router hoặc dữ liệu trả lời.
+def start_runtime_cache_warmup():
+    global runtime_cache_warmup_started
+
+    enabled = str(
+        os.getenv("ENABLE_RUNTIME_CACHE_WARMUP", "FALSE")
+    ).strip().lower() in {
+        "1", "true", "yes", "on", "enable", "enabled",
+    }
+
+    if not enabled:
+        return False
+
+    with runtime_cache_warmup_lock:
+        if runtime_cache_warmup_started:
+            return True
+
+        runtime_cache_warmup_started = True
+        startup_delay_seconds = max(
+            0.0,
+            float(
+                os.getenv(
+                    "RUNTIME_CACHE_WARMUP_DELAY_SECONDS",
+                    "1",
+                )
+            ),
+        )
+        worker = Thread(
+            target=warm_runtime_cache,
+            kwargs={
+                "startup_delay_seconds": startup_delay_seconds,
+            },
+            name="bot-runtime-cache-warmup",
+            daemon=True,
+        )
+        worker.start()
+        return True
 
 # Chức năng: Kiểm tra khóa bảo vệ API nội bộ từ HTTP header.
 # Vai trò: Ngăn người ngoài gọi test-ai và api-chat để tiêu hao tài nguyên BOT.
@@ -427,7 +470,18 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
 # Chức năng: Xây dựng câu trả lời cho một tin nhắn người dân.
 # Vai trò: Điều phối session, router, Gemini optional, log và không xử lý nghiệp vụ trực tiếp.
 def build_answer(user_id, question, request_id=""):
+    build_started_at = time.monotonic()
+    step_started_at = time.monotonic()
     context = get_context(user_id)
+    console_log(
+        "INFO",
+        "PERFORMANCE",
+        "Hoàn tất đọc session",
+        duration_ms=int(
+            (time.monotonic() - step_started_at) * 1000
+        ),
+        message_id=request_id,
+    )
 
     debug_log("INPUT", {
         "user_id": user_id,
@@ -435,7 +489,18 @@ def build_answer(user_id, question, request_id=""):
         "context_before": context,
     })
 
+    step_started_at = time.monotonic()
     routed = route_message_for_ai(question, context=context)
+    console_log(
+        "INFO",
+        "PERFORMANCE",
+        "Hoàn tất Router và đọc dữ liệu",
+        duration_ms=int(
+            (time.monotonic() - step_started_at) * 1000
+        ),
+        message_id=request_id,
+        source=routed.get("source", ""),
+    )
 
     debug_log("ROUTER_RESULT", {
         "reply": routed.get("reply"),
@@ -454,6 +519,8 @@ def build_answer(user_id, question, request_id=""):
     ai_model = ""
     ai_note = "AI_NOT_REQUESTED"
 
+    step_started_at = time.monotonic()
+
     if source == "RESET":
         clear_context(user_id)
     elif source == "WELCOME":
@@ -461,7 +528,19 @@ def build_answer(user_id, question, request_id=""):
     else:
         save_context(user_id, new_context)
 
+    console_log(
+        "INFO",
+        "PERFORMANCE",
+        "Hoàn tất cập nhật session",
+        duration_ms=int(
+            (time.monotonic() - step_started_at) * 1000
+        ),
+        message_id=request_id,
+        source=source,
+    )
+
     if routed.get("use_ai") is True:
+        step_started_at = time.monotonic()
         (
             answer,
             source,
@@ -474,7 +553,18 @@ def build_answer(user_id, question, request_id=""):
             routed,
             answer,
         )
+        console_log(
+            "INFO",
+            "PERFORMANCE",
+            "Hoàn tất lớp AI Optional",
+            duration_ms=int(
+                (time.monotonic() - step_started_at) * 1000
+            ),
+            message_id=request_id,
+            source=source,
+        )
 
+    step_started_at = time.monotonic()
     if routed.get("unknown_log") or source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "AI_UNAVAILABLE"}:
         log_unknown_safe(
             user_id=user_id,
@@ -484,6 +574,10 @@ def build_answer(user_id, question, request_id=""):
             ai_called=source in {"GEMINI_AI", "AI_FALLBACK", "AI_UNAVAILABLE"},
             ai_status=ai_status,
         )
+
+    unknown_log_duration_ms = int(
+        (time.monotonic() - step_started_at) * 1000
+    )
 
     log_note = str(ai_note or "").strip()
     clean_request_id = str(request_id or "").strip()
@@ -496,6 +590,7 @@ def build_answer(user_id, question, request_id=""):
             else request_note
         )
 
+    step_started_at = time.monotonic()
     write_log_safe(
         user_id=user_id,
         user_message=question,
@@ -506,6 +601,20 @@ def build_answer(user_id, question, request_id=""):
         ai_status=ai_status,
         ai_model=ai_model,
         ai_called=source in {"GEMINI_AI", "AI_FALLBACK", "AI_UNAVAILABLE"},
+    )
+    console_log(
+        "INFO",
+        "PERFORMANCE",
+        "Hoàn tất ghi log trước khi gửi Zalo",
+        duration_ms=int(
+            (time.monotonic() - step_started_at) * 1000
+        ),
+        unknown_log_duration_ms=unknown_log_duration_ms,
+        total_duration_ms=int(
+            (time.monotonic() - build_started_at) * 1000
+        ),
+        message_id=request_id,
+        source=source,
     )
 
     debug_log("FINAL_ANSWER", {
@@ -712,6 +821,7 @@ def webhook():
     if request.method == "GET":
         return jsonify({"status": "ok", "message": "Webhook OK"}), 200
 
+    webhook_started_at = time.monotonic()
     raw_body = request.get_data(cache=True) or b""
     data = request.get_json(silent=True) or {}
     event_reserved = False
@@ -804,6 +914,7 @@ def webhook():
             )
             return jsonify({"success": True, "message": "Duplicate ignored"}), 200
 
+        step_started_at = time.monotonic()
         persistent_status = register_webhook_event(
             event_key=event_key,
             message_id=message_id,
@@ -811,6 +922,16 @@ def webhook():
             event_name=event_name,
             event_timestamp=event_timestamp,
             question_hash=question_hash(question),
+        )
+        console_log(
+            "INFO",
+            "PERFORMANCE",
+            "Hoàn tất chống trùng bền vững",
+            duration_ms=int(
+                (time.monotonic() - step_started_at) * 1000
+            ),
+            message_id=message_id or "FALLBACK",
+            dedup_status=persistent_status,
         )
 
         if persistent_status == "DUPLICATE":
@@ -877,15 +998,23 @@ def webhook():
                 "message": "Empty text handled",
             }), 200
 
+        step_started_at = time.monotonic()
         answer, source = build_answer(
             user_id=user_id,
             question=question,
             request_id=request_id,
         )
+        build_duration_ms = int(
+            (time.monotonic() - step_started_at) * 1000
+        )
 
+        step_started_at = time.monotonic()
         sent = send_zalo_text(
             user_id=user_id,
             message=answer,
+        )
+        send_duration_ms = int(
+            (time.monotonic() - step_started_at) * 1000
         )
 
         if not sent:
@@ -904,6 +1033,19 @@ def webhook():
                 "message": "Zalo send failed",
                 "source": source,
             }), 200
+
+        console_log(
+            "INFO",
+            "PERFORMANCE",
+            "Hoàn tất toàn bộ webhook",
+            build_duration_ms=build_duration_ms,
+            send_duration_ms=send_duration_ms,
+            total_duration_ms=int(
+                (time.monotonic() - webhook_started_at) * 1000
+            ),
+            message_id=request_id,
+            source=source,
+        )
 
         return jsonify({
             "success": True,
@@ -951,6 +1093,9 @@ def webhook():
             "success": False,
             "message": str(e),
         }), 200
+
+
+start_runtime_cache_warmup()
 
 
 if __name__ == "__main__":
