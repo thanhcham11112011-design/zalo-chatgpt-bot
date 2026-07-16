@@ -1,5 +1,6 @@
 from services import router_service
 from services import search_engine
+from services import sheet_api
 
 from services import session_manager
 from services import zalo_service
@@ -245,7 +246,7 @@ def test_clear_context_deletes_sheet_row(
     result = session_manager.clear_context("user-03")
 
     assert result is True
-    assert "user-03" not in session_manager._memory
+    assert session_manager._memory["user-03"] == {}
     assert deleted_rows == [2]
 
 # Chức năng: Thiết lập nguồn dữ liệu giả lập chung cho các bài test hồi quy định tuyến.
@@ -964,3 +965,138 @@ def test_p6_faq_rt_004_related_id_dau_phay_kep(monkeypatch):
         thongtin["GOOGLE_MAP_2"],
         thongtin["HOTLINE"],
     ]
+
+
+# Chức năng: Tạo context cũ đồng thời trong RAM và cache đọc BOT_SESSION.
+# Vai trò: Mô phỏng đúng trạng thái làm P4-002 phục hồi thủ tục sau lệnh reset.
+def _patch_p6_stale_session_context(monkeypatch, user_id):
+    old_context = {
+        "sheet": "THU_TUC_CCCD",
+        "topic": "Căn cước",
+        "procedure_id": "CCCD002",
+        "procedure_name": "Cấp lại thẻ căn cước",
+        "stage": "procedure",
+        "last_route": "THU_TUC_TU_KHOA_GLOBAL",
+    }
+    cache_row = {
+        "USER_ID": user_id,
+        "CONTEXT_JSON": session_manager._context_json(old_context),
+        "LAST_ROUTE": "THU_TUC_TU_KHOA_GLOBAL",
+        "LAST_SHEET": "THU_TUC_CCCD",
+        "LAST_RECORD_ID": "CCCD002",
+        "LAST_MENU": "Căn cước",
+        "LAST_PROCEDURE": "Cấp lại thẻ căn cước",
+        "PAGE": "1",
+        "UPDATED_AT": "2026-07-16T00:18:25",
+    }
+    sheet_values = [
+        [
+            "USER_ID",
+            "CONTEXT_JSON",
+            "LAST_ROUTE",
+            "LAST_SHEET",
+            "LAST_RECORD_ID",
+            "LAST_MENU",
+            "LAST_PROCEDURE",
+            "PAGE",
+            "UPDATED_AT",
+        ],
+        [
+            user_id,
+            cache_row["CONTEXT_JSON"],
+            cache_row["LAST_ROUTE"],
+            cache_row["LAST_SHEET"],
+            cache_row["LAST_RECORD_ID"],
+            cache_row["LAST_MENU"],
+            cache_row["LAST_PROCEDURE"],
+            cache_row["PAGE"],
+            cache_row["UPDATED_AT"],
+        ],
+    ]
+
+    class FakeWorksheet:
+        # Chức năng: Trả dữ liệu BOT_SESSION có context cũ của người dùng thử nghiệm.
+        # Vai trò: Cho clear_context tìm đúng dòng cần xóa mà không gọi Google Sheets thật.
+        def get_all_values(self):
+            return sheet_values
+
+        # Chức năng: Ghi nhận thao tác xóa dòng BOT_SESSION giả lập.
+        # Vai trò: Mô phỏng Sheet đã xóa nhưng cache đọc vẫn còn nếu mã không xử lý.
+        def delete_rows(self, row_index):
+            return row_index == 2
+
+    monkeypatch.setattr(
+        session_manager,
+        "ensure_session_sheet",
+        lambda: FakeWorksheet(),
+    )
+    monkeypatch.setattr(
+        sheet_api,
+        "_cache",
+        {
+            sheet_api.SHEET_SESSION: (
+                sheet_api.time.time(),
+                [
+                    cache_row,
+                    {
+                        "USER_ID": "user-khac",
+                        "CONTEXT_JSON": "{}",
+                    },
+                ],
+            )
+        },
+    )
+    session_manager._memory[user_id] = dict(old_context)
+    return old_context
+
+
+# Chức năng: Kiểm tra reset xóa cả context RAM và cache đọc BOT_SESSION.
+# Vai trò: P6-CTX-RT-001 ngăn get_context phục hồi dòng thủ tục vừa được xóa khỏi Sheet.
+def test_p6_ctx_rt_001_reset_xoa_cache_bot_session(
+    monkeypatch,
+    reset_session_memory,
+):
+    user_id = "user-p6-ctx-001"
+    _patch_p6_stale_session_context(monkeypatch, user_id)
+
+    result = session_manager.clear_context(user_id)
+    restored_context = session_manager.get_context(user_id)
+
+    assert result is True
+    assert restored_context == {}
+    cached_rows = sheet_api._cache[sheet_api.SHEET_SESSION][1]
+    assert all(row.get("USER_ID") != user_id for row in cached_rows)
+    assert any(row.get("USER_ID") == "user-khac" for row in cached_rows)
+
+
+# Chức năng: Kiểm tra câu hỏi hồ sơ sau reset không dùng lại thủ tục cấp lại căn cước.
+# Vai trò: P6-CTX-RT-002 tái hiện đầy đủ câu 3 của P4-002 trên context đã kết thúc.
+def test_p6_ctx_rt_002_ho_so_sau_reset_khong_dung_context_cu(
+    monkeypatch,
+    reset_session_memory,
+):
+    user_id = "user-p6-ctx-002"
+    _patch_router_regression_defaults(monkeypatch)
+    _patch_p6_stale_session_context(monkeypatch, user_id)
+    procedure = {
+        "_SHEET": "THU_TUC_CCCD",
+        "MA_THU_TUC": "CCCD002",
+        "TEN_THU_TUC": "Cấp lại thẻ căn cước",
+        "HO_SO": "Phiếu CC01 và Phiếu DC02.",
+    }
+    monkeypatch.setattr(
+        router_service,
+        "find_procedure_by_id",
+        lambda procedure_id: procedure,
+    )
+
+    session_manager.clear_context(user_id)
+    context = session_manager.get_context(user_id)
+    reply, source, _, _ = router_service.route_message(
+        "Hồ sơ gồm những gì?",
+        context,
+    )
+
+    assert source == "DEFAULT"
+    assert "Cấp lại thẻ căn cước" not in reply
+    assert "Phiếu CC01" not in reply
