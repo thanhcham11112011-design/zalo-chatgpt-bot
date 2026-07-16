@@ -564,7 +564,13 @@
 
 # \- Các sự kiện khác được bỏ qua an toàn.
 
-# \- `message\\\_id` được ghi nhớ tạm thời để chống webhook trùng.
+# \- `message\\\_id` được giữ trong RAM và sheet kỹ thuật `BOT\\\_WEBHOOK\\\_EVENT` để chống trùng qua lần khởi động lại.
+
+# \- Khi thiếu `message\\\_id`, BOT chỉ dùng khóa băm dự phòng nếu còn đủ người gửi, loại sự kiện, thời gian và nội dung.
+
+# \- `X-ZEvent-Signature` được xác thực trước khi xử lý `user\\\_send\\\_text`.
+
+# \- Webhook thiếu định danh, sai chữ ký hoặc thuộc nhóm `oa\\\_send\\\_*` không tạo câu trả lời và không ghi lịch sử chat.
 
 # 
 
@@ -578,7 +584,7 @@
 
 # ```powershell
 
-# python -m pytest -v tests/test\_core.py
+# python -m pytest -v
 
 # ```
 
@@ -691,6 +697,22 @@
 # 1\. Tạo Web Service từ repository.
 
 # 2\. Khai báo toàn bộ biến môi trường.
+
+# Riêng bản vá P6.0 phải có:
+
+# ```text
+
+# ZALO_OA_SECRET_KEY=<OA Secret Key dùng ký webhook>
+# ZALO_WEBHOOK_VERIFY_SIGNATURE=TRUE
+# SHEET_WEBHOOK_EVENT=BOT_WEBHOOK_EVENT
+# WEBHOOK_EVENT_MAX_ROWS=10000
+# WEBHOOK_DEDUP_FAIL_CLOSED=TRUE
+
+# ```
+
+# `ZALO_OA_SECRET_KEY` có thể khác `ZALO_APP_SECRET`; lấy đúng khóa dùng cho chữ ký webhook trong cấu hình Zalo OA.
+
+# Sheet `BOT_WEBHOOK_EVENT` được BOT tự tạo ở webhook hợp lệ đầu tiên; không tạo thủ công cột khác cấu trúc chuẩn.
 
 # 3\. Không tải `credentials.json` hoặc file chứa token lên repository.
 
@@ -1014,7 +1036,7 @@
 
 # \- Cache và health check: hoàn thành.
 
-# \- Session và chống webhook trùng: hoàn thành.
+# \- Session: hoàn thành; chống webhook trùng bền vững P6.0: đã đạt test tự động, chờ xác nhận Zalo.
 
 # \- Chia tin nhắn dài: hoàn thành.
 
@@ -1024,9 +1046,8 @@
 
 # \- Tách tiện ích router sang `router\\\_utils.py`: hoàn thành.
 
-# \- Bộ test hiện tại: `21 passed`.
+# \- Bộ test hiện tại: `40 passed` (`21 core`, `9 Gemini`, `10 webhook P6.0`).
 
 # \- Chuẩn hóa deploy và checklist bàn giao: hoàn thành về mã nguồn và tài liệu.
 
 # \- Tiến độ hoàn thiện hệ thống: `25/25 bước` sau khi xác nhận deploy Render và câu test Zalo cuối cùng.
-

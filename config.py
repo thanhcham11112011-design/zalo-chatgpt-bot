@@ -26,6 +26,17 @@ ZALO_ACCESS_TOKEN = os.getenv("ZALO_ACCESS_TOKEN", "").strip()
 ZALO_APP_ID = os.getenv("ZALO_APP_ID", "").strip()
 ZALO_APP_SECRET = os.getenv("ZALO_APP_SECRET", "").strip()
 ZALO_REFRESH_TOKEN = os.getenv("ZALO_REFRESH_TOKEN", "").strip()
+ZALO_OA_SECRET_KEY = (
+    os.getenv("ZALO_OA_SECRET_KEY", "").strip()
+    or ZALO_APP_SECRET
+)
+ZALO_WEBHOOK_VERIFY_SIGNATURE = (
+    os.getenv(
+        "ZALO_WEBHOOK_VERIFY_SIGNATURE",
+        "TRUE",
+    ).strip().upper()
+    in {"1", "TRUE", "YES", "ON"}
+)
 
 # Chức năng: Khai báo tên các sheet lõi của hệ thống.
 # Vai trò: Đây là hằng số kỹ thuật để sheet_api.py truy cập dữ liệu, không phải dữ liệu nghiệp vụ.
@@ -40,6 +51,10 @@ SHEET_TRA_CUU_LIEN_HE = "TRA_CUU_LIEN_HE"
 SHEET_FAQ = "FAQ"
 SHEET_LICH_SU_CHAT = "LICH_SU_CHAT"
 SHEET_SESSION = "BOT_SESSION"
+SHEET_WEBHOOK_EVENT = os.getenv(
+    "SHEET_WEBHOOK_EVENT",
+    "BOT_WEBHOOK_EVENT",
+).strip()
 SHEET_DATA_DICTIONARY = "DATA_DICTIONARY"
 SHEET_BOT_31_SCHEMA = "BOT_31_SCHEMA"
 
@@ -65,6 +80,17 @@ CORE_SHEETS = [
 SESSION_TTL_MINUTES = int(os.getenv("SESSION_TTL_MINUTES", "60"))
 MAX_ZALO_TEXT_LENGTH = int(os.getenv("MAX_ZALO_TEXT_LENGTH", "1900"))
 SHEET_CACHE_TTL_SECONDS = int(os.getenv("SHEET_CACHE_TTL_SECONDS", "30"))
+WEBHOOK_EVENT_MAX_ROWS = max(
+    1000,
+    int(os.getenv("WEBHOOK_EVENT_MAX_ROWS", "10000")),
+)
+WEBHOOK_DEDUP_FAIL_CLOSED = (
+    os.getenv(
+        "WEBHOOK_DEDUP_FAIL_CLOSED",
+        "TRUE",
+    ).strip().upper()
+    in {"1", "TRUE", "YES", "ON"}
+)
 
 # Chức năng: Thông báo kỹ thuật tối thiểu khi hệ thống lỗi nặng.
 # Vai trò: Fallback an toàn cấp hệ thống; nội dung hội thoại chính đọc từ SETTING_CHAT.
@@ -91,6 +117,12 @@ def check_config():
 
     if not ZALO_ACCESS_TOKEN:
         missing.append("ZALO_ACCESS_TOKEN")
+
+    if ZALO_WEBHOOK_VERIFY_SIGNATURE:
+        if not ZALO_APP_ID:
+            missing.append("ZALO_APP_ID")
+        if not ZALO_OA_SECRET_KEY:
+            missing.append("ZALO_OA_SECRET_KEY hoặc ZALO_APP_SECRET")
 
     if not INTERNAL_API_KEY:
         missing.append("INTERNAL_API_KEY")

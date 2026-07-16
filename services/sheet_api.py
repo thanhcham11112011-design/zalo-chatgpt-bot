@@ -36,6 +36,8 @@ from config import (
     SHEET_FAQ,
     SHEET_LICH_SU_CHAT,
     SHEET_SESSION,
+    SHEET_WEBHOOK_EVENT,
+    WEBHOOK_EVENT_MAX_ROWS,
 )
 
 try:
@@ -64,9 +66,23 @@ _cache_lock = RLock()
 _sheet_locks_lock = Lock()
 _log_write_lock = Lock()
 _session_write_lock = Lock()
+_webhook_event_write_lock = Lock()
 _sheet_health_lock = Lock()
 _sheet_health_cache_at = 0.0
 _sheet_health_cache_data: Dict[str, Any] = {}
+_webhook_event_loaded = False
+_webhook_event_keys = set()
+_webhook_event_order: List[str] = []
+
+WEBHOOK_EVENT_HEADERS = [
+    "EVENT_KEY",
+    "MESSAGE_ID",
+    "USER_ID",
+    "EVENT_NAME",
+    "EVENT_TIMESTAMP",
+    "QUESTION_HASH",
+    "RECEIVED_AT",
+]
 
 CACHE_TTL_SECONDS = int(
     os.getenv("SHEET_CACHE_TTL_SECONDS", "300")
@@ -1036,6 +1052,147 @@ def update_setting_system(key: str, value: Any) -> bool:
 
 
 # =========================
+# WEBHOOK IDEMPOTENCY
+# =========================
+
+def ensure_webhook_event_sheet():
+    # Chức năng: Bảo đảm sheet kỹ thuật lưu khóa webhook đã nhận tồn tại.
+    # Vai trò: Giữ khả năng chống trùng sau khi Render khởi động hoặc deploy lại.
+    return ensure_worksheet(
+        SHEET_WEBHOOK_EVENT,
+        headers=WEBHOOK_EVENT_HEADERS,
+        rows=max(WEBHOOK_EVENT_MAX_ROWS + 1, 1001),
+        cols=10,
+    )
+
+
+def _reset_webhook_event_cache() -> None:
+    # Chức năng: Xóa bộ nhớ khóa webhook trong tiến trình hiện tại.
+    # Vai trò: Phục vụ kiểm thử khởi động lại mà không xóa dữ liệu đã lưu trên Sheet.
+    global _webhook_event_loaded
+
+    _webhook_event_loaded = False
+    _webhook_event_keys.clear()
+    _webhook_event_order.clear()
+
+
+def _load_webhook_event_cache(worksheet) -> bool:
+    # Chức năng: Nạp các khóa webhook gần nhất từ Google Sheets vào bộ nhớ.
+    # Vai trò: Chỉ đọc một lần sau khi khởi động, sau đó kiểm tra trùng bằng tập khóa trong RAM.
+    global _webhook_event_loaded
+
+    values = worksheet.get_all_values()
+
+    if not values:
+        worksheet.append_row(WEBHOOK_EVENT_HEADERS)
+        values = [WEBHOOK_EVENT_HEADERS]
+
+    actual_headers = [
+        _clean_key(value)
+        for value in values[0]
+    ]
+
+    if not actual_headers or actual_headers[0] != "EVENT_KEY":
+        console_log(
+            "ERROR",
+            "WEBHOOK_DEDUP",
+            "Sheet chống trùng sai cấu trúc",
+            sheet=SHEET_WEBHOOK_EVENT,
+        )
+        return False
+
+    rows = values[1:]
+
+    if len(rows) > WEBHOOK_EVENT_MAX_ROWS:
+        rows_to_delete = len(rows) - WEBHOOK_EVENT_MAX_ROWS
+        worksheet.delete_rows(2, rows_to_delete + 1)
+        rows = rows[rows_to_delete:]
+
+    _webhook_event_keys.clear()
+    _webhook_event_order.clear()
+
+    for row in rows:
+        event_key = _clean_value(
+            row[0] if row else ""
+        )
+
+        if not event_key or event_key in _webhook_event_keys:
+            continue
+
+        _webhook_event_keys.add(event_key)
+        _webhook_event_order.append(event_key)
+
+    _webhook_event_loaded = True
+    return True
+
+
+def register_webhook_event(
+    event_key: str,
+    message_id: str = "",
+    user_id: str = "",
+    event_name: str = "",
+    event_timestamp: str = "",
+    question_hash: str = "",
+) -> str:
+    # Chức năng: Giữ chỗ duy nhất cho một webhook trước khi BOT xây dựng câu trả lời.
+    # Vai trò: Trả NEW, DUPLICATE hoặc ERROR để webhook quyết định có được xử lý tiếp hay không.
+    clean_event_key = _clean_value(event_key)
+
+    if not clean_event_key:
+        return "ERROR"
+
+    try:
+        with _webhook_event_write_lock:
+            worksheet = ensure_webhook_event_sheet()
+
+            if (
+                not _webhook_event_loaded
+                and not _load_webhook_event_cache(worksheet)
+            ):
+                return "ERROR"
+
+            if clean_event_key in _webhook_event_keys:
+                return "DUPLICATE"
+
+            if len(_webhook_event_order) >= WEBHOOK_EVENT_MAX_ROWS:
+                prune_count = min(
+                    max(WEBHOOK_EVENT_MAX_ROWS // 10, 100),
+                    len(_webhook_event_order),
+                )
+                worksheet.delete_rows(2, prune_count + 1)
+
+                for old_event_key in _webhook_event_order[:prune_count]:
+                    _webhook_event_keys.discard(old_event_key)
+
+                del _webhook_event_order[:prune_count]
+
+            received_at = datetime.now(
+                timezone.utc
+            ).isoformat(timespec="seconds")
+            worksheet.append_row([
+                clean_event_key,
+                _clean_value(message_id),
+                _clean_value(user_id),
+                _clean_value(event_name),
+                _clean_value(event_timestamp),
+                _clean_value(question_hash),
+                received_at,
+            ])
+            _webhook_event_keys.add(clean_event_key)
+            _webhook_event_order.append(clean_event_key)
+            return "NEW"
+
+    except Exception as error:
+        console_log(
+            "ERROR",
+            "WEBHOOK_DEDUP",
+            "Không ghi được khóa webhook",
+            error=error,
+        )
+        return "ERROR"
+
+
+# =========================
 # LOG CHAT
 # =========================
 
@@ -1750,4 +1907,3 @@ def sheet_health() -> Dict[str, Any]:
             result
         )
         return deepcopy(result)
-

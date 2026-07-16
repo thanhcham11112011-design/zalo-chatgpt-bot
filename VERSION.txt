@@ -1,8 +1,8 @@
 ==========================================================
 BOT CAP PHÙ LIỄN
-Phiên bản: 3.1
-Trạng thái: STABLE
-Ngày phát hành: 06/07/2026
+Phiên bản: 3.1-P6.0
+Trạng thái: READY FOR DEPLOY TEST
+Ngày cập nhật: 16/07/2026
 ==========================================================
 
 BOT CAP 3.1
@@ -47,6 +47,22 @@ Nguyên tắc:
 9. Logger ghi đầy đủ lịch sử và Unknown Log.
 
 10. Mọi mở rộng nghiệp vụ thực hiện trên Google Sheets.
+
+P6.0 - P6-WH-001:
+
+✓ Chống webhook lặp trong RAM và trên BOT_WEBHOOK_EVENT.
+
+✓ Giữ khóa chống trùng sau khi Render khởi động/deploy lại.
+
+✓ Có khóa băm dự phòng khi payload thiếu msg_id nhưng còn timestamp.
+
+✓ Xác thực X-ZEvent-Signature trước khi xử lý user_send_text.
+
+✓ Bỏ qua webhook thiếu định danh, sai chữ ký và sự kiện oa_send_text.
+
+✓ Ghi MESSAGE_ID vào NOTE của LICH_SU_CHAT để đối chiếu.
+
+✓ 40/40 bài kiểm thử tự động đạt; chờ kiểm tra trực tiếp trên Zalo.
 
 Các module đã chuẩn hóa:
 

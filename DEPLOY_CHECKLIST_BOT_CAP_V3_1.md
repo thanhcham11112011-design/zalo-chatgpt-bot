@@ -10,7 +10,7 @@
 
 \- Nhánh triển khai: `main`.
 
-\- Kiểm thử hồi quy gần nhất: `21 passed`.
+\- Kiểm thử hồi quy gần nhất: `40 passed`.
 
 \- Google Sheets là nguồn dữ liệu nghiệp vụ duy nhất.
 
@@ -40,6 +40,12 @@
 
 \- `tests/test\_core.py`
 
+\- `tests/test\_gemini\_service.py`
+
+\- `tests/test\_webhook\_idempotency.py`
+
+\- `services/webhook\_service.py`
+
 \- `pytest.ini`
 
 \- `requirements-dev.txt`
@@ -60,7 +66,7 @@ Không đưa `.env`, `credentials.json`, token, API key hoặc khóa Service Acc
 
 \- \[ ] `router\_service.py` đang import 5 hàm tiện ích từ `router\_utils.py`.
 
-\- \[ ] Chạy `python -m pytest -v tests/test\_core.py` và nhận `21 passed`.
+\- \[ ] Chạy `python -m pytest -v` và nhận `40 passed`.
 
 \- \[ ] Không có test thất bại; `DeprecationWarning` từ thư viện Google được phép xuất hiện.
 
@@ -120,6 +126,10 @@ Biến môi trường bắt buộc:
 
 \- `ZALO\_ACCESS\_TOKEN`
 
+\- `ZALO\_APP\_ID`
+
+\- `ZALO\_OA\_SECRET\_KEY`
+
 \- `INTERNAL\_API\_KEY`
 
 
@@ -163,6 +173,14 @@ HEALTH\_CHECK\_TTL\_SECONDS=300
 MESSAGE\_DEDUP\_TTL\_SECONDS=600
 
 MAX\_PROCESSED\_MESSAGES=5000
+
+ZALO\_WEBHOOK\_VERIFY\_SIGNATURE=TRUE
+
+SHEET\_WEBHOOK\_EVENT=BOT\_WEBHOOK\_EVENT
+
+WEBHOOK\_EVENT\_MAX\_ROWS=10000
+
+WEBHOOK\_DEDUP\_FAIL\_CLOSED=TRUE
 
 MAX\_ZALO\_TEXT\_LENGTH=1900
 
@@ -278,7 +296,7 @@ Không sửa trực tiếp dữ liệu nghiệp vụ để che lỗi Python và 
 
 \- \[ ] Checklist rollback đã bàn giao.
 
-\- \[ ] Kết quả `21 passed` đã lưu.
+\- \[ ] Kết quả `40 passed` đã lưu.
 
 \- \[ ] Kết quả `/health=healthy` sau deploy đã lưu.
 
@@ -294,7 +312,7 @@ Bước 25 hoàn thành khi đồng thời đạt đủ:
 
 
 
-1\. `21 passed` trước deploy.
+1\. `40 passed` trước deploy.
 
 2\. Render build và khởi động Gunicorn thành công.
 
@@ -309,4 +327,3 @@ Bước 25 hoàn thành khi đồng thời đạt đủ:
 
 
 Khi đủ sáu điều kiện trên, dự án đạt `25/25 bước hoàn thành`.
-

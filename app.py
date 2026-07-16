@@ -6,11 +6,24 @@ from threading import Lock
 
 from flask import Flask, request, jsonify
 
-from config import PORT, INTERNAL_API_KEY, check_config
+from config import (
+    PORT,
+    INTERNAL_API_KEY,
+    WEBHOOK_DEDUP_FAIL_CLOSED,
+    ZALO_APP_ID,
+    ZALO_OA_SECRET_KEY,
+    ZALO_WEBHOOK_VERIFY_SIGNATURE,
+    check_config,
+)
 from services.router_service import route_message_for_ai, get_welcome_message
 from services.gemini_service import ask_gemini_status
 from services.zalo_service import send_zalo_text
 from services.console_logger import console_log
+from services.webhook_service import (
+    build_webhook_event_key,
+    question_hash,
+    verify_zalo_webhook_signature,
+)
 from services.logger import (
     write_log,
     log_error,
@@ -25,6 +38,7 @@ from services.sheet_api import (
     sheet_health,
     get_sheet_cache_status,
     get_data_validity_status,
+    register_webhook_event,
 )
 
 
@@ -412,7 +426,7 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
         )
 # Chức năng: Xây dựng câu trả lời cho một tin nhắn người dân.
 # Vai trò: Điều phối session, router, Gemini optional, log và không xử lý nghiệp vụ trực tiếp.
-def build_answer(user_id, question):
+def build_answer(user_id, question, request_id=""):
     context = get_context(user_id)
 
     debug_log("INPUT", {
@@ -471,13 +485,24 @@ def build_answer(user_id, question):
             ai_status=ai_status,
         )
 
+    log_note = str(ai_note or "").strip()
+    clean_request_id = str(request_id or "").strip()
+
+    if clean_request_id:
+        request_note = f"MESSAGE_ID={clean_request_id}"
+        log_note = (
+            f"{log_note} | {request_note}"
+            if log_note
+            else request_note
+        )
+
     write_log_safe(
         user_id=user_id,
         user_message=question,
         bot_reply=answer,
         source=source,
         route=source,
-        note=ai_note,
+        note=log_note,
         ai_status=ai_status,
         ai_model=ai_model,
         ai_called=source in {"GEMINI_AI", "AI_FALLBACK", "AI_UNAVAILABLE"},
@@ -687,24 +712,144 @@ def webhook():
     if request.method == "GET":
         return jsonify({"status": "ok", "message": "Webhook OK"}), 200
 
+    raw_body = request.get_data(cache=True) or b""
     data = request.get_json(silent=True) or {}
+    event_reserved = False
 
     try:
         event_name = data.get("event_name", "")
-        user_id = data.get("sender", {}).get("id", "") or data.get("user_id_by_app", "")
-        message_data = data.get("message", {}) or {}
-
-        if not user_id:
-            return jsonify({"success": False, "message": "Missing user_id"}), 400
 
         if event_name != "user_send_text":
             return jsonify({"success": True, "message": "Event ignored"}), 200
 
+        provided_signature = request.headers.get(
+            "X-ZEvent-Signature",
+            "",
+        )
+        header_timestamp = request.headers.get(
+            "X-ZEvent-Timestamp",
+            "",
+        )
+
+        if (
+            ZALO_WEBHOOK_VERIFY_SIGNATURE
+            and not verify_zalo_webhook_signature(
+                raw_body=raw_body,
+                payload=data,
+                provided_signature=provided_signature,
+                oa_secret_key=ZALO_OA_SECRET_KEY,
+                expected_app_id=ZALO_APP_ID,
+                header_timestamp=header_timestamp,
+            )
+        ):
+            console_log(
+                "WARNING",
+                "WEBHOOK_SECURITY",
+                "Bỏ qua webhook có chữ ký không hợp lệ",
+                event_name=event_name,
+            )
+            return jsonify({
+                "success": False,
+                "message": "Invalid webhook signature",
+            }), 200
+
+        user_id = data.get("sender", {}).get("id", "") or data.get("user_id_by_app", "")
+        message_data = data.get("message", {}) or {}
+
+        if not user_id:
+            console_log(
+                "WARNING",
+                "WEBHOOK",
+                "Bỏ qua webhook thiếu user_id",
+                event_name=event_name,
+            )
+            return jsonify({
+                "success": False,
+                "message": "Missing user_id",
+            }), 200
+
         message_id = message_data.get("msg_id") or message_data.get("message_id") or ""
-        if remember_message(message_id):
+        question = message_data.get("text", "")
+        event_timestamp = (
+            header_timestamp
+            or data.get("timestamp", "")
+        )
+        event_key = build_webhook_event_key(
+            message_id=message_id,
+            user_id=user_id,
+            event_name=event_name,
+            event_timestamp=event_timestamp,
+            question=question,
+        )
+
+        if not event_key:
+            console_log(
+                "WARNING",
+                "WEBHOOK_DEDUP",
+                "Bỏ qua webhook không tạo được khóa chống trùng",
+                event_name=event_name,
+                user_id=user_id,
+            )
+            return jsonify({
+                "success": False,
+                "message": "Missing webhook identity",
+            }), 200
+
+        if remember_message(event_key):
+            console_log(
+                "INFO",
+                "WEBHOOK_DEDUP",
+                "Bỏ qua webhook trùng trong bộ nhớ",
+                message_id=message_id or "FALLBACK",
+            )
             return jsonify({"success": True, "message": "Duplicate ignored"}), 200
 
-        question = message_data.get("text", "")
+        persistent_status = register_webhook_event(
+            event_key=event_key,
+            message_id=message_id,
+            user_id=user_id,
+            event_name=event_name,
+            event_timestamp=event_timestamp,
+            question_hash=question_hash(question),
+        )
+
+        if persistent_status == "DUPLICATE":
+            console_log(
+                "INFO",
+                "WEBHOOK_DEDUP",
+                "Bỏ qua webhook trùng đã lưu",
+                message_id=message_id or "FALLBACK",
+            )
+            return jsonify({"success": True, "message": "Duplicate ignored"}), 200
+
+        if (
+            persistent_status == "ERROR"
+            and WEBHOOK_DEDUP_FAIL_CLOSED
+        ):
+            console_log(
+                "ERROR",
+                "WEBHOOK_DEDUP",
+                "Tạm dừng xử lý vì không xác nhận được khóa chống trùng",
+                message_id=message_id or "FALLBACK",
+            )
+            return jsonify({
+                "success": False,
+                "message": "Webhook dedup unavailable",
+            }), 200
+
+        event_reserved = True
+        request_id = (
+            str(message_id).strip()
+            or event_key.split(":", 1)[-1][:16]
+        )
+        console_log(
+            "INFO",
+            "WEBHOOK",
+            "Đã nhận webhook mới",
+            message_id=request_id,
+            dedup_status=persistent_status,
+        )
+
         if not question:
             sent = send_zalo_text(
                 user_id=user_id,
@@ -735,6 +880,7 @@ def webhook():
         answer, source = build_answer(
             user_id=user_id,
             question=question,
+            request_id=request_id,
         )
 
         sent = send_zalo_text(
@@ -779,7 +925,7 @@ def webhook():
             user_id = data.get("sender", {}).get("id", "")
             question = data.get("message", {}).get("text", "")
 
-            if user_id:
+            if event_reserved and user_id:
                 fallback_sent = send_zalo_text(
                     user_id=user_id,
                     message=get_default_reply(),
