@@ -1034,7 +1034,7 @@ def search_faq(user_text, limit=3):
         if (
             is_short_detail_question
             and related_id
-            and ngu_canh != "procedure_context"
+            and ngu_canh not in ["procedure_context", "thongtin"]
         ):
             continue
 

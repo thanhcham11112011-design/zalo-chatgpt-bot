@@ -1,4 +1,5 @@
 from services import router_service
+from services import search_engine
 
 from services import session_manager
 from services import zalo_service
@@ -822,3 +823,144 @@ def test_regression_tam_tru_ghi_de_context_xe_tam_thoi(
     assert context["sheet"] == "THU_TUC_CU_TRU"
     assert "Đăng ký tạm trú" in reply
     assert "Đăng ký xe tạm thời" not in reply
+
+
+# Chức năng: Tạo dòng FAQ_INFO_001 giả lập đúng cấu trúc Google Sheets đang vận hành.
+# Vai trò: Dùng chung dữ liệu nguồn cho bốn mã hồi quy P6-FAQ mà không đọc Sheet thật.
+def _p6_faq_info_row():
+    return {
+        "ID": "FAQ_INFO_001",
+        "CHU_DE": "Thông tin Công an phường",
+        "CAU_HOI": "Địa chỉ Công an phường ở đâu?",
+        "CAC_CACH_HOI": (
+            "địa chỉ Công an;trụ sở ở đâu;"
+            "Công an phường ở đâu;đến Công an phường thế nào"
+        ),
+        "TRA_LOI": "Tra cứu thông tin Công an phường.",
+        "TU_KHOA": (
+            "địa chỉ,trụ sở,Công an phường ở đâu,đến Công an,"
+            "thông tin liên hệ,liên hệ Công an,Công an phường"
+        ),
+        "NGU_CANH": "THONGTIN",
+        "RELATED_ID": (
+            "DIA_CHI_1,,GOOGLE_MAP_1,DIA_CHI_2,"
+            "GOOGLE_MAP_2,HOTLINE"
+        ),
+        "MUC_UU_TIEN": "100",
+        "TRANG_THAI": "ON",
+    }
+
+
+# Chức năng: Thiết lập FAQ và THONGTIN giả lập cho kiểm thử P6-FAQ-001.
+# Vai trò: Cho router dùng search_faq thật nhưng không truy cập Google Sheets vận hành.
+def _patch_p6_faq_thongtin(monkeypatch):
+    faq_row = _p6_faq_info_row()
+    thongtin = {
+        "DIA_CHI_1": "Cơ sở 1: số 130 đường Quy Tức",
+        "GOOGLE_MAP_1": "https://maps.example/co-so-1",
+        "DIA_CHI_2": "Cơ sở 2: số 169 đường Quy Tức",
+        "GOOGLE_MAP_2": "https://maps.example/co-so-2",
+        "HOTLINE": "02253876018",
+    }
+
+    monkeypatch.setattr(search_engine, "read_faq", lambda: [faq_row])
+    monkeypatch.setattr(
+        router_service,
+        "search_faq",
+        search_engine.search_faq,
+    )
+    monkeypatch.setattr(
+        router_service,
+        "read_thongtin",
+        lambda: thongtin,
+    )
+    return faq_row, thongtin
+
+
+# Chức năng: Kiểm tra câu hỏi ngắn tìm đúng FAQ_INFO_001 và dữ liệu THONGTIN.
+# Vai trò: P6-FAQ-RT-001 ngăn quy tắc câu chi tiết ngắn loại FAQ địa chỉ đơn vị.
+def test_p6_faq_rt_001_cong_an_phuong_o_dau(monkeypatch):
+    _patch_router_regression_defaults(monkeypatch)
+    _, thongtin = _patch_p6_faq_thongtin(monkeypatch)
+
+    reply, source, _, _ = router_service.route_message(
+        "công an phường ở đâu"
+    )
+
+    assert source == "FAQ_THONGTIN"
+    assert thongtin["DIA_CHI_1"] in reply
+    assert thongtin["DIA_CHI_2"] in reply
+    assert thongtin["HOTLINE"] in reply
+
+
+# Chức năng: Kiểm tra câu hỏi có tên Phù Liễn vẫn trả cùng nhóm THONGTIN.
+# Vai trò: P6-FAQ-RT-002 bảo đảm hai cách hỏi địa chỉ đi chung một nguồn dữ liệu.
+def test_p6_faq_rt_002_cong_an_phuong_phu_lien_o_dau(monkeypatch):
+    _patch_router_regression_defaults(monkeypatch)
+    _, thongtin = _patch_p6_faq_thongtin(monkeypatch)
+
+    reply, source, _, _ = router_service.route_message(
+        "công an phường phù liễn ở đâu"
+    )
+
+    assert source == "FAQ_THONGTIN"
+    assert thongtin["DIA_CHI_1"] in reply
+    assert thongtin["DIA_CHI_2"] in reply
+    assert thongtin["HOTLINE"] in reply
+
+
+# Chức năng: Kiểm tra câu nộp ở đâu tiếp tục dùng nơi nộp của thủ tục hiện tại.
+# Vai trò: P6-FAQ-RT-003 ngăn FAQ THONGTIN cướp câu hỏi nối tiếp của thủ tục.
+def test_p6_faq_rt_003_nop_o_dau_giu_context_thu_tuc(monkeypatch):
+    _patch_router_regression_defaults(monkeypatch)
+    _patch_p6_faq_thongtin(monkeypatch)
+    procedure = {
+        "_SHEET": "THU_TUC_CU_TRU",
+        "MA_THU_TUC": "CUTRU005",
+        "TEN_THU_TUC": "Đăng ký tạm trú",
+        "NOI_THUC_HIEN": "Công an cấp xã nơi công dân tạm trú",
+    }
+    context = {
+        "sheet": "THU_TUC_CU_TRU",
+        "topic": "Cư trú",
+        "procedure_id": "CUTRU005",
+        "procedure_name": "Đăng ký tạm trú",
+        "stage": "procedure",
+    }
+    monkeypatch.setattr(
+        router_service,
+        "find_procedure_by_id",
+        lambda procedure_id: procedure,
+    )
+    monkeypatch.setattr(
+        router_service,
+        "find_lien_he_by_ten_co_quan",
+        lambda name: None,
+    )
+
+    reply, source, new_context, _ = router_service.route_message(
+        "nộp ở đâu",
+        context,
+    )
+
+    assert source == "PROCEDURE_CONTEXT"
+    assert new_context["procedure_id"] == "CUTRU005"
+    assert "Cơ quan/nơi tiếp nhận - Đăng ký tạm trú" in reply
+    assert "Công an cấp xã nơi công dân tạm trú" in reply
+    assert "130 đường Quy Tức" not in reply
+
+
+# Chức năng: Kiểm tra dấu phẩy kép trong RELATED_ID không tạo giá trị rỗng.
+# Vai trò: P6-FAQ-RT-004 bảo đảm chỉ ghép các khóa THONGTIN hợp lệ theo đúng thứ tự.
+def test_p6_faq_rt_004_related_id_dau_phay_kep(monkeypatch):
+    faq_row, thongtin = _patch_p6_faq_thongtin(monkeypatch)
+
+    reply = router_service._reply_thongtin_from_faq(faq_row)
+
+    assert reply.splitlines() == [
+        thongtin["DIA_CHI_1"],
+        thongtin["GOOGLE_MAP_1"],
+        thongtin["DIA_CHI_2"],
+        thongtin["GOOGLE_MAP_2"],
+        thongtin["HOTLINE"],
+    ]
