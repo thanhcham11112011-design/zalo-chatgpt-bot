@@ -7,6 +7,7 @@ from services.sheet_api import (
     ensure_session_sheet,
     read_session,
     save_session,
+    remove_session_cache,
 )
 
 _memory: Dict[str, Dict[str, Any]] = {}
@@ -149,7 +150,8 @@ def clear_context(user_id: Any) -> bool:
     if not uid:
         return False
 
-    _memory.pop(uid, None)
+    _memory[uid] = {}
+    remove_session_cache(uid)
 
     try:
         ws = ensure_session_sheet()

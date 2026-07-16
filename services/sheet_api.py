@@ -1308,6 +1308,34 @@ def ensure_session_sheet():
     )
 
 
+# Chức năng: Loại context của một người dùng khỏi cache đọc BOT_SESSION.
+# Vai trò: Ngăn context vừa reset được phục hồi từ cache cũ mà không xóa cache người dùng khác.
+def remove_session_cache(user_id: str) -> bool:
+    user_id = _clean_value(user_id)
+
+    if not user_id:
+        return False
+
+    with _cache_lock:
+        cached = _cache.get(SHEET_SESSION)
+
+        if not cached:
+            return True
+
+        cached_at, rows = cached
+        filtered_rows = [
+            dict(row)
+            for row in rows
+            if _clean_value(row.get("USER_ID")) != user_id
+        ]
+        _cache[SHEET_SESSION] = (
+            cached_at,
+            filtered_rows,
+        )
+
+    return True
+
+
 def read_session(user_id: str) -> Dict[str, Any]:
     # Chức năng: Đọc ngữ cảnh người dùng từ cache BOT_SESSION trước khi gọi Google Sheets.
     # Vai trò: Tránh buộc đọc toàn bộ BOT_SESSION ở mỗi lượt nhắn hoặc cache miss của session RAM.
