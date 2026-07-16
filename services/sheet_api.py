@@ -1988,6 +1988,36 @@ def warm_runtime_cache(
                 error=error,
             )
 
+    step_started_at = time.monotonic()
+
+    try:
+        from services.search_engine import (
+            warm_contact_search_cache,
+        )
+
+        contact_row_count = warm_contact_search_cache()
+        warmed.append("CONTACT_SEARCH_INDEX")
+        console_log(
+            "INFO",
+            "CACHE_WARMUP",
+            "Làm ấm chỉ mục liên hệ thành công",
+            row_count=contact_row_count,
+            duration_ms=int(
+                (time.monotonic() - step_started_at) * 1000
+            ),
+        )
+    except Exception as error:
+        failed.append("CONTACT_SEARCH_INDEX")
+        console_log(
+            "ERROR",
+            "CACHE_WARMUP",
+            "Làm ấm chỉ mục liên hệ thất bại",
+            duration_ms=int(
+                (time.monotonic() - step_started_at) * 1000
+            ),
+            error=error,
+        )
+
     result = {
         "success": not failed,
         "warmed": warmed,

@@ -1,8 +1,24 @@
 import re
 import unicodedata
+from functools import lru_cache
+
 from services.sheet_api import read_menu, read_lien_he, read_faq, read_all_thu_tuc, read_filter_bad_word
 from services.text_utils import normalize_text, get_first, safe_int, split_keywords, split_list, compact
 from services.logger import debug_print
+
+
+# Chức năng: Cache kết quả chuẩn hóa chuỗi dùng riêng cho dữ liệu liên hệ.
+# Vai trò: Tránh chuẩn hóa lặp lại cùng bộ phận, TDP, chức vụ và từ khóa trên nhiều dòng.
+@lru_cache(maxsize=20000)
+def _contact_normalize(value):
+    return normalize_text(str(value or ""))
+
+
+# Chức năng: Cache danh sách từ khóa đã tách dùng riêng cho dữ liệu liên hệ.
+# Vai trò: Tránh tách lại các chuỗi TU_KHOA giống nhau trong mỗi lượt tìm kiếm.
+@lru_cache(maxsize=10000)
+def _contact_split_keywords(value):
+    return tuple(split_keywords(str(value or "")))
 
 
 
@@ -297,26 +313,48 @@ def search_menu(user_text):
 def _contact_field_values(row):
     # Chức năng: Gom các trường dùng để tra cứu liên hệ từ một dòng TRA_CUU_LIEN_HE.
     # Vai trò: Để Google Sheets quyết định từ khóa, bộ phận, địa bàn, chức năng và họ tên.
+    return _contact_field_bundle(
+        str(get_first(row, "BO_PHAN", "BỘ_PHẬN") or ""),
+        str(get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN") or ""),
+        str(get_first(row, "TU_KHOA", "TỪ_KHÓA") or ""),
+        str(get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN") or ""),
+        str(get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ") or ""),
+        str(get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI", "PHONE") or ""),
+    )
+
+
+# Chức năng: Cache gói trường liên hệ theo chính giá trị dữ liệu Google Sheets.
+# Vai trò: Tự tạo gói mới khi dữ liệu thay đổi và không giữ kết quả cũ theo số dòng.
+@lru_cache(maxsize=10000)
+def _contact_field_bundle(
+    bo_phan,
+    tdp,
+    keywords,
+    name,
+    role,
+    phone,
+):
     return {
-        "bo_phan": get_first(row, "BO_PHAN", "BỘ_PHẬN"),
-        "tdp": get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN"),
-        "keywords": get_first(row, "TU_KHOA", "TỪ_KHÓA"),
-        "name": get_first(row, "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"),
-        "role": get_first(row, "CHUC_NANG", "CHỨC_NĂNG", "CHUC_VU", "CHỨC_VỤ"),
-        "phone": get_first(row, "SO_DIEN_THOAI", "ĐIỆN_THOẠI", "DIEN_THOAI", "PHONE"),
+        "bo_phan": bo_phan,
+        "tdp": tdp,
+        "keywords": keywords,
+        "name": name,
+        "role": role,
+        "phone": phone,
     }
 
 
+@lru_cache(maxsize=20000)
 def _exact_keyword_score(user_text, keywords, base_score=0):
     # Chức năng: Chấm điểm từ khóa khớp nguyên cụm hoặc đủ token đúng thứ tự trong câu hỏi.
     # Vai trò: Ưu tiên TU_KHOA trong Google Sheets và cho phép từ phụ xen giữa các token.
-    user_norm = normalize_text(user_text)
+    user_norm = _contact_normalize(user_text)
     user_tokens = [x for x in user_norm.split() if x]
     user_words = set(user_tokens)
     score = 0
 
-    for kw in split_keywords(keywords):
-        kw_norm = normalize_text(kw)
+    for kw in _contact_split_keywords(keywords):
+        kw_norm = _contact_normalize(kw)
         if not kw_norm:
             continue
 
@@ -366,11 +404,12 @@ def _exact_keyword_score(user_text, keywords, base_score=0):
     return score
 
 
+@lru_cache(maxsize=10000)
 def _name_token_score(user_text, name):
     # Chức năng: Chấm điểm khi câu hỏi chứa đúng họ tên hoặc nhiều từ trong họ tên.
     # Vai trò: Ưu tiên khớp nguyên cụm và tránh khớp một phần từ trong TRA_CUU_LIEN_HE.
-    user_norm = normalize_text(user_text)
-    name_norm = normalize_text(name)
+    user_norm = _contact_normalize(user_text)
+    name_norm = _contact_normalize(name)
 
     if not user_norm or not name_norm:
         return 0
@@ -394,16 +433,17 @@ def _name_token_score(user_text, name):
     return 0
 
 
+@lru_cache(maxsize=20000)
 def _contiguous_keyword_score(user_text, keywords, base_score=0):
     # Chức năng: Chấm điểm từ khóa chỉ khi từ đơn hoặc cụm từ xuất hiện liền nhau.
     # Vai trò: Nhận diện bộ phận rõ ràng, tránh nối các cụm thuộc hai ý định khác nhau.
-    user_norm = normalize_text(user_text)
+    user_norm = _contact_normalize(user_text)
     user_box = f" {user_norm} "
     user_words = set(user_norm.split())
     score = 0
 
-    for keyword in split_keywords(keywords):
-        keyword_norm = normalize_text(keyword)
+    for keyword in _contact_split_keywords(keywords):
+        keyword_norm = _contact_normalize(keyword)
 
         if not keyword_norm:
             continue
@@ -449,8 +489,8 @@ def _detect_contact_department(user_text, rows):
         department = str(
             fields.get("bo_phan") or ""
         ).strip()
-        department_norm = normalize_text(department)
-        area_norm = normalize_text(
+        department_norm = _contact_normalize(department)
+        area_norm = _contact_normalize(
             fields.get("tdp")
         )
 
@@ -465,10 +505,10 @@ def _detect_contact_department(user_text, rows):
 
         keyword_score = 0
 
-        for keyword in split_keywords(
+        for keyword in _contact_split_keywords(
             fields.get("keywords")
         ):
-            keyword_norm = normalize_text(keyword)
+            keyword_norm = _contact_normalize(keyword)
 
             if not keyword_norm:
                 continue
@@ -542,7 +582,7 @@ def _detect_contact_department(user_text, rows):
         key=lambda item: (
             -item[0],
             item[1],
-            normalize_text(item[2]),
+            _contact_normalize(item[2]),
         ),
     )
 
@@ -557,7 +597,7 @@ def _detect_contact_department(user_text, rows):
 # Chức năng: Nhận diện địa bàn TDP được nêu trực tiếp trong câu hỏi.
 # Vai trò: Lọc kết quả liên hệ theo dữ liệu cột TDP, không hardcode tên địa bàn trong Python.
 def _detect_contact_area(user_text, rows):
-    user_norm = normalize_text(user_text)
+    user_norm = _contact_normalize(user_text)
 
     if not user_norm:
         return ""
@@ -568,7 +608,7 @@ def _detect_contact_area(user_text, rows):
     for row in rows:
         fields = _contact_field_values(row)
         area = str(fields.get("tdp") or "").strip()
-        area_norm = normalize_text(area)
+        area_norm = _contact_normalize(area)
 
         if not area_norm:
             continue
@@ -609,7 +649,7 @@ def _detect_contact_area(user_text, rows):
             -item[0][0],
             -item[0][1],
             -item[0][2],
-            normalize_text(item[1]),
+            _contact_normalize(item[1]),
         ),
     )
 
@@ -623,7 +663,7 @@ def search_lien_he(
     limit=3,
     analysis=None,
 ):
-    text_norm = normalize_text(user_text)
+    text_norm = _contact_normalize(user_text)
 
     if not text_norm:
         return []
@@ -644,7 +684,7 @@ def search_lien_he(
         user_text,
         active_rows,
     )
-    department_filter_norm = normalize_text(
+    department_filter_norm = _contact_normalize(
         department_filter
     )
 
@@ -652,7 +692,7 @@ def search_lien_he(
         user_text,
         active_rows,
     )
-    area_filter_norm = normalize_text(
+    area_filter_norm = _contact_normalize(
         area_filter
     )
 
@@ -698,7 +738,7 @@ def search_lien_he(
 
     for row in active_rows:
         fields = _contact_field_values(row)
-        name_norm = normalize_text(
+        name_norm = _contact_normalize(
             fields.get("name")
         )
         name_tokens = [
@@ -715,14 +755,14 @@ def search_lien_he(
 
         if (
             department_filter_norm
-            and normalize_text(fields.get("bo_phan"))
+            and _contact_normalize(fields.get("bo_phan"))
             != department_filter_norm
         ):
             continue
 
         if (
             area_filter_norm
-            and normalize_text(fields.get("tdp"))
+            and _contact_normalize(fields.get("tdp"))
             != area_filter_norm
         ):
             continue
@@ -755,10 +795,10 @@ def search_lien_he(
 
     for row in active_rows:
         fields = _contact_field_values(row)
-        row_department_norm = normalize_text(
+        row_department_norm = _contact_normalize(
             fields.get("bo_phan")
         )
-        row_area_norm = normalize_text(
+        row_area_norm = _contact_normalize(
             fields.get("tdp")
         )
 
@@ -779,7 +819,7 @@ def search_lien_he(
         score = 0
         notes = []
 
-        name_norm = normalize_text(
+        name_norm = _contact_normalize(
             fields.get("name")
         )
         name_score = 0
@@ -822,10 +862,10 @@ def search_lien_he(
 
         keyword_score_value = 0
 
-        for keyword in split_keywords(
+        for keyword in _contact_split_keywords(
             fields.get("keywords")
         ):
-            keyword_norm = normalize_text(keyword)
+            keyword_norm = _contact_normalize(keyword)
 
             if not keyword_norm:
                 continue
@@ -922,6 +962,41 @@ def search_lien_he(
         return same_group[:1]
 
     return same_group[:limit]
+
+
+# Chức năng: Nạp trước cache chuẩn hóa cho toàn bộ dữ liệu liên hệ đang hoạt động.
+# Vai trò: Giảm chi phí xử lý câu đầu tiên sau khi Render khởi động mà không chấm điểm trước câu hỏi.
+def warm_contact_search_cache():
+    active_count = 0
+
+    for row in read_lien_he():
+        if not _active_status(row):
+            continue
+
+        fields = _contact_field_values(row)
+        active_count += 1
+
+        for key in (
+            "bo_phan",
+            "tdp",
+            "name",
+            "role",
+            "phone",
+        ):
+            _contact_normalize(fields.get(key))
+
+        for key in (
+            "bo_phan",
+            "tdp",
+            "keywords",
+            "role",
+        ):
+            for keyword in _contact_split_keywords(
+                fields.get(key)
+            ):
+                _contact_normalize(keyword)
+
+    return active_count
 
 # Chức năng: Kiểm tra câu hỏi có tín hiệu rõ của thủ tục được FAQ liên kết hay không.
 # Vai trò: Chặn FAQ_RELATED dẫn sang thủ tục khác khi tên hoặc TU_KHOA không khớp.
