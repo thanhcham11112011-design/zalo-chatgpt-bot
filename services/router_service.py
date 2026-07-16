@@ -1,3 +1,6 @@
+import os
+import time
+
 from services.text_utils import normalize_text, get_first, safe_int, compact
 from services.router_utils import (
     _split_keywords,
@@ -26,6 +29,35 @@ from services.search_engine import (
 
 
 TECHNICAL_FALLBACK_REPLY = "Xin lỗi, hiện hệ thống chưa xử lý được yêu cầu này. Quý công dân vui lòng nhập menu hoặc hỏi rõ hơn."
+ROUTER_PERFORMANCE_LOG_ENABLED = str(
+    os.getenv("ENABLE_ROUTER_PERFORMANCE_LOG", "FALSE")
+).strip().lower() in {
+    "1", "true", "yes", "on", "enable", "enabled",
+}
+
+
+# Chức năng: Ghi thời gian một chặng định tuyến khi chế độ đo hiệu năng được bật.
+# Vai trò: Xác định hàm chậm mà không ghi nội dung câu hỏi hoặc thay đổi kết quả Router.
+def _log_router_performance(
+    stage,
+    started_at,
+    source="",
+    **fields,
+):
+    if not ROUTER_PERFORMANCE_LOG_ENABLED:
+        return
+
+    console_log(
+        "INFO",
+        "ROUTER_PERFORMANCE",
+        "Hoàn tất chặng Router",
+        stage=stage,
+        duration_ms=int(
+            (time.monotonic() - started_at) * 1000
+        ),
+        source=source,
+        **fields,
+    )
 
 
 # Chức năng: Lấy cấu hình hội thoại từ sheet SETTING_CHAT.
@@ -1682,6 +1714,7 @@ def _reply_by_faq_context(faq_row):
 # Chức năng: Định tuyến chính toàn bộ tin nhắn người dân.
 # Vai trò: Ưu tiên THU_TUC_* theo TU_KHOA, FAQ chỉ bổ sung ý định trừ luồng VNeID/THONGTIN.
 def route_message(user_text, context=None):
+    route_started_at = time.monotonic()
     ctx = dict(context or {})
     text = str(user_text or "").strip()
     text_norm = normalize_text(text)
@@ -1690,7 +1723,13 @@ def route_message(user_text, context=None):
     if not text:
         return get_default_reply(), "EMPTY", ctx, ""
 
+    stage_started_at = time.monotonic()
     bad_language = detect_bad_language(text)
+    _log_router_performance(
+        "FILTER_BAD_WORD",
+        stage_started_at,
+        matched=bool(bad_language),
+    )
     if bad_language:
         reply = get_first(
             bad_language,
@@ -1754,7 +1793,13 @@ def route_message(user_text, context=None):
             new_ctx["last_route"] = "MENU"
             return reply, "MENU", new_ctx, ""
 
+    stage_started_at = time.monotonic()
     exact_menu = _match_exact_menu_by_data(text)
+    _log_router_performance(
+        "EXACT_MENU",
+        stage_started_at,
+        matched=bool(exact_menu),
+    )
     if exact_menu:
         exact_sheet = get_first(exact_menu, "SHEET_DU_LIEU", "SHEET")
         exact_title = get_first(exact_menu, "TEN_CHUC_NANG", "TEN", "CHU_DE")
@@ -1771,7 +1816,13 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "MENU"
         return reply, "MENU", new_ctx, ""
 
+    stage_started_at = time.monotonic()
     exact_procedure = _find_exact_procedure(text)
+    _log_router_performance(
+        "EXACT_PROCEDURE",
+        stage_started_at,
+        matched=bool(exact_procedure),
+    )
     if exact_procedure:
         exact_sheet = exact_procedure.get("_SHEET", "")
         route_name = "THU_TUC_VNEID" if _is_vneid_sheet(exact_sheet) else "THU_TUC_TU_KHOA_GLOBAL"
@@ -1786,12 +1837,31 @@ def route_message(user_text, context=None):
         }
         return format_thu_tuc(exact_procedure), route_name, new_ctx, ""
 
+    stage_started_at = time.monotonic()
     faq = search_faq(text, limit=3)
+    _log_router_performance(
+        "FAQ_SEARCH",
+        stage_started_at,
+        result_count=len(faq or []),
+    )
     
+    stage_started_at = time.monotonic()
     contact_results = search_lien_he(text, limit=999) or []
+    _log_router_performance(
+        "CONTACT_SEARCH",
+        stage_started_at,
+        result_count=len(contact_results),
+    )
+
+    stage_started_at = time.monotonic()
     contact_intent = is_contact_question(
         text,
         contact_results=contact_results,
+    )
+    _log_router_performance(
+        "CONTACT_INTENT",
+        stage_started_at,
+        matched=bool(contact_intent),
     )
 
     if contact_intent:
@@ -1847,22 +1917,48 @@ def route_message(user_text, context=None):
             "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng kiểm tra lại họ tên, bộ phận hoặc địa bàn phụ trách."
         ), "CONTACT_NOT_FOUND", new_ctx, ""
 
-    if not detect_bo_phan_contact(text):
+    stage_started_at = time.monotonic()
+    has_contact_department = detect_bo_phan_contact(text)
+    _log_router_performance(
+        "CONTACT_DEPARTMENT",
+        stage_started_at,
+        matched=bool(has_contact_department),
+    )
+
+    if not has_contact_department:
+        stage_started_at = time.monotonic()
         thongtin_reply = _reply_thongtin_from_faq_rows(faq)
+        _log_router_performance(
+            "THONGTIN_FROM_FAQ",
+            stage_started_at,
+            matched=bool(thongtin_reply),
+        )
         if thongtin_reply:
             ctx["last_route"] = "FAQ_THONGTIN"
             return thongtin_reply, "FAQ_THONGTIN", ctx, ""
 
+    stage_started_at = time.monotonic()
     explicit = detect_explicit_topic(text)
+    _log_router_performance(
+        "EXPLICIT_TOPIC",
+        stage_started_at,
+        matched=bool(explicit),
+    )
     detail_question = is_followup_detail_question(text)
     current_id = normalize_text(ctx.get("procedure_id"))
     search_sheet = explicit.get("sheet", "") if explicit else None
 
+    stage_started_at = time.monotonic()
     thu_tuc_results = _search_thu_tuc_by_tu_khoa(
         text,
         sheet=search_sheet,
         limit=5,
         include_vneid=True,
+    )
+    _log_router_performance(
+        "PROCEDURE_KEYWORD_SEARCH",
+        stage_started_at,
+        result_count=len(thu_tuc_results or []),
     )
 
     specific_results = []
@@ -1955,8 +2051,21 @@ def route_message(user_text, context=None):
             ), "PROCEDURE_CONTEXT", ctx, ""
 
     if faq:
+        stage_started_at = time.monotonic()
         faq_routed = _route_from_faq_rows(text, faq, ctx)
+        _log_router_performance(
+            "FAQ_ROUTE",
+            stage_started_at,
+            matched=bool(faq_routed),
+        )
         if faq_routed:
+            _log_router_performance(
+                "ROUTE_MESSAGE_TOTAL",
+                route_started_at,
+                source=str(faq_routed[1] or "")
+                if len(faq_routed) > 1
+                else "FAQ",
+            )
             return faq_routed
 
     if ctx.get("stage") == "contact_lookup":
@@ -1974,7 +2083,13 @@ def route_message(user_text, context=None):
             "Chưa tìm thấy thông tin liên hệ phù hợp. Quý công dân vui lòng nhập rõ hơn họ tên, bộ phận hoặc địa bàn phụ trách."
         ), "CONTACT_NOT_FOUND", ctx, ""
 
+    stage_started_at = time.monotonic()
     menu_row = _match_menu_by_data(text)
+    _log_router_performance(
+        "MENU_FALLBACK_SEARCH",
+        stage_started_at,
+        matched=bool(menu_row),
+    )
     
     if menu_row and normalize_text(get_first(menu_row, "SHEET_DU_LIEU", "SHEET")) == "tra_cuu_lien_he":
         new_ctx = menu_context(menu_row)
@@ -2101,7 +2216,13 @@ def route_message(user_text, context=None):
         new_ctx["last_route"] = "NEED_PROCEDURE_SELECT"
         return reply, "NEED_PROCEDURE_SELECT", new_ctx, ""
 
+    stage_started_at = time.monotonic()
     menu = _match_menu_by_data(text)
+    _log_router_performance(
+        "MENU_FINAL_SEARCH",
+        stage_started_at,
+        matched=bool(menu),
+    )
     if menu:
         reply, suggestions = answer_from_menu(menu)
         new_ctx = menu_context(menu)
@@ -2115,6 +2236,11 @@ def route_message(user_text, context=None):
         return format_multiple_results(normal_faq, format_faq, limit=3), "FAQ", ctx, ""
 
     ctx["last_route"] = "DEFAULT"
+    _log_router_performance(
+        "ROUTE_MESSAGE_TOTAL",
+        route_started_at,
+        source="DEFAULT",
+    )
     console_log(
         "WARNING",
         "ROUTER",
@@ -2126,6 +2252,8 @@ def route_message(user_text, context=None):
 # Chức năng: Định tuyến tin nhắn người dân, chuẩn hóa kết quả trả về cho app.py.
 # Vai trò: Ưu tiên Google Sheets, chỉ bật Gemini như lớp phụ trợ tùy chọn.
 def route_message_for_ai(user_text, context=None):
+    total_started_at = time.monotonic()
+    stage_started_at = time.monotonic()
     result = {
         "reply": get_default_reply(),
         "source": "DEFAULT",
@@ -2136,21 +2264,38 @@ def route_message_for_ai(user_text, context=None):
         "ai_context_length": 0,
         "ai_mode": _ai_setting("AI_MODE", "OPTIONAL"),
     }
+    _log_router_performance(
+        "ROUTER_INITIAL_SETTINGS",
+        stage_started_at,
+    )
 
     try:
+        stage_started_at = time.monotonic()
         reply, source, new_context, ai_context = route_message(
             user_text=user_text,
             context=context,
+        )
+        _log_router_performance(
+            "ROUTE_MESSAGE",
+            stage_started_at,
+            source=source,
         )
 
         ai_context_type = "CUSTOM" if ai_context else ""
 
         if not ai_context:
+            stage_started_at = time.monotonic()
             ai_context, ai_context_type = _build_ai_context(
                 user_text=user_text,
                 reply=reply,
                 source=source,
                 context=new_context,
+            )
+            _log_router_performance(
+                "AI_CONTEXT",
+                stage_started_at,
+                source=source,
+                context_length=len(ai_context or ""),
             )
 
         result["reply"] = reply
@@ -2159,10 +2304,17 @@ def route_message_for_ai(user_text, context=None):
         result["ai_context"] = ai_context
         result["ai_context_type"] = ai_context_type
         result["ai_context_length"] = len(ai_context)
+        stage_started_at = time.monotonic()
         result["use_ai"] = _should_use_ai(
             user_text,
             source,
             ai_context,
+        )
+        _log_router_performance(
+            "AI_DECISION",
+            stage_started_at,
+            source=source,
+            use_ai=bool(result["use_ai"]),
         )
 
         if source == "DEFAULT" and not result["use_ai"]:
@@ -2188,4 +2340,9 @@ def route_message_for_ai(user_text, context=None):
         result["ai_context_length"] = 0
         result["unknown_log"] = not result["use_ai"]
 
+    _log_router_performance(
+        "ROUTE_MESSAGE_FOR_AI_TOTAL",
+        total_started_at,
+        source=result.get("source", ""),
+    )
     return result
