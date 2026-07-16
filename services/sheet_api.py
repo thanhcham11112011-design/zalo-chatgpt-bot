@@ -1907,6 +1907,106 @@ def _build_sheet_health() -> Dict[str, Any]:
 
     return result
 
+# Chức năng: Làm ấm các cache kỹ thuật và nghiệp vụ bằng chính hàm đọc hiện có.
+# Vai trò: Giảm số lượt gọi Google Sheets đồng bộ ở tin nhắn đầu tiên sau khi worker khởi động.
+def warm_runtime_cache(
+    startup_delay_seconds: float = 1.0,
+) -> Dict[str, Any]:
+    delay_seconds = max(
+        0.0,
+        float(startup_delay_seconds or 0.0),
+    )
+
+    if delay_seconds:
+        time.sleep(delay_seconds)
+
+    started_at = time.monotonic()
+    warmed: List[str] = []
+    failed: List[str] = []
+
+    try:
+        with _webhook_event_write_lock:
+            worksheet = ensure_webhook_event_sheet()
+
+            if (
+                _webhook_event_loaded
+                or _load_webhook_event_cache(worksheet)
+            ):
+                warmed.append(SHEET_WEBHOOK_EVENT)
+            else:
+                failed.append(SHEET_WEBHOOK_EVENT)
+    except Exception as error:
+        failed.append(SHEET_WEBHOOK_EVENT)
+        console_log(
+            "ERROR",
+            "CACHE_WARMUP",
+            "Làm ấm cache webhook thất bại",
+            error=error,
+        )
+
+    warmup_steps = [
+        (SHEET_SESSION, lambda: read_sheet(SHEET_SESSION)),
+        ("THU_TUC_*", read_all_thu_tuc),
+        (SHEET_FILTER_BAD_WORD, read_filter_bad_word),
+        (SHEET_MENU, read_menu),
+        (SHEET_FAQ, read_faq),
+        (SHEET_TRA_CUU_LIEN_HE, read_lien_he),
+        (SHEET_THONGTIN, read_thongtin),
+        (SHEET_SETTING_SYSTEM, read_setting_system),
+        (SHEET_SETTING_AI, read_setting_ai),
+        (SHEET_SETTING_CHAT, read_setting_chat),
+        (SHEET_PROMPT, read_prompt),
+    ]
+
+    for label, reader in warmup_steps:
+        step_started_at = time.monotonic()
+
+        try:
+            reader()
+            warmed.append(label)
+            console_log(
+                "INFO",
+                "CACHE_WARMUP",
+                "Làm ấm cache thành công",
+                sheet=label,
+                duration_ms=int(
+                    (time.monotonic() - step_started_at)
+                    * 1000
+                ),
+            )
+        except Exception as error:
+            failed.append(label)
+            console_log(
+                "ERROR",
+                "CACHE_WARMUP",
+                "Làm ấm cache thất bại",
+                sheet=label,
+                duration_ms=int(
+                    (time.monotonic() - step_started_at)
+                    * 1000
+                ),
+                error=error,
+            )
+
+    result = {
+        "success": not failed,
+        "warmed": warmed,
+        "failed": failed,
+        "duration_ms": int(
+            (time.monotonic() - started_at) * 1000
+        ),
+    }
+    console_log(
+        "INFO" if not failed else "WARNING",
+        "CACHE_WARMUP",
+        "Hoàn tất làm ấm cache sau khởi động",
+        warmed_count=len(warmed),
+        failed_count=len(failed),
+        duration_ms=result["duration_ms"],
+    )
+    return result
+
+
 # Chức năng: Trả trạng thái Google Sheets từ cache và chỉ kiểm tra cấu trúc theo chu kỳ.
 # Vai trò: Ngăn endpoint health tạo nhiều lượt đọc metadata và dữ liệu trong mỗi phút.
 def sheet_health() -> Dict[str, Any]:
