@@ -404,57 +404,92 @@ def is_location_question(text):
 
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
-# Vai trò: Chỉ chuyển sang TRA_CUU_LIEN_HE khi có số điện thoại, yêu cầu liên hệ rõ hoặc bộ phận được cấu hình hướng dẫn.
-def is_contact_question(
-    text,
-    contact_results=None,
-    detected_department=None,
-):
+# Vai trò: Chuyển đúng dữ liệu liên hệ theo tín hiệu tìm kiếm nhưng không bỏ yêu cầu địa bàn của nhóm TDP.
+def is_contact_question(text, contact_results=None):
     t = normalize_text(text)
-    phone_digits = "".join(ch for ch in str(text or "") if ch.isdigit())
+    phone_digits = "".join(
+        ch
+        for ch in str(text or "")
+        if ch.isdigit()
+    )
 
     if len(phone_digits) >= 9:
         return True
 
-    if t in ["lien he", "so dien thoai", "sdt", "dien thoai", "hotline"]:
+    if t in [
+        "lien he",
+        "so dien thoai",
+        "sdt",
+        "dien thoai",
+        "hotline",
+    ]:
         return True
 
     if "lien he" in t:
         return True
 
     contact_intent_keys = [
-        "tra cuu lien he", "huong dan tra cuu lien he",
-        "tra cuu so dien thoai", "xin so dien thoai",
-        "cho toi so dien thoai", "so dien thoai cua",
-        "so dien thoai can bo", "xin sdt", "sdt cua",
-        "gap can bo", "gap dong chi", "gap dc",
-        "can bo phu trach", "ai phu trach", "truc ban",
-        "lien he can bo", "lien he dong chi", "lien he bo phan",
-        "lien he cskv", "lien he canh sat khu vuc",
-        "lien he ancs", "lien he an ninh trat tu o co so",
-        "lien he chi huy", "lien he lanh dao",
-        "truong cap", "truong cong an phuong",
-        "pho cap", "pho cong an phuong",
-        "pho truong cap", "pho truong cong an phuong",
+        "tra cuu lien he",
+        "huong dan tra cuu lien he",
+        "tra cuu so dien thoai",
+        "xin so dien thoai",
+        "cho toi so dien thoai",
+        "so dien thoai cua",
+        "so dien thoai can bo",
+        "xin sdt",
+        "sdt cua",
+        "gap can bo",
+        "gap dong chi",
+        "gap dc",
+        "can bo phu trach",
+        "ai phu trach",
+        "truc ban",
+        "lien he can bo",
+        "lien he dong chi",
+        "lien he bo phan",
+        "lien he cskv",
+        "lien he canh sat khu vuc",
+        "lien he ancs",
+        "lien he an ninh trat tu o co so",
+        "lien he chi huy",
+        "lien he lanh dao",
+        "truong cap",
+        "truong cong an phuong",
+        "pho cap",
+        "pho cong an phuong",
+        "pho truong cap",
+        "pho truong cong an phuong",
     ]
 
-    if any(key in t for key in contact_intent_keys):
+    if any(
+        key in t
+        for key in contact_intent_keys
+    ):
         return True
 
-    department = (
-        detect_bo_phan_contact(text)
-        if detected_department is None
-        else str(detected_department or "").strip()
+    department = detect_bo_phan_contact(text)
+
+    if (
+        department
+        and _contact_department_guide(department)
+    ):
+        return True
+
+    results = (
+        contact_results
+        if contact_results is not None
+        else search_lien_he(text, limit=5) or []
     )
-
-    if department and _contact_department_guide(department):
-        return True
-
-    results = contact_results if contact_results is not None else (search_lien_he(text, limit=5) or [])
 
     for row in results:
         note = str(row.get("_NOTE") or "")
         signals = set(note.split("+"))
+        row_area = get_first(
+            row,
+            "TDP",
+            "DIA_BAN",
+            "ĐỊA_BÀN",
+        )
 
         if "NAME_MATCH_EXACT" in signals:
             return True
@@ -465,14 +500,26 @@ def is_contact_question(
         if "DEPARTMENT_MATCH" in signals:
             return True
 
-        if "ROLE_MATCH" in signals and "AREA_MATCH" in signals:
+        if (
+            not normalize_text(row_area)
+            and "ROLE_MATCH" in signals
+            and "KEYWORD_MATCH" in signals
+        ):
             return True
 
-        if "KEYWORD_MATCH" in signals and "AREA_MATCH" in signals:
+        if (
+            "ROLE_MATCH" in signals
+            and "AREA_MATCH" in signals
+        ):
+            return True
+
+        if (
+            "KEYWORD_MATCH" in signals
+            and "AREA_MATCH" in signals
+        ):
             return True
 
     return False
-
 
 # Chức năng: Kiểm tra yêu cầu liên hệ đã nêu rõ cán bộ, bộ phận, địa bàn hoặc số điện thoại hay chưa.
 # Vai trò: Phân biệt tra cứu liên hệ cụ thể với yêu cầu hướng dẫn tra cứu chung.
