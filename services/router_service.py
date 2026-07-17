@@ -492,6 +492,37 @@ def is_contact_question(
     for row in results:
         note = str(row.get("_NOTE") or "")
         signals = set(note.split("+"))
+        row_area = get_first(
+            row,
+            "TDP",
+            "DIA_BAN",
+            "ĐỊA_BÀN",
+        )
+        row_role = normalize_text(
+            get_first(
+                row,
+                "CHUC_NANG",
+                "CHỨC_NĂNG",
+                "CHUC_VU",
+                "CHỨC_VỤ",
+            )
+        )
+        row_keywords = _split_keywords(
+            get_first(
+                row,
+                "TU_KHOA",
+                "TỪ_KHÓA",
+                "KEYWORDS",
+            )
+        )
+        exact_sheet_match = (
+            t == row_role
+            or any(
+                t == normalize_text(keyword)
+                for keyword in row_keywords
+                if keyword
+            )
+        )
         
         if "NAME_MATCH_EXACT" in signals:
             return True
@@ -500,6 +531,12 @@ def is_contact_question(
             return True
 
         if "DEPARTMENT_MATCH" in signals:
+            return True
+
+        if (
+            not normalize_text(row_area)
+            and exact_sheet_match
+        ):
             return True
       
         if (
