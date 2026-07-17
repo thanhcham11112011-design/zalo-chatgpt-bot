@@ -405,7 +405,11 @@ def is_location_question(text):
 
 # Chức năng: Kiểm tra câu hỏi có ý định tra cứu liên hệ hay không.
 # Vai trò: Chuyển đúng dữ liệu liên hệ theo tín hiệu tìm kiếm nhưng không bỏ yêu cầu địa bàn của nhóm TDP.
-def is_contact_question(text, contact_results=None):
+def is_contact_question(
+    text,
+    contact_results=None,
+    detected_department=None,
+):
     t = normalize_text(text)
     phone_digits = "".join(
         ch
@@ -467,7 +471,11 @@ def is_contact_question(text, contact_results=None):
     ):
         return True
 
-    department = detect_bo_phan_contact(text)
+    department = (
+        detect_bo_phan_contact(text)
+        if detected_department is None
+        else str(detected_department or "").strip()
+    )
 
     if (
         department
