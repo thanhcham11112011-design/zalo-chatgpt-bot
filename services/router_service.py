@@ -167,12 +167,23 @@ def _get_ai_context_limit():
 
 
 # Chức năng: Xác định loại dữ liệu đủ điều kiện tạo ai_context.
-# Vai trò: Chỉ cho AI diễn đạt thủ tục hoặc FAQ đã có căn cứ từ Google Sheets.
+# Vai trò: Chỉ tạo context AI khi chính lượt định tuyến hiện tại đã xác minh thủ tục hoặc FAQ.
 def _get_ai_context_type(source, context):
     ctx = dict(context or {})
     source_name = str(source or "").strip().upper()
+    procedure_sources = {
+        "PROCEDURE_CONTEXT",
+        "FAQ_RELATED",
+        "FAQ_PROCEDURE_CONTEXT",
+    }
 
-    if ctx.get("procedure_id"):
+    if (
+        ctx.get("procedure_id")
+        and (
+            source_name.startswith("THU_TUC_")
+            or source_name in procedure_sources
+        )
+    ):
         return "THU_TUC"
 
     if source_name == "FAQ":
