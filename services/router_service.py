@@ -484,13 +484,7 @@ def is_contact_question(text, contact_results=None):
     for row in results:
         note = str(row.get("_NOTE") or "")
         signals = set(note.split("+"))
-        row_area = get_first(
-            row,
-            "TDP",
-            "DIA_BAN",
-            "ĐỊA_BÀN",
-        )
-
+        
         if "NAME_MATCH_EXACT" in signals:
             return True
 
@@ -499,14 +493,7 @@ def is_contact_question(text, contact_results=None):
 
         if "DEPARTMENT_MATCH" in signals:
             return True
-
-        if (
-            not normalize_text(row_area)
-            and "ROLE_MATCH" in signals
-            and "KEYWORD_MATCH" in signals
-        ):
-            return True
-
+      
         if (
             "ROLE_MATCH" in signals
             and "AREA_MATCH" in signals
