@@ -1637,7 +1637,7 @@ def _lien_he_rows_by_related_ids(related_ids):
             exact_match = any(rid_norm == v for v in values_norm + keyword_norm)
             contain_match = len(rid_norm) >= 4 and any(rid_norm in v for v in values_norm + keyword_norm)
             if exact_match or contain_match:
-                key = normalize_text(get_first(row, "ID", "MA", "MÃ", "HO_TEN", "HỌ_TÊN"))
+                key = normalize_text(get_first(row, "ID", "MA", "MÃ", "TEN_CO_QUAN", "TÊN_CƠ_QUAN", "HO_TEN", "HỌ_TÊN"))
                 if key not in seen:
                     results.append(row)
                     seen.add(key)
