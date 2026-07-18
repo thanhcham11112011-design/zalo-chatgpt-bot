@@ -500,6 +500,7 @@ def build_answer(user_id, question, request_id=""):
             user_id=user_id,
             user_text=question,
             context=context,
+            message_id=request_id,
         )
     else:
         routed = route_message_for_ai(question, context=context)
