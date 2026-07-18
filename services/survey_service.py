@@ -1,3 +1,5 @@
+import hashlib
+import json
 import re
 import uuid
 from datetime import datetime
@@ -90,6 +92,22 @@ def _survey_id(row: Optional[Dict[str, Any]]) -> str:
             default="",
         )
         or ""
+    ).strip()
+
+
+# Chức năng: Lấy phiên bản khảo sát từ một dòng cấu hình hoặc context.
+# Vai trò: Phân biệt kết quả được tạo từ các bộ câu hỏi khác nhau theo dữ liệu Google Sheets.
+def _survey_version(row: Optional[Dict[str, Any]]) -> str:
+    return str(
+        get_first(
+            row or {},
+            "PHIEN_BAN_KHAO_SAT",
+            "PHIÊN_BẢN_KHẢO_SÁT",
+            "PHIEN_BAN",
+            "VERSION",
+            default="V1",
+        )
+        or "V1"
     ).strip()
 
 
@@ -329,6 +347,7 @@ def _new_survey_context(
         "last_route": "KHAO_SAT_START",
         "survey_id": survey_id,
         "survey_name": survey_name,
+        "survey_version": _survey_version(survey),
         "survey_question_index": 0,
         "survey_total_questions": total_questions,
         "survey_answers": {},
@@ -448,6 +467,37 @@ def start_survey(
         )
 
 
+# Chức năng: Tạo mã SHA-256 từ toàn bộ nội dung một phiếu khảo sát hoàn thành.
+# Vai trò: Phát hiện thay đổi dữ liệu khi đối chiếu lại kết quả đã lưu trong Google Sheets.
+def _survey_hash(rows: List[Dict[str, Any]]) -> str:
+    payload = [
+        {
+            key: str(row.get(key) or "")
+            for key in [
+                "MA_PHIEU",
+                "THOI_GIAN",
+                "USER_ID",
+                "MA_KHAO_SAT",
+                "PHIEN_BAN_KHAO_SAT",
+                "MA_CAU_HOI",
+                "CAU_TRA_LOI",
+                "NOI_DUNG_TRA_LOI",
+                "MESSAGE_ID",
+                "KENH_THUC_HIEN",
+                "TRANG_THAI",
+            ]
+        }
+        for row in rows
+    ]
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 # Chức năng: Chuyển các đáp án trong context thành các dòng kết quả cùng một mã phiếu.
 # Vai trò: Chuẩn bị dữ liệu ghi theo lô vào KET_QUA_KHAO_SAT khi người dùng hoàn thành.
 def _result_rows(
@@ -467,12 +517,18 @@ def _result_rows(
             "THOI_GIAN": timestamp,
             "USER_ID": user_id,
             "MA_KHAO_SAT": context.get("survey_id", ""),
+            "PHIEN_BAN_KHAO_SAT": context.get("survey_version", "V1"),
             "MA_CAU_HOI": question_id,
             "CAU_TRA_LOI": answer.get("value", ""),
             "NOI_DUNG_TRA_LOI": answer.get("label", ""),
+            "MESSAGE_ID": answer.get("message_id", ""),
             "KENH_THUC_HIEN": "ZALO_OA",
             "TRANG_THAI": "HOAN_THANH",
         })
+
+    hash_value = _survey_hash(rows)
+    for row in rows:
+        row["HASH_PHIEU"] = hash_value
 
     return rows
 
@@ -483,6 +539,7 @@ def process_survey_message(
     user_id: str,
     user_text: str,
     context: Dict[str, Any],
+    message_id: str = "",
 ) -> Dict[str, Any]:
     try:
         ensure_survey_sheets()
@@ -574,6 +631,7 @@ def process_survey_message(
         answers[question_id] = {
             "value": answer_value,
             "label": answer_label,
+            "message_id": str(message_id or "").strip(),
         }
         ctx["survey_answers"] = answers
         ctx["last_route"] = "KHAO_SAT_ANSWER"

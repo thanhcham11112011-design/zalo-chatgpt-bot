@@ -1302,6 +1302,7 @@ SURVEY_HEADERS = [
     "CHO_PHEP_GUI_LAI",
     "TRANG_THAI",
     "UU_TIEN",
+    "PHIEN_BAN_KHAO_SAT",
 ]
 
 SURVEY_QUESTION_HEADERS = [
@@ -1326,6 +1327,9 @@ SURVEY_RESULT_HEADERS = [
     "NOI_DUNG_TRA_LOI",
     "KENH_THUC_HIEN",
     "TRANG_THAI",
+    "PHIEN_BAN_KHAO_SAT",
+    "MESSAGE_ID",
+    "HASH_PHIEU",
 ]
 
 
@@ -1934,6 +1938,10 @@ def _build_sheet_health() -> Dict[str, Any]:
                 ("TEN_KHAO_SAT", {"TEN_KHAO_SAT", "TÊN_KHẢO_SÁT"}),
                 ("LOI_MO_DAU", {"LOI_MO_DAU", "LỜI_MỞ_ĐẦU"}),
                 ("LOI_CAM_ON", {"LOI_CAM_ON", "LỜI_CẢM_ƠN"}),
+                (
+                    "PHIEN_BAN_KHAO_SAT",
+                    {"PHIEN_BAN_KHAO_SAT", "PHIÊN_BẢN_KHẢO_SÁT", "PHIEN_BAN"},
+                ),
                 ("TRANG_THAI", {"TRANG_THAI", "TRẠNG_THÁI", "STATUS"}),
             ],
             SHEET_SURVEY_QUESTIONS: [
@@ -1952,6 +1960,12 @@ def _build_sheet_health() -> Dict[str, Any]:
                 ("MA_KHAO_SAT", {"MA_KHAO_SAT", "MÃ_KHẢO_SÁT"}),
                 ("MA_CAU_HOI", {"MA_CAU_HOI", "MÃ_CÂU_HỎI"}),
                 ("CAU_TRA_LOI", {"CAU_TRA_LOI", "CÂU_TRẢ_LỜI"}),
+                (
+                    "PHIEN_BAN_KHAO_SAT",
+                    {"PHIEN_BAN_KHAO_SAT", "PHIÊN_BẢN_KHẢO_SÁT", "PHIEN_BAN"},
+                ),
+                ("MESSAGE_ID", {"MESSAGE_ID"}),
+                ("HASH_PHIEU", {"HASH_PHIEU", "HASH_PHIẾU"}),
                 ("TRANG_THAI", {"TRANG_THAI", "TRẠNG_THÁI", "STATUS"}),
             ],
             SHEET_FAQ: [
