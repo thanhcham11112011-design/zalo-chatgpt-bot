@@ -9,6 +9,7 @@ SURVEY = {
     "CHO_PHEP_GUI_LAI": "FALSE",
     "TRANG_THAI": "HOAT_DONG",
     "UU_TIEN": "1",
+    "PHIEN_BAN_KHAO_SAT": "V1",
 }
 
 QUESTIONS = [
@@ -90,6 +91,7 @@ def test_start_survey_opens_first_question(monkeypatch):
     assert result["context"]["context_type"] == "KHAO_SAT"
     assert result["context"]["survey_id"] == "KS_HAILONG_001"
     assert result["context"]["survey_question_index"] == 0
+    assert result["context"]["survey_version"] == "V1"
     assert "Câu 1/2" in result["reply"]
     assert "1. Tra cứu thủ tục" in result["reply"]
 
@@ -104,6 +106,7 @@ def test_valid_option_moves_to_next_question(monkeypatch):
         "user-02",
         "1",
         context,
+        message_id="message-ks01",
     )
 
     assert result["source"] == "KHAO_SAT_QUESTION"
@@ -111,6 +114,7 @@ def test_valid_option_moves_to_next_question(monkeypatch):
     assert result["context"]["survey_answers"]["KS01"] == {
         "value": "1",
         "label": "Tra cứu thủ tục",
+        "message_id": "message-ks01",
     }
     assert "Câu 2/2" in result["reply"]
 
@@ -235,12 +239,14 @@ def test_complete_survey_writes_batch_rows(monkeypatch):
         "user-08",
         "Tra cứu liên hệ",
         context,
+        message_id="message-complete-01",
     )["context"]
 
     result = survey_service.process_survey_message(
         "user-08",
         "BOT cần phản hồi nhanh hơn",
         context,
+        message_id="message-complete-02",
     )
 
     assert result["source"] == "KHAO_SAT_COMPLETE"
@@ -248,7 +254,12 @@ def test_complete_survey_writes_batch_rows(monkeypatch):
     assert len(saved[0]) == 2
     assert len({row["MA_PHIEU"] for row in saved[0]}) == 1
     assert all(row["USER_ID"] == "user-08" for row in saved[0])
+    assert saved[0][0]["PHIEN_BAN_KHAO_SAT"] == "V1"
+    assert saved[0][0]["MESSAGE_ID"] == "message-complete-01"
+    assert saved[0][1]["MESSAGE_ID"] == "message-complete-02"
     assert saved[0][1]["NOI_DUNG_TRA_LOI"] == "BOT cần phản hồi nhanh hơn"
+    assert len({row["HASH_PHIEU"] for row in saved[0]}) == 1
+    assert len(saved[0][0]["HASH_PHIEU"]) == 64
 
 
 # Chức năng: Kiểm tra người đã hoàn thành không được gửi lại khi cấu hình không cho phép.
@@ -434,6 +445,9 @@ def test_save_survey_results_uses_batch_append(monkeypatch):
             "NOI_DUNG_TRA_LOI": "Rất hài lòng",
             "KENH_THUC_HIEN": "ZALO_OA",
             "TRANG_THAI": "HOAN_THANH",
+            "PHIEN_BAN_KHAO_SAT": "V1",
+            "MESSAGE_ID": "message-01",
+            "HASH_PHIEU": "hash-01",
         },
         {
             "MA_PHIEU": "KS-001",
@@ -445,6 +459,9 @@ def test_save_survey_results_uses_batch_append(monkeypatch):
             "NOI_DUNG_TRA_LOI": "Nhanh",
             "KENH_THUC_HIEN": "ZALO_OA",
             "TRANG_THAI": "HOAN_THANH",
+            "PHIEN_BAN_KHAO_SAT": "V1",
+            "MESSAGE_ID": "message-02",
+            "HASH_PHIEU": "hash-01",
         },
     ]
 
