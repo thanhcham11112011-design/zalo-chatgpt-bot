@@ -256,7 +256,7 @@ def _patch_router_regression_defaults(monkeypatch):
     monkeypatch.setattr(router_service, "read_menu", lambda: [])
     monkeypatch.setattr(router_service, "search_menu", lambda text: None)
     monkeypatch.setattr(router_service, "search_faq", lambda text, limit=3: [])
-    monkeypatch.setattr(router_service, "search_lien_he", lambda text, limit=999: [])
+    monkeypatch.setattr(router_service, "search_lien_he", lambda text, limit=999, **kwargs: [])
     monkeypatch.setattr(router_service, "read_lien_he", lambda: [])
     monkeypatch.setattr(router_service, "detect_bo_phan_contact", lambda text: "")
     monkeypatch.setattr(router_service, "read_thu_tuc_sheet_names", lambda: [])
@@ -401,7 +401,7 @@ def test_regression_lien_he_pctp_khong_vao_menu_antt(monkeypatch):
     monkeypatch.setattr(
         router_service,
         "search_lien_he",
-        lambda text, limit=999: contact_rows,
+        lambda text, limit=999, **kwargs: contact_rows,
     )
     monkeypatch.setattr(
         router_service,
@@ -447,10 +447,15 @@ def test_regression_trinh_bao_tra_dung_pctp(monkeypatch):
             )
         },
     )
+    def fake_search_lien_he(text, limit=999, analysis=None, **kwargs):
+        if isinstance(analysis, dict):
+            analysis["department"] = "PCTP"
+        return contact_rows
+
     monkeypatch.setattr(
         router_service,
         "search_lien_he",
-        lambda text, limit=999: contact_rows,
+        fake_search_lien_he,
     )
     monkeypatch.setattr(
         router_service,
@@ -498,7 +503,7 @@ def test_regression_cskv_le_tao_khong_tra_pctp(monkeypatch):
     monkeypatch.setattr(
         router_service,
         "search_lien_he",
-        lambda text, limit=999: contact_rows,
+        lambda text, limit=999, **kwargs: contact_rows,
     )
     monkeypatch.setattr(
         router_service,
@@ -661,10 +666,15 @@ def test_regression_tdp_ngoai_danh_sach_khong_mo_rong(monkeypatch):
             "CONTACT_GUIDE_BO_MAY_TDP": guide_message,
         },
     )
+    def fake_search_lien_he(text, limit=999, analysis=None, **kwargs):
+        if isinstance(analysis, dict):
+            analysis["department"] = "BO_MAY_TDP"
+        return contact_rows
+
     monkeypatch.setattr(
         router_service,
         "search_lien_he",
-        lambda text, limit=999: contact_rows,
+        fake_search_lien_he,
     )
     monkeypatch.setattr(
         router_service,
