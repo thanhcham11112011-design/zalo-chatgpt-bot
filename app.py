@@ -31,6 +31,11 @@ from services.logger import (
     write_unknown_log,
 )
 from services.session_manager import get_context, save_context, clear_context
+from services.survey_service import (
+    is_survey_context,
+    process_survey_message,
+    start_survey,
+)
 from services.sheet_api import (
     read_setting_system,
     read_setting_chat,
@@ -490,7 +495,20 @@ def build_answer(user_id, question, request_id=""):
     })
 
     step_started_at = time.monotonic()
-    routed = route_message_for_ai(question, context=context)
+    if is_survey_context(context):
+        routed = process_survey_message(
+            user_id=user_id,
+            user_text=question,
+            context=context,
+        )
+    else:
+        routed = route_message_for_ai(question, context=context)
+        if routed.get("source") == "KHAO_SAT":
+            routed = start_survey(
+                user_id=user_id,
+                route_context=routed.get("context"),
+            )
+
     console_log(
         "INFO",
         "PERFORMANCE",
@@ -521,7 +539,16 @@ def build_answer(user_id, question, request_id=""):
 
     step_started_at = time.monotonic()
 
-    if source == "RESET":
+    clear_session_sources = {
+        "RESET",
+        "KHAO_SAT_COMPLETE",
+        "KHAO_SAT_CANCEL",
+        "KHAO_SAT_NO_ACTIVE",
+        "KHAO_SAT_ALREADY_SUBMITTED",
+        "KHAO_SAT_ERROR",
+    }
+
+    if source in clear_session_sources:
         clear_context(user_id)
     elif source == "WELCOME":
         save_context(user_id, {})
