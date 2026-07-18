@@ -373,6 +373,34 @@ def _match_menu_by_number(text):
     return None
 
 
+# Chức năng: Kiểm tra một dòng MENU có trỏ tới chức năng khảo sát hay không.
+# Vai trò: Nhận diện tuyến KHAO_SAT bằng SHEET_DU_LIEU trong Google Sheets.
+def _is_survey_menu(row):
+    sheet = get_first(
+        row or {},
+        "SHEET_DU_LIEU",
+        "SHEET DỮ LIỆU",
+        "SHEET",
+        default="",
+    )
+    return normalize_text(sheet) == "khao_sat"
+
+
+# Chức năng: Tìm dòng MENU khảo sát phù hợp theo số thứ tự, tên hoặc từ khóa.
+# Vai trò: Bổ sung tuyến KHAO_SAT mà không hardcode cách hỏi trong Python.
+def _match_survey_menu(text):
+    normalized = normalize_text(text)
+    if not normalized:
+        return None
+
+    if normalized.isdigit():
+        candidate = _match_menu_by_number(text) or search_menu(text)
+        return candidate if _is_survey_menu(candidate) else None
+
+    candidate = _match_exact_menu_by_data(text) or _match_menu_by_data(text)
+    return candidate if _is_survey_menu(candidate) else None
+
+
 # Chức năng: Kiểm tra lệnh mở menu hoặc bắt đầu phiên chat.
 # Vai trò: Nhóm lệnh kỹ thuật được phép giữ trong Python.
 def is_greeting(text):
@@ -1877,6 +1905,21 @@ def route_message(user_text, context=None):
 
     if is_greeting(text):
         return get_welcome_message(), "WELCOME", {}, ""
+
+    survey_menu = _match_survey_menu(text)
+    if survey_menu:
+        new_ctx = menu_context(survey_menu)
+        new_ctx.update({
+            "context_type": "KHAO_SAT_START",
+            "survey_id": get_first(
+                survey_menu,
+                "MA_KHAO_SAT",
+                "RELATED_ID",
+                default="",
+            ),
+            "last_route": "KHAO_SAT",
+        })
+        return "", "KHAO_SAT", new_ctx, ""
         
     selected = _select_from_suggestions(text, ctx)
     if selected:

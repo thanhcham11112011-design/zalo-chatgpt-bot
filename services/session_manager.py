@@ -69,6 +69,14 @@ def _normalize_context(context: Dict[str, Any]) -> Dict[str, Any]:
         "stage": "",
         "page": 1,
         "last_suggestions": [],
+        "context_type": "",
+        "survey_id": "",
+        "survey_name": "",
+        "survey_question_index": 0,
+        "survey_total_questions": 0,
+        "survey_answers": {},
+        "survey_receipt_id": "",
+        "survey_started_at": "",
     }
     for key, default in allowed_defaults.items():
         ctx.setdefault(key, default)
@@ -123,6 +131,14 @@ def save_context(user_id: Any, context: Dict[str, Any]) -> bool:
         "stage",
         "page",
         "last_suggestions",
+        "context_type",
+        "survey_id",
+        "survey_name",
+        "survey_question_index",
+        "survey_total_questions",
+        "survey_answers",
+        "survey_receipt_id",
+        "survey_started_at",
     )
 
     context_changed = any(

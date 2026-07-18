@@ -36,6 +36,9 @@ from config import (
     SHEET_FAQ,
     SHEET_LICH_SU_CHAT,
     SHEET_SESSION,
+    SHEET_SURVEY,
+    SHEET_SURVEY_QUESTIONS,
+    SHEET_SURVEY_RESULTS,
     SHEET_WEBHOOK_EVENT,
     WEBHOOK_EVENT_MAX_ROWS,
 )
@@ -66,6 +69,7 @@ _cache_lock = RLock()
 _sheet_locks_lock = Lock()
 _log_write_lock = Lock()
 _session_write_lock = Lock()
+_survey_result_write_lock = Lock()
 _webhook_event_write_lock = Lock()
 _sheet_health_lock = Lock()
 _sheet_health_cache_at = 0.0
@@ -1284,6 +1288,187 @@ def log_unknown(
 
 
 # =========================
+# SURVEY SHEETS
+# =========================
+
+SURVEY_HEADERS = [
+    "MA_KHAO_SAT",
+    "TEN_KHAO_SAT",
+    "MO_TA",
+    "LOI_MO_DAU",
+    "LOI_CAM_ON",
+    "TU_NGAY",
+    "DEN_NGAY",
+    "CHO_PHEP_GUI_LAI",
+    "TRANG_THAI",
+    "UU_TIEN",
+]
+
+SURVEY_QUESTION_HEADERS = [
+    "MA_KHAO_SAT",
+    "MA_CAU_HOI",
+    "THU_TU",
+    "NOI_DUNG",
+    "LOAI_CAU_HOI",
+    "PHUONG_AN",
+    "BAT_BUOC",
+    "GOI_Y_NHAP",
+    "TRANG_THAI",
+]
+
+SURVEY_RESULT_HEADERS = [
+    "MA_PHIEU",
+    "THOI_GIAN",
+    "USER_ID",
+    "MA_KHAO_SAT",
+    "MA_CAU_HOI",
+    "CAU_TRA_LOI",
+    "NOI_DUNG_TRA_LOI",
+    "KENH_THUC_HIEN",
+    "TRANG_THAI",
+]
+
+
+# Chức năng: Bảo đảm ba sheet kỹ thuật phục vụ khảo sát tồn tại đúng tiêu đề cột.
+# Vai trò: Chuẩn bị cấu trúc lưu cấu hình, câu hỏi và kết quả mà không chứa nội dung nghiệp vụ trong Python.
+def ensure_survey_sheets() -> Dict[str, Any]:
+    return {
+        SHEET_SURVEY: ensure_worksheet(
+            SHEET_SURVEY,
+            headers=SURVEY_HEADERS,
+            rows=500,
+            cols=len(SURVEY_HEADERS),
+        ),
+        SHEET_SURVEY_QUESTIONS: ensure_worksheet(
+            SHEET_SURVEY_QUESTIONS,
+            headers=SURVEY_QUESTION_HEADERS,
+            rows=2000,
+            cols=len(SURVEY_QUESTION_HEADERS),
+        ),
+        SHEET_SURVEY_RESULTS: ensure_worksheet(
+            SHEET_SURVEY_RESULTS,
+            headers=SURVEY_RESULT_HEADERS,
+            rows=10000,
+            cols=len(SURVEY_RESULT_HEADERS),
+        ),
+    }
+
+
+# Chức năng: Đọc các cuộc khảo sát đang hoạt động và còn hiệu lực từ Google Sheets.
+# Vai trò: Cung cấp nguồn cấu hình khảo sát duy nhất cho survey_service.py.
+def read_surveys() -> List[Dict[str, str]]:
+    return _read_active(SHEET_SURVEY)
+
+
+# Chức năng: Đọc các câu hỏi khảo sát đang hoạt động từ Google Sheets.
+# Vai trò: Cho phép thay đổi nội dung và thứ tự câu hỏi mà không sửa mã nguồn.
+def read_survey_questions() -> List[Dict[str, str]]:
+    return _read_active(SHEET_SURVEY_QUESTIONS)
+
+
+# Chức năng: Đọc các kết quả khảo sát đã ghi trong Google Sheets.
+# Vai trò: Kiểm tra phiếu đã hoàn thành và phục vụ thống kê mà không dùng cơ sở dữ liệu khác.
+def read_survey_results(use_cache: bool = True) -> List[Dict[str, str]]:
+    return read_sheet(
+        SHEET_SURVEY_RESULTS,
+        use_cache=use_cache,
+    )
+
+
+# Chức năng: Kiểm tra một người dùng đã hoàn thành khảo sát cụ thể hay chưa.
+# Vai trò: Áp dụng cấu hình cho phép hoặc không cho phép gửi lại phiếu khảo sát.
+def has_completed_survey(user_id: str, survey_id: str) -> bool:
+    clean_user_id = _clean_value(user_id)
+    clean_survey_id = _clean_value(survey_id)
+
+    if not clean_user_id or not clean_survey_id:
+        return False
+
+    for row in read_survey_results(use_cache=True):
+        if _clean_value(row.get("USER_ID")) != clean_user_id:
+            continue
+        if _clean_value(row.get("MA_KHAO_SAT")) != clean_survey_id:
+            continue
+
+        status = _clean_value(row.get("TRANG_THAI")).upper()
+        if not status or status in {
+            "HOAN_THANH",
+            "HOÀN_THÀNH",
+            "COMPLETED",
+            "DONE",
+        }:
+            return True
+
+    return False
+
+
+# Chức năng: Ghi nhiều câu trả lời của một phiếu khảo sát trong một lần gọi Google Sheets.
+# Vai trò: Giảm lượt ghi API, giữ cùng MA_PHIEU và cập nhật cache kết quả ngay sau khi lưu.
+def save_survey_results(rows: List[Dict[str, Any]]) -> bool:
+    clean_rows = []
+
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+
+        clean_row = {
+            header: _clean_value(row.get(header))
+            for header in SURVEY_RESULT_HEADERS
+        }
+
+        if clean_row.get("MA_PHIEU") and clean_row.get("MA_KHAO_SAT"):
+            clean_rows.append(clean_row)
+
+    if not clean_rows:
+        return False
+
+    try:
+        with _survey_result_write_lock:
+            worksheet = ensure_worksheet(
+                SHEET_SURVEY_RESULTS,
+                headers=SURVEY_RESULT_HEADERS,
+                rows=10000,
+                cols=len(SURVEY_RESULT_HEADERS),
+            )
+            existing_rows = read_sheet(
+                SHEET_SURVEY_RESULTS,
+                use_cache=True,
+            )
+            values = [
+                [row.get(header, "") for header in SURVEY_RESULT_HEADERS]
+                for row in clean_rows
+            ]
+            worksheet.append_rows(
+                values,
+                value_input_option="USER_ENTERED",
+            )
+            merged_rows = [
+                dict(row)
+                for row in existing_rows
+            ] + [
+                dict(row)
+                for row in clean_rows
+            ]
+
+            with _cache_lock:
+                _cache[SHEET_SURVEY_RESULTS] = (
+                    time.time(),
+                    merged_rows,
+                )
+
+        return True
+
+    except Exception as error:
+        console_log(
+            "ERROR",
+            "SHEET_SURVEY",
+            "Ghi KET_QUA_KHAO_SAT thất bại",
+            error=error,
+        )
+        return False
+
+
+# =========================
 # SESSION SHEET
 # =========================
 
@@ -1665,9 +1850,21 @@ def _build_sheet_health() -> Dict[str, Any]:
                 if len(row_numbers) > 1
             ]
 
+        survey_sheets = []
+        if SHEET_SURVEY in menu_references or SHEET_SURVEY in existing:
+            survey_sheets = [
+                SHEET_SURVEY,
+                SHEET_SURVEY_QUESTIONS,
+                SHEET_SURVEY_RESULTS,
+            ]
+
         required_sheets: List[str] = []
 
-        for sheet_name in [*core_sheets, *procedure_sheets]:
+        for sheet_name in [
+            *core_sheets,
+            *procedure_sheets,
+            *survey_sheets,
+        ]:
             sheet_name = _clean_value(sheet_name)
 
             if sheet_name and sheet_name not in required_sheets:
@@ -1731,6 +1928,31 @@ def _build_sheet_health() -> Dict[str, Any]:
                     },
                 ),
                 ("UU_TIEN", {"UU_TIEN", "ƯU_TIÊN", "UU TIEN", "ƯU TIÊN"}),
+            ],
+            SHEET_SURVEY: [
+                ("MA_KHAO_SAT", {"MA_KHAO_SAT", "MÃ_KHẢO_SÁT", "ID"}),
+                ("TEN_KHAO_SAT", {"TEN_KHAO_SAT", "TÊN_KHẢO_SÁT"}),
+                ("LOI_MO_DAU", {"LOI_MO_DAU", "LỜI_MỞ_ĐẦU"}),
+                ("LOI_CAM_ON", {"LOI_CAM_ON", "LỜI_CẢM_ƠN"}),
+                ("TRANG_THAI", {"TRANG_THAI", "TRẠNG_THÁI", "STATUS"}),
+            ],
+            SHEET_SURVEY_QUESTIONS: [
+                ("MA_KHAO_SAT", {"MA_KHAO_SAT", "MÃ_KHẢO_SÁT"}),
+                ("MA_CAU_HOI", {"MA_CAU_HOI", "MÃ_CÂU_HỎI", "ID"}),
+                ("THU_TU", {"THU_TU", "THỨ_TỰ"}),
+                ("NOI_DUNG", {"NOI_DUNG", "NỘI_DUNG", "CAU_HOI", "CÂU_HỎI"}),
+                ("LOAI_CAU_HOI", {"LOAI_CAU_HOI", "LOẠI_CÂU_HỎI"}),
+                ("BAT_BUOC", {"BAT_BUOC", "BẮT_BUỘC"}),
+                ("TRANG_THAI", {"TRANG_THAI", "TRẠNG_THÁI", "STATUS"}),
+            ],
+            SHEET_SURVEY_RESULTS: [
+                ("MA_PHIEU", {"MA_PHIEU", "MÃ_PHIẾU"}),
+                ("THOI_GIAN", {"THOI_GIAN", "THỜI_GIAN"}),
+                ("USER_ID", {"USER_ID"}),
+                ("MA_KHAO_SAT", {"MA_KHAO_SAT", "MÃ_KHẢO_SÁT"}),
+                ("MA_CAU_HOI", {"MA_CAU_HOI", "MÃ_CÂU_HỎI"}),
+                ("CAU_TRA_LOI", {"CAU_TRA_LOI", "CÂU_TRẢ_LỜI"}),
+                ("TRANG_THAI", {"TRANG_THAI", "TRẠNG_THÁI", "STATUS"}),
             ],
             SHEET_FAQ: [
                 ("CAU_HOI", {"CAU_HOI", "CÂU_HỎI", "CAU HOI", "CÂU HỎI"}),
@@ -1956,6 +2178,8 @@ def warm_runtime_cache(
         (SHEET_SETTING_AI, read_setting_ai),
         (SHEET_SETTING_CHAT, read_setting_chat),
         (SHEET_PROMPT, read_prompt),
+        (SHEET_SURVEY, read_surveys),
+        (SHEET_SURVEY_QUESTIONS, read_survey_questions),
     ]
 
     for label, reader in warmup_steps:
