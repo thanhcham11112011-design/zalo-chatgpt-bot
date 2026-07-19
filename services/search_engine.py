@@ -404,6 +404,172 @@ def _exact_keyword_score(user_text, keywords, base_score=0):
     return score
 
 
+# Chức năng: Chấm điểm chức vụ và từ khóa riêng của một dòng liên hệ trong câu hỏi.
+# Vai trò: Phân biệt các bản ghi trùng họ tên bằng dữ liệu TRA_CUU_LIEN_HE trước khi báo mơ hồ.
+def _contact_row_detail_score(user_text, row):
+    fields = _contact_field_values(row)
+    text_norm = _contact_normalize(user_text)
+    name_norm = _contact_normalize(
+        fields.get("name")
+    )
+    department_norm = _contact_normalize(
+        fields.get("bo_phan")
+    )
+    area_norm = _contact_normalize(
+        fields.get("tdp")
+    )
+
+    if not text_norm:
+        return 0
+
+    detail_box = f" {text_norm} "
+
+    if name_norm:
+        detail_box = detail_box.replace(
+            f" {name_norm} ",
+            " ",
+        )
+
+    for intent_phrase in (
+        "tra cuu so dien thoai",
+        "cho toi so dien thoai",
+        "xin so dien thoai",
+        "so dien thoai cua",
+        "tra cuu lien he",
+        "cho toi lien he",
+        "lien he",
+        "gap can bo",
+        "gap dong chi",
+        "gap dc",
+        "xin sdt",
+        "sdt cua",
+        "goi",
+        "gap",
+    ):
+        detail_box = detail_box.replace(
+            f" {intent_phrase} ",
+            " ",
+        )
+
+    detail_norm = re.sub(
+        r"\s+",
+        " ",
+        detail_box,
+    ).strip()
+    detail_tokens = [
+        token
+        for token in detail_norm.split()
+        if token
+    ]
+
+    if not detail_tokens:
+        return 0
+
+    phrase_groups = [
+        (fields.get("role"), 100000),
+    ]
+    phrase_groups.extend(
+        (keyword, 50000)
+        for keyword in _contact_split_keywords(
+            fields.get("keywords")
+        )
+    )
+    best_score = 0
+
+    for phrase, base_score in phrase_groups:
+        phrase_norm = _contact_normalize(phrase)
+
+        if not phrase_norm:
+            continue
+
+        phrase_box = f" {phrase_norm} "
+
+        for excluded_value in (
+            name_norm,
+            department_norm,
+            area_norm,
+        ):
+            if not excluded_value:
+                continue
+
+            phrase_box = phrase_box.replace(
+                f" {excluded_value} ",
+                " ",
+            )
+
+        phrase_norm = re.sub(
+            r"\s+",
+            " ",
+            phrase_box,
+        ).strip()
+        phrase_tokens = [
+            token
+            for token in phrase_norm.split()
+            if token
+        ]
+
+        if not phrase_tokens:
+            continue
+
+        longest_run = 0
+        longest_chars = 0
+
+        for user_index in range(len(detail_tokens)):
+            for phrase_index in range(len(phrase_tokens)):
+                run_length = 0
+                run_chars = 0
+
+                while (
+                    user_index + run_length
+                    < len(detail_tokens)
+                    and phrase_index + run_length
+                    < len(phrase_tokens)
+                    and detail_tokens[
+                        user_index + run_length
+                    ] == phrase_tokens[
+                        phrase_index + run_length
+                    ]
+                ):
+                    run_chars += len(
+                        detail_tokens[
+                            user_index + run_length
+                        ]
+                    )
+                    run_length += 1
+
+                if (
+                    run_length > longest_run
+                    or (
+                        run_length == longest_run
+                        and run_chars > longest_chars
+                    )
+                ):
+                    longest_run = run_length
+                    longest_chars = run_chars
+
+        valid_signal = (
+            longest_run >= 2
+            or (
+                longest_run == 1
+                and longest_chars >= 4
+            )
+        )
+
+        if not valid_signal:
+            continue
+
+        current_score = (
+            base_score
+            + longest_run * 1000
+            + longest_chars
+        )
+
+        if current_score > best_score:
+            best_score = current_score
+
+    return best_score
+
+
 @lru_cache(maxsize=10000)
 def _name_token_score(user_text, name):
     # Chức năng: Chấm điểm khi câu hỏi chứa đúng họ tên hoặc nhiều từ trong họ tên.
@@ -493,6 +659,14 @@ def _detect_contact_department(user_text, rows):
         area_norm = _contact_normalize(
             fields.get("tdp")
         )
+        name_norm = _contact_normalize(
+            fields.get("name")
+        )
+        name_tokens = set(
+            token
+            for token in name_norm.split()
+            if token
+        )
 
         if not department_norm:
             continue
@@ -511,6 +685,28 @@ def _detect_contact_department(user_text, rows):
             keyword_norm = _contact_normalize(keyword)
 
             if not keyword_norm:
+                continue
+
+            keyword_tokens = set(
+                token
+                for token in keyword_norm.split()
+                if token
+            )
+            keyword_box = f" {keyword_norm} "
+            name_box = f" {name_norm} "
+
+            if (
+                name_norm
+                and (
+                    name_box in keyword_box
+                    or (
+                        keyword_tokens
+                        and keyword_tokens.issubset(
+                            name_tokens
+                        )
+                    )
+                )
+            ):
                 continue
 
             department_keyword_norm = keyword_norm
@@ -656,9 +852,9 @@ def _detect_contact_area(user_text, rows):
     return ranked[0][1]
 
 
-# Chức năng: Phát hiện yêu cầu liên hệ chỉ nêu một thành phần họ tên có trong dữ liệu liên hệ.
-# Vai trò: Chặn tên riêng bị hiểu nhầm thành bộ phận, địa bàn hoặc từ khóa trước khi tìm liên hệ.
-def detect_contact_partial_name(
+# Chức năng: Phân tích tên riêng một từ và họ tên đầy đủ bị trùng trong yêu cầu liên hệ.
+# Vai trò: Xác định mơ hồ từ dữ liệu TRA_CUU_LIEN_HE trước khi bộ máy tìm kiếm lọc kết quả.
+def analyze_contact_name_ambiguity(
     user_text,
     allow_without_intent=False,
 ):
@@ -695,6 +891,152 @@ def detect_contact_partial_name(
         for row in read_lien_he()
         if _active_status(row)
     ]
+    full_name_matches = {}
+
+    for row in active_rows:
+        fields = _contact_field_values(row)
+        name = str(fields.get("name") or "").strip()
+        name_norm = _contact_normalize(name)
+        name_tokens = [
+            token
+            for token in name_norm.split()
+            if token
+        ]
+
+        if len(name_tokens) < 2:
+            continue
+
+        if f" {name_norm} " not in text_box:
+            continue
+
+        full_name_matches.setdefault(
+            name_norm,
+            [],
+        ).append(row)
+
+    if full_name_matches:
+        longest_length = max(
+            len(name_norm.split())
+            for name_norm in full_name_matches
+        )
+        longest_names = [
+            name_norm
+            for name_norm in full_name_matches
+            if len(name_norm.split()) == longest_length
+        ]
+        selected_name = sorted(
+            longest_names,
+            key=lambda value: (
+                -len(value),
+                value,
+            ),
+        )[0]
+        candidates = list(
+            full_name_matches.get(selected_name) or []
+        )
+        department = _detect_contact_department(
+            user_text,
+            active_rows,
+        )
+        area = _detect_contact_area(
+            user_text,
+            active_rows,
+        )
+        department_norm = _contact_normalize(department)
+        area_norm = _contact_normalize(area)
+
+        if department_norm:
+            candidates = [
+                row
+                for row in candidates
+                if _contact_normalize(
+                    _contact_field_values(row).get("bo_phan")
+                ) == department_norm
+            ]
+
+        if area_norm:
+            candidates = [
+                row
+                for row in candidates
+                if _contact_normalize(
+                    _contact_field_values(row).get("tdp")
+                ) == area_norm
+            ]
+
+        if len(candidates) > 1:
+            detail_scores = [
+                (
+                    _contact_row_detail_score(
+                        user_text,
+                        row,
+                    ),
+                    row,
+                )
+                for row in candidates
+            ]
+            best_detail_score = max(
+                score
+                for score, row in detail_scores
+            )
+
+            if best_detail_score > 0:
+                best_candidates = [
+                    row
+                    for score, row in detail_scores
+                    if score == best_detail_score
+                ]
+
+                if len(best_candidates) < len(candidates):
+                    candidates = best_candidates
+
+        unique_candidates = []
+        seen = set()
+
+        for row in candidates:
+            fields = _contact_field_values(row)
+            row_key = (
+                _contact_normalize(fields.get("name")),
+                _contact_normalize(fields.get("bo_phan")),
+                _contact_normalize(fields.get("tdp")),
+                _contact_normalize(fields.get("role")),
+                re.sub(r"\D+", "", str(fields.get("phone") or "")),
+            )
+
+            if row_key in seen:
+                continue
+
+            seen.add(row_key)
+            unique_candidates.append(row)
+
+        if len(unique_candidates) > 1:
+            return {
+                "status": "DUPLICATE_FULL_NAME",
+                "full_name": selected_name,
+                "department": department,
+                "area": area,
+                "candidates": unique_candidates,
+                "match_count": len(unique_candidates),
+            }
+
+        if len(unique_candidates) == 1:
+            return {
+                "status": "RESOLVED_FULL_NAME",
+                "full_name": selected_name,
+                "department": department,
+                "area": area,
+                "candidates": unique_candidates,
+                "match_count": 1,
+            }
+
+        return {
+            "status": "FULL_NAME_NOT_RESOLVED",
+            "full_name": selected_name,
+            "department": department,
+            "area": area,
+            "candidates": [],
+            "match_count": 0,
+        }
+
     name_index = {}
     name_token_forms = {}
     removable_values = set()
@@ -711,9 +1053,6 @@ def detect_contact_partial_name(
         raw_name_tokens = _tokenize_keep_accents(name)
 
         if len(name_tokens) >= 2:
-            if f" {name_norm} " in text_box:
-                return None
-
             given_name_token = name_tokens[-1]
 
             if len(given_name_token) >= 2:
@@ -773,7 +1112,7 @@ def detect_contact_partial_name(
         "can", "bo", "dong", "chi", "dc", "giup",
         "ho", "tro", "voi", "nhe", "a", "duoc", "khong",
         "tra", "cuu", "lien", "he", "so", "dien", "thoai",
-        "sdt", "phu", "trach",
+        "sdt", "phu", "trach", "anh", "ong", "ba", "co", "chu",
     }
     residual_tokens = [
         token
@@ -781,21 +1120,6 @@ def detect_contact_partial_name(
         if len(token) >= 2
         and token not in generic_tokens
     ]
-    honorific_tokens = {
-        "anh",
-        "chi",
-        "ong",
-        "ba",
-        "co",
-        "chu",
-    }
-
-    while (
-        len(residual_tokens) > 1
-        and residual_tokens[0] in honorific_tokens
-    ):
-        residual_tokens.pop(0)
-
     matched_tokens = []
 
     for token in residual_tokens:
@@ -842,7 +1166,28 @@ def detect_contact_partial_name(
         "name_token": name_token,
         "match_count": len(matched_names),
         "matched_names": matched_names,
+        "candidates": [],
     }
+
+
+# Chức năng: Giữ tương thích cho vùng code cũ chỉ kiểm tra tên riêng một từ.
+# Vai trò: Trả kết quả PARTIAL_NAME từ bộ phân tích mơ hồ tên liên hệ mới.
+def detect_contact_partial_name(
+    user_text,
+    allow_without_intent=False,
+):
+    result = analyze_contact_name_ambiguity(
+        user_text,
+        allow_without_intent=allow_without_intent,
+    )
+
+    if not result:
+        return None
+
+    if result.get("status") != "PARTIAL_NAME":
+        return None
+
+    return result
 
 
 # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE theo tên, chức danh, bộ phận và địa bàn.
@@ -973,6 +1318,32 @@ def search_lien_he(
         )
 
     if exact_name_results:
+        if len(exact_name_results) > 1:
+            detail_scores = [
+                (
+                    _contact_row_detail_score(
+                        user_text,
+                        row,
+                    ),
+                    row,
+                )
+                for row in exact_name_results
+            ]
+            best_detail_score = max(
+                score
+                for score, row in detail_scores
+            )
+
+            if best_detail_score > 0:
+                best_results = [
+                    row
+                    for score, row in detail_scores
+                    if score == best_detail_score
+                ]
+
+                if len(best_results) < len(exact_name_results):
+                    exact_name_results = best_results
+
         exact_name_results.sort(
             key=lambda row: safe_int(
                 row.get("_UU_TIEN", 999)
