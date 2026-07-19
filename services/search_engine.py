@@ -656,6 +656,195 @@ def _detect_contact_area(user_text, rows):
     return ranked[0][1]
 
 
+# Chức năng: Phát hiện yêu cầu liên hệ chỉ nêu một thành phần họ tên có trong dữ liệu liên hệ.
+# Vai trò: Chặn tên riêng bị hiểu nhầm thành bộ phận, địa bàn hoặc từ khóa trước khi tìm liên hệ.
+def detect_contact_partial_name(
+    user_text,
+    allow_without_intent=False,
+):
+    text_norm = _contact_normalize(user_text)
+
+    if not text_norm:
+        return None
+
+    intent_phrases = (
+        "tra cuu lien he",
+        "tra cuu so dien thoai",
+        "xin so dien thoai",
+        "cho toi so dien thoai",
+        "so dien thoai cua",
+        "xin sdt",
+        "sdt cua",
+        "lien he",
+        "gap can bo",
+        "gap dong chi",
+        "gap dc",
+        "gap",
+    )
+    text_box = f" {text_norm} "
+    has_contact_intent = any(
+        f" {phrase} " in text_box
+        for phrase in intent_phrases
+    )
+
+    if not has_contact_intent and not allow_without_intent:
+        return None
+
+    active_rows = [
+        row
+        for row in read_lien_he()
+        if _active_status(row)
+    ]
+    name_index = {}
+    name_token_forms = {}
+    removable_values = set()
+
+    for row in active_rows:
+        fields = _contact_field_values(row)
+        name = str(fields.get("name") or "").strip()
+        name_norm = _contact_normalize(name)
+        name_tokens = [
+            token
+            for token in name_norm.split()
+            if token
+        ]
+        raw_name_tokens = _tokenize_keep_accents(name)
+
+        if len(name_tokens) >= 2:
+            if f" {name_norm} " in text_box:
+                return None
+
+            given_name_token = name_tokens[-1]
+
+            if len(given_name_token) >= 2:
+                name_index.setdefault(
+                    given_name_token,
+                    set(),
+                ).add(name)
+
+                if raw_name_tokens:
+                    name_token_forms.setdefault(
+                        given_name_token,
+                        set(),
+                    ).add(raw_name_tokens[-1])
+
+        for field_name in (
+            "bo_phan",
+            "tdp",
+            "role",
+        ):
+            field_norm = _contact_normalize(
+                fields.get(field_name)
+            )
+
+            if field_norm:
+                removable_values.add(field_norm)
+
+    residual_box = text_box
+
+    for value in sorted(
+        removable_values,
+        key=lambda item: (
+            len(item.split()),
+            len(item),
+        ),
+        reverse=True,
+    ):
+        residual_box = residual_box.replace(
+            f" {value} ",
+            " ",
+        )
+
+    for phrase in sorted(
+        intent_phrases,
+        key=lambda item: (
+            len(item.split()),
+            len(item),
+        ),
+        reverse=True,
+    ):
+        residual_box = residual_box.replace(
+            f" {phrase} ",
+            " ",
+        )
+
+    generic_tokens = {
+        "cho", "toi", "xin", "thong", "tin", "cua",
+        "can", "bo", "dong", "chi", "dc", "giup",
+        "ho", "tro", "voi", "nhe", "a", "duoc", "khong",
+        "tra", "cuu", "lien", "he", "so", "dien", "thoai",
+        "sdt", "phu", "trach",
+    }
+    residual_tokens = [
+        token
+        for token in residual_box.split()
+        if len(token) >= 2
+        and token not in generic_tokens
+    ]
+    honorific_tokens = {
+        "anh",
+        "chi",
+        "ong",
+        "ba",
+        "co",
+        "chu",
+    }
+
+    while (
+        len(residual_tokens) > 1
+        and residual_tokens[0] in honorific_tokens
+    ):
+        residual_tokens.pop(0)
+
+    matched_tokens = []
+
+    for token in residual_tokens:
+        if token not in name_index:
+            continue
+
+        if token not in matched_tokens:
+            matched_tokens.append(token)
+
+    if len(matched_tokens) != 1:
+        return None
+
+    name_token = matched_tokens[0]
+    raw_user_tokens = [
+        token
+        for token in _tokenize_keep_accents(user_text)
+        if _contact_normalize(token) == name_token
+    ]
+    accented_user_tokens = [
+        token
+        for token in raw_user_tokens
+        if _has_vietnamese_diacritic(token)
+    ]
+
+    if (
+        accented_user_tokens
+        and not any(
+            token in name_token_forms.get(
+                name_token,
+                set(),
+            )
+            for token in accented_user_tokens
+        )
+    ):
+        return None
+
+    matched_names = sorted(
+        name_index.get(name_token, set()),
+        key=_contact_normalize,
+    )
+
+    return {
+        "status": "PARTIAL_NAME",
+        "name_token": name_token,
+        "match_count": len(matched_names),
+        "matched_names": matched_names,
+    }
+
+
 # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE theo tên, chức danh, bộ phận và địa bàn.
 # Vai trò: Lọc đúng địa bàn đã nêu trước khi chấm điểm, không để các TDP khác lọt vào kết quả.
 def search_lien_he(

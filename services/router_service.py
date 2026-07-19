@@ -25,6 +25,7 @@ from services.search_engine import (
     format_multiple_results,
     find_lien_he_by_ten_co_quan,
     detect_bad_language,
+    detect_contact_partial_name,
 )
 
 
@@ -1401,6 +1402,32 @@ def _contact_department_guide(department):
 
     return ""
     
+# Chức năng: Tạo phản hồi khi tên liên hệ chưa đầy đủ hoặc trùng nhiều bản ghi.
+# Vai trò: Đọc CONTACT_AMBIGUOUS_MESSAGE từ SETTING_CHAT và giữ ngữ cảnh tra cứu liên hệ.
+def _contact_ambiguous_reply(reason=""):
+    message = _chat_setting(
+        "CONTACT_AMBIGUOUS_MESSAGE",
+        get_contact_lookup_message(),
+    )
+    new_ctx = {
+        "stage": "contact_lookup",
+        "sheet": "TRA_CUU_LIEN_HE",
+        "topic": "Tra cứu liên hệ",
+        "contact_ambiguity": str(reason or "").strip(),
+        "procedure_id": "",
+        "procedure_name": "",
+        "last_suggestions": [],
+        "last_route": "CONTACT_AMBIGUOUS",
+    }
+
+    return (
+        message,
+        "CONTACT_AMBIGUOUS",
+        new_ctx,
+        "",
+    )
+
+
 # Chức năng: Xử lý toàn bộ kết quả liên hệ phù hợp và hướng dẫn làm rõ khi cần.
 # Vai trò: Lọc chính xác địa bàn TDP rồi chuyển đầy đủ kết quả sang tầng gửi Zalo.
 def _reply_contact_results(
@@ -1469,6 +1496,39 @@ def _reply_contact_results(
             for word_count, text_length, row in area_candidates
             if (word_count, text_length) == best_area_rank
         ]
+
+    exact_name_groups = {}
+
+    for row in results:
+        note = str(row.get("_NOTE") or "")
+
+        if "NAME_MATCH_EXACT" not in note:
+            continue
+
+        full_name = get_first(
+            row,
+            "TEN_CO_QUAN",
+            "TÊN_CƠ_QUAN",
+            "HO_TEN",
+            "HỌ_TÊN",
+        )
+        full_name_norm = normalize_text(full_name)
+
+        if not full_name_norm:
+            continue
+
+        exact_name_groups.setdefault(
+            full_name_norm,
+            [],
+        ).append(row)
+
+    if any(
+        len(group_rows) > 1
+        for group_rows in exact_name_groups.values()
+    ):
+        return _contact_ambiguous_reply(
+            "DUPLICATE_FULL_NAME"
+        )
 
     department = (
         detect_bo_phan_contact(text)
@@ -2015,6 +2075,24 @@ def route_message(user_text, context=None):
         result_count=len(faq or []),
     )
     
+    stage_started_at = time.monotonic()
+    partial_contact_name = detect_contact_partial_name(
+        text,
+        allow_without_intent=(
+            ctx.get("stage") == "contact_lookup"
+        ),
+    )
+    _log_router_performance(
+        "CONTACT_PARTIAL_NAME",
+        stage_started_at,
+        matched=bool(partial_contact_name),
+    )
+
+    if partial_contact_name:
+        return _contact_ambiguous_reply(
+            partial_contact_name.get("status")
+        )
+
     contact_analysis = {}
     stage_started_at = time.monotonic()
     contact_results = search_lien_he(
