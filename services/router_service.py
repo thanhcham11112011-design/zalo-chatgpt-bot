@@ -25,7 +25,7 @@ from services.search_engine import (
     format_multiple_results,
     find_lien_he_by_ten_co_quan,
     detect_bad_language,
-    detect_contact_partial_name,
+    analyze_contact_name_ambiguity,
 )
 
 
@@ -1402,18 +1402,229 @@ def _contact_department_guide(department):
 
     return ""
     
-# Chức năng: Tạo phản hồi khi tên liên hệ chưa đầy đủ hoặc trùng nhiều bản ghi.
-# Vai trò: Đọc CONTACT_AMBIGUOUS_MESSAGE từ SETTING_CHAT và giữ ngữ cảnh tra cứu liên hệ.
-def _contact_ambiguous_reply(reason=""):
-    message = _chat_setting(
-        "CONTACT_AMBIGUOUS_MESSAGE",
-        get_contact_lookup_message(),
+# Chức năng: Tạo danh sách rút gọn để phân biệt các bản ghi trùng họ tên.
+# Vai trò: Chỉ hiển thị họ tên, bộ phận, địa bàn và chức năng cần thiết, không lộ số điện thoại.
+def _contact_duplicate_options(candidates, limit=5):
+    rows = []
+    seen = set()
+
+    for row in candidates or []:
+        name = str(
+            get_first(
+                row,
+                "TEN_CO_QUAN",
+                "TÊN_CƠ_QUAN",
+                "HO_TEN",
+                "HỌ_TÊN",
+            )
+            or ""
+        ).strip()
+        department = str(
+            get_first(row, "BO_PHAN", "BỘ_PHẬN")
+            or ""
+        ).strip()
+        area = str(
+            get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
+            or ""
+        ).strip()
+        role = str(
+            get_first(
+                row,
+                "CHUC_NANG",
+                "CHỨC_NĂNG",
+                "CHUC_VU",
+                "CHỨC_VỤ",
+            )
+            or ""
+        ).strip()
+        phone = str(
+            get_first(
+                row,
+                "SO_DIEN_THOAI",
+                "ĐIỆN_THOẠI",
+                "DIEN_THOAI",
+                "PHONE",
+            )
+            or ""
+        ).strip()
+        row_key = (
+            normalize_text(name),
+            normalize_text(department),
+            normalize_text(area),
+            normalize_text(role),
+            "".join(ch for ch in phone if ch.isdigit()),
+        )
+
+        if not name or row_key in seen:
+            continue
+
+        seen.add(row_key)
+        rows.append(
+            {
+                "name": name,
+                "department": department,
+                "area": area,
+                "role": role,
+            }
+        )
+
+    rows.sort(
+        key=lambda item: (
+            normalize_text(item.get("name")),
+            normalize_text(item.get("department")),
+            normalize_text(item.get("area")),
+            normalize_text(item.get("role")),
+        )
     )
+    lines = []
+
+    for index, item in enumerate(rows[:limit], start=1):
+        details = []
+
+        if item.get("department"):
+            details.append(item["department"])
+
+        if item.get("area"):
+            details.append(item["area"])
+
+        if (
+            item.get("role")
+            and normalize_text(item["role"])
+            not in {
+                normalize_text(item.get("department")),
+                normalize_text(item.get("area")),
+            }
+        ):
+            details.append(item["role"])
+
+        line = f"{index}. {item['name']}"
+
+        if details:
+            line += " — " + " — ".join(details)
+
+        lines.append(line)
+
+    return {
+        "lines": lines,
+        "total": len(rows),
+        "name": rows[0]["name"] if rows else "",
+        "hidden": max(0, len(rows) - limit),
+    }
+
+
+# Chức năng: Lấy các bản ghi trùng họ tên chính xác từ kết quả tra cứu liên hệ.
+# Vai trò: Ưu tiên danh sách NAME_MATCH_EXACT trước khi xử lý tên riêng một từ.
+def _contact_exact_duplicate_rows(results):
+    exact_name_groups = {}
+
+    for row in results or []:
+        note = str(row.get("_NOTE") or "")
+
+        if "NAME_MATCH_EXACT" not in note:
+            continue
+
+        full_name = get_first(
+            row,
+            "TEN_CO_QUAN",
+            "TÊN_CƠ_QUAN",
+            "HO_TEN",
+            "HỌ_TÊN",
+        )
+        full_name_norm = normalize_text(full_name)
+        row_key = (
+            full_name_norm,
+            normalize_text(
+                get_first(row, "BO_PHAN", "BỘ_PHẬN")
+            ),
+            normalize_text(
+                get_first(row, "TDP", "DIA_BAN", "ĐỊA_BÀN")
+            ),
+            normalize_text(
+                get_first(
+                    row,
+                    "CHUC_NANG",
+                    "CHỨC_NĂNG",
+                    "CHUC_VU",
+                    "CHỨC_VỤ",
+                )
+            ),
+            "".join(
+                ch
+                for ch in str(
+                    get_first(
+                        row,
+                        "SO_DIEN_THOAI",
+                        "ĐIỆN_THOẠI",
+                        "DIEN_THOAI",
+                        "PHONE",
+                    )
+                    or ""
+                )
+                if ch.isdigit()
+            ),
+        )
+
+        if not full_name_norm:
+            continue
+
+        exact_name_groups.setdefault(
+            full_name_norm,
+            {},
+        )[row_key] = row
+
+    duplicate_rows = []
+
+    for group_rows in exact_name_groups.values():
+        unique_rows = list(group_rows.values())
+
+        if len(unique_rows) > 1:
+            duplicate_rows.extend(unique_rows)
+
+    return duplicate_rows
+
+
+# Chức năng: Tạo phản hồi khi tên riêng chưa đầy đủ hoặc họ tên đầy đủ bị trùng.
+# Vai trò: Tên riêng đọc SETTING_CHAT; họ tên trùng hiển thị danh sách rút gọn từ TRA_CUU_LIEN_HE.
+def _contact_ambiguous_reply(reason="", candidates=None):
+    reason_value = str(reason or "").strip().upper()
+    option_data = _contact_duplicate_options(candidates)
+
+    if reason_value == "PARTIAL_NAME":
+        message = _chat_setting(
+            "CONTACT_AMBIGUOUS_MESSAGE",
+            get_contact_lookup_message(),
+        )
+    elif option_data.get("lines"):
+        total = option_data.get("total", 0)
+        target_name = option_data.get("name", "")
+        message = (
+            f"🔎 BOT tìm thấy {total} thông tin trùng họ tên"
+            + (f" {target_name}" if target_name else "")
+            + ":\n\n"
+            + "\n".join(option_data["lines"])
+        )
+
+        if option_data.get("hidden"):
+            message += (
+                f"\n... và {option_data['hidden']} trường hợp khác."
+            )
+
+        message += (
+            "\n\nQuý công dân vui lòng nhập thêm bộ phận "
+            "hoặc tổ dân phố để BOT xác định đúng người cần liên hệ."
+        )
+    else:
+        message = _chat_setting(
+            "CONTACT_AMBIGUOUS_MESSAGE",
+            get_contact_lookup_message(),
+        )
+
     new_ctx = {
         "stage": "contact_lookup",
         "sheet": "TRA_CUU_LIEN_HE",
         "topic": "Tra cứu liên hệ",
-        "contact_ambiguity": str(reason or "").strip(),
+        "contact_ambiguity": reason_value,
+        "contact_candidate_count": option_data.get("total", 0),
         "procedure_id": "",
         "procedure_name": "",
         "last_suggestions": [],
@@ -1497,37 +1708,14 @@ def _reply_contact_results(
             if (word_count, text_length) == best_area_rank
         ]
 
-    exact_name_groups = {}
+    duplicate_name_rows = _contact_exact_duplicate_rows(
+        results
+    )
 
-    for row in results:
-        note = str(row.get("_NOTE") or "")
-
-        if "NAME_MATCH_EXACT" not in note:
-            continue
-
-        full_name = get_first(
-            row,
-            "TEN_CO_QUAN",
-            "TÊN_CƠ_QUAN",
-            "HO_TEN",
-            "HỌ_TÊN",
-        )
-        full_name_norm = normalize_text(full_name)
-
-        if not full_name_norm:
-            continue
-
-        exact_name_groups.setdefault(
-            full_name_norm,
-            [],
-        ).append(row)
-
-    if any(
-        len(group_rows) > 1
-        for group_rows in exact_name_groups.values()
-    ):
+    if duplicate_name_rows:
         return _contact_ambiguous_reply(
-            "DUPLICATE_FULL_NAME"
+            "DUPLICATE_FULL_NAME",
+            duplicate_name_rows,
         )
 
     department = (
@@ -2075,24 +2263,6 @@ def route_message(user_text, context=None):
         result_count=len(faq or []),
     )
     
-    stage_started_at = time.monotonic()
-    partial_contact_name = detect_contact_partial_name(
-        text,
-        allow_without_intent=(
-            ctx.get("stage") == "contact_lookup"
-        ),
-    )
-    _log_router_performance(
-        "CONTACT_PARTIAL_NAME",
-        stage_started_at,
-        matched=bool(partial_contact_name),
-    )
-
-    if partial_contact_name:
-        return _contact_ambiguous_reply(
-            partial_contact_name.get("status")
-        )
-
     contact_analysis = {}
     stage_started_at = time.monotonic()
     contact_results = search_lien_he(
@@ -2108,6 +2278,44 @@ def route_message(user_text, context=None):
         stage_started_at,
         result_count=len(contact_results),
     )
+
+    duplicate_name_rows = _contact_exact_duplicate_rows(
+        contact_results
+    )
+
+    if duplicate_name_rows:
+        return _contact_ambiguous_reply(
+            "DUPLICATE_FULL_NAME",
+            duplicate_name_rows,
+        )
+
+    stage_started_at = time.monotonic()
+    contact_name_analysis = analyze_contact_name_ambiguity(
+        text,
+        allow_without_intent=(
+            ctx.get("stage") == "contact_lookup"
+        ),
+    )
+    contact_name_status = str(
+        (contact_name_analysis or {}).get("status") or ""
+    ).strip().upper()
+    _log_router_performance(
+        "CONTACT_NAME_AMBIGUITY",
+        stage_started_at,
+        matched=bool(contact_name_analysis),
+        status=contact_name_status,
+    )
+
+    if contact_name_status == "PARTIAL_NAME":
+        return _contact_ambiguous_reply(
+            "PARTIAL_NAME"
+        )
+
+    if contact_name_status == "DUPLICATE_FULL_NAME":
+        return _contact_ambiguous_reply(
+            "DUPLICATE_FULL_NAME",
+            contact_name_analysis.get("candidates") or [],
+        )
 
     stage_started_at = time.monotonic()
     contact_intent = is_contact_question(
