@@ -493,14 +493,6 @@ def _detect_contact_department(user_text, rows):
         area_norm = _contact_normalize(
             fields.get("tdp")
         )
-        name_norm = _contact_normalize(
-            fields.get("name")
-        )
-        name_tokens = set(
-            token
-            for token in name_norm.split()
-            if token
-        )
 
         if not department_norm:
             continue
@@ -519,28 +511,6 @@ def _detect_contact_department(user_text, rows):
             keyword_norm = _contact_normalize(keyword)
 
             if not keyword_norm:
-                continue
-
-            keyword_tokens = set(
-                token
-                for token in keyword_norm.split()
-                if token
-            )
-            keyword_box = f" {keyword_norm} "
-            name_box = f" {name_norm} "
-
-            if (
-                name_norm
-                and (
-                    name_box in keyword_box
-                    or (
-                        keyword_tokens
-                        and keyword_tokens.issubset(
-                            name_tokens
-                        )
-                    )
-                )
-            ):
                 continue
 
             department_keyword_norm = keyword_norm
@@ -686,9 +656,9 @@ def _detect_contact_area(user_text, rows):
     return ranked[0][1]
 
 
-# Chức năng: Phân tích tên riêng một từ và họ tên đầy đủ bị trùng trong yêu cầu liên hệ.
-# Vai trò: Xác định mơ hồ từ dữ liệu TRA_CUU_LIEN_HE trước khi bộ máy tìm kiếm lọc kết quả.
-def analyze_contact_name_ambiguity(
+# Chức năng: Phát hiện yêu cầu liên hệ chỉ nêu một thành phần họ tên có trong dữ liệu liên hệ.
+# Vai trò: Chặn tên riêng bị hiểu nhầm thành bộ phận, địa bàn hoặc từ khóa trước khi tìm liên hệ.
+def detect_contact_partial_name(
     user_text,
     allow_without_intent=False,
 ):
@@ -725,126 +695,6 @@ def analyze_contact_name_ambiguity(
         for row in read_lien_he()
         if _active_status(row)
     ]
-    full_name_matches = {}
-
-    for row in active_rows:
-        fields = _contact_field_values(row)
-        name = str(fields.get("name") or "").strip()
-        name_norm = _contact_normalize(name)
-        name_tokens = [
-            token
-            for token in name_norm.split()
-            if token
-        ]
-
-        if len(name_tokens) < 2:
-            continue
-
-        if f" {name_norm} " not in text_box:
-            continue
-
-        full_name_matches.setdefault(
-            name_norm,
-            [],
-        ).append(row)
-
-    if full_name_matches:
-        longest_length = max(
-            len(name_norm.split())
-            for name_norm in full_name_matches
-        )
-        longest_names = [
-            name_norm
-            for name_norm in full_name_matches
-            if len(name_norm.split()) == longest_length
-        ]
-        selected_name = sorted(
-            longest_names,
-            key=lambda value: (
-                -len(value),
-                value,
-            ),
-        )[0]
-        candidates = list(
-            full_name_matches.get(selected_name) or []
-        )
-        department = _detect_contact_department(
-            user_text,
-            active_rows,
-        )
-        area = _detect_contact_area(
-            user_text,
-            active_rows,
-        )
-        department_norm = _contact_normalize(department)
-        area_norm = _contact_normalize(area)
-
-        if department_norm:
-            candidates = [
-                row
-                for row in candidates
-                if _contact_normalize(
-                    _contact_field_values(row).get("bo_phan")
-                ) == department_norm
-            ]
-
-        if area_norm:
-            candidates = [
-                row
-                for row in candidates
-                if _contact_normalize(
-                    _contact_field_values(row).get("tdp")
-                ) == area_norm
-            ]
-
-        unique_candidates = []
-        seen = set()
-
-        for row in candidates:
-            fields = _contact_field_values(row)
-            row_key = (
-                _contact_normalize(fields.get("name")),
-                _contact_normalize(fields.get("bo_phan")),
-                _contact_normalize(fields.get("tdp")),
-                _contact_normalize(fields.get("role")),
-                re.sub(r"\D+", "", str(fields.get("phone") or "")),
-            )
-
-            if row_key in seen:
-                continue
-
-            seen.add(row_key)
-            unique_candidates.append(row)
-
-        if len(unique_candidates) > 1:
-            return {
-                "status": "DUPLICATE_FULL_NAME",
-                "full_name": selected_name,
-                "department": department,
-                "area": area,
-                "candidates": unique_candidates,
-                "match_count": len(unique_candidates),
-            }
-
-        if len(unique_candidates) == 1:
-            return {
-                "status": "RESOLVED_FULL_NAME",
-                "full_name": selected_name,
-                "department": department,
-                "area": area,
-                "candidates": unique_candidates,
-                "match_count": 1,
-            }
-
-        return {
-            "status": "FULL_NAME_NOT_RESOLVED",
-            "full_name": selected_name,
-            "department": department,
-            "area": area,
-            "candidates": [],
-            "match_count": 0,
-        }
-
     name_index = {}
     name_token_forms = {}
     removable_values = set()
@@ -861,6 +711,9 @@ def analyze_contact_name_ambiguity(
         raw_name_tokens = _tokenize_keep_accents(name)
 
         if len(name_tokens) >= 2:
+            if f" {name_norm} " in text_box:
+                return None
+
             given_name_token = name_tokens[-1]
 
             if len(given_name_token) >= 2:
@@ -920,7 +773,7 @@ def analyze_contact_name_ambiguity(
         "can", "bo", "dong", "chi", "dc", "giup",
         "ho", "tro", "voi", "nhe", "a", "duoc", "khong",
         "tra", "cuu", "lien", "he", "so", "dien", "thoai",
-        "sdt", "phu", "trach", "anh", "ong", "ba", "co", "chu",
+        "sdt", "phu", "trach",
     }
     residual_tokens = [
         token
@@ -928,6 +781,21 @@ def analyze_contact_name_ambiguity(
         if len(token) >= 2
         and token not in generic_tokens
     ]
+    honorific_tokens = {
+        "anh",
+        "chi",
+        "ong",
+        "ba",
+        "co",
+        "chu",
+    }
+
+    while (
+        len(residual_tokens) > 1
+        and residual_tokens[0] in honorific_tokens
+    ):
+        residual_tokens.pop(0)
+
     matched_tokens = []
 
     for token in residual_tokens:
@@ -974,28 +842,7 @@ def analyze_contact_name_ambiguity(
         "name_token": name_token,
         "match_count": len(matched_names),
         "matched_names": matched_names,
-        "candidates": [],
     }
-
-
-# Chức năng: Giữ tương thích cho vùng code cũ chỉ kiểm tra tên riêng một từ.
-# Vai trò: Trả kết quả PARTIAL_NAME từ bộ phân tích mơ hồ tên liên hệ mới.
-def detect_contact_partial_name(
-    user_text,
-    allow_without_intent=False,
-):
-    result = analyze_contact_name_ambiguity(
-        user_text,
-        allow_without_intent=allow_without_intent,
-    )
-
-    if not result:
-        return None
-
-    if result.get("status") != "PARTIAL_NAME":
-        return None
-
-    return result
 
 
 # Chức năng: Tìm thông tin liên hệ trong sheet TRA_CUU_LIEN_HE theo tên, chức danh, bộ phận và địa bàn.
