@@ -573,22 +573,17 @@ def build_answer(user_id, question, request_id=""):
             source=source,
         )
 
-    step_started_at = time.monotonic()
-    if routed.get("unknown_log"):
-        log_unknown_safe(
-            user_id=user_id,
-            question=question,
-            route=router_source,
-            note=str(ai_status or "NO_SHEET_MATCH"),
-            ai_called=ai_called,
-            ai_status=ai_status,
-        )
-
-    unknown_log_duration_ms = int(
-        (time.monotonic() - step_started_at) * 1000
-    )
+    unknown_log_duration_ms = 0
 
     log_note = str(ai_note or "").strip()
+
+    if routed.get("unknown_log"):
+        unknown_note = "NO_SHEET_MATCH"
+        log_note = (
+            f"{log_note} | {unknown_note}"
+            if log_note
+            else unknown_note
+        )
     clean_request_id = str(request_id or "").strip()
 
     if clean_request_id:
