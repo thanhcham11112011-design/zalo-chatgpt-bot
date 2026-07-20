@@ -169,44 +169,10 @@ def get_ai_notice():
     return get_chat_setting("AI_NOTICE", "")
 
 
-# Chức năng: Kiểm tra BOT có được phép gọi Gemini hay không.
-# Vai trò: Áp dụng thống nhất toàn bộ cổng điều khiển AI từ sheet SETTING_AI.
+# Chức năng: Nhận quyết định gọi Gemini đã được Router xác lập.
+# Vai trò: Không tính lại chính sách AI để tránh nhiều tầng đưa ra kết quả khác nhau.
 def can_use_ai(routed):
-    if not is_enabled(get_ai_setting("AI_ENABLED", "TRUE"), True):
-        return False
-
-    if is_enabled(get_ai_setting("AI_IS_CORE", "FALSE"), False):
-        return False
-
-    if str(get_ai_setting("AI_MODE", "OPTIONAL")).strip().upper() != "OPTIONAL":
-        return False
-
-    if str(get_ai_setting("AI_STATUS", "ONLINE")).strip().upper() != "ONLINE":
-        return False
-
-    if not bool(routed.get("use_ai", False)):
-        return False
-
-    ai_context = str(routed.get("ai_context") or "").strip()
-    source = str(routed.get("source") or "").strip().upper()
-
-    if ai_context:
-        return (
-            is_enabled(get_ai_setting("ENABLE_CONTEXT", "TRUE"), True)
-            and is_enabled(get_ai_setting("ENABLE_RAG", "TRUE"), True)
-            and is_enabled(get_ai_setting("ENABLE_AI_SUMMARIZE", "TRUE"), True)
-        )
-
-    if source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "ROUTER_ERROR", "EMPTY"}:
-        if is_enabled(get_ai_setting("STRICT_SHEET_ONLY", "TRUE"), True):
-            return False
-
-        return (
-            is_enabled(get_ai_setting("ENABLE_AI_GENERAL_KNOWLEDGE", "FALSE"), False)
-            and is_enabled(get_ai_setting("ALLOW_AI_WITHOUT_SHEET_CONTEXT", "FALSE"), False)
-        )
-
-    return False
+    return bool((routed or {}).get("use_ai", False))
 
 
 # Chức năng: Tổng hợp trạng thái cấu hình AI an toàn để hiển thị tại health check.
@@ -387,10 +353,14 @@ def remember_message(message_id):
 # Chức năng: Gọi Gemini theo cơ chế tùy chọn và nhận trạng thái AI.
 # Vai trò: Trả kết quả AI về build_answer để chỉ ghi một dòng lịch sử hội thoại.
 def try_ai_answer(user_id, question, routed, fallback_answer):
+    router_source = str(
+        routed.get("source") or "DEFAULT"
+    ).strip()
+
     if not can_use_ai(routed):
         return (
             fallback_answer,
-            routed.get("source", "DEFAULT"),
+            router_source,
             "AI_NOT_USED",
             "",
             "AI_NOT_USED",
@@ -432,7 +402,7 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
 
             return (
                 answer,
-                "GEMINI_AI",
+                router_source,
                 ai_status or "ONLINE",
                 ai_model,
                 "AI_OPTIONAL_SUCCESS",
@@ -444,12 +414,20 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
             or get_ai_unavailable_message()
         )
 
+        console_log(
+            "WARNING",
+            "AI",
+            "Gemini không khả dụng, sử dụng câu trả lời Google Sheets",
+            ai_status=ai_status,
+            error=ai_error,
+        )
+
         return (
             fallback,
-            "AI_FALLBACK",
+            router_source,
             ai_status or "AI_FALLBACK",
             ai_model,
-            ai_error or "AI_OPTIONAL_FALLBACK",
+            "AI_OPTIONAL_FALLBACK",
         )
 
     except Exception as e:
@@ -467,10 +445,10 @@ def try_ai_answer(user_id, question, routed, fallback_answer):
 
         return (
             fallback,
-            "AI_UNAVAILABLE",
+            router_source,
             "API_ERROR",
             ai_model,
-            str(e),
+            "AI_OPTIONAL_EXCEPTION",
         )
 # Chức năng: Xây dựng câu trả lời cho một tin nhắn người dân.
 # Vai trò: Điều phối session, router, Gemini optional, log và không xử lý nghiệp vụ trực tiếp.
@@ -532,11 +510,13 @@ def build_answer(user_id, question, request_id=""):
     })
 
     answer = routed.get("reply") or get_default_reply()
-    source = routed.get("source", "DEFAULT")
+    router_source = routed.get("source", "DEFAULT")
+    source = router_source
     new_context = routed.get("context", context)
     ai_status = "AI_NOT_REQUESTED"
     ai_model = ""
     ai_note = "AI_NOT_REQUESTED"
+    ai_called = False
 
     step_started_at = time.monotonic()
 
@@ -568,6 +548,7 @@ def build_answer(user_id, question, request_id=""):
     )
 
     if routed.get("use_ai") is True:
+        ai_called = True
         step_started_at = time.monotonic()
         (
             answer,
@@ -593,13 +574,13 @@ def build_answer(user_id, question, request_id=""):
         )
 
     step_started_at = time.monotonic()
-    if routed.get("unknown_log") or source in {"DEFAULT", "UNKNOWN", "AI_FALLBACK", "AI_UNAVAILABLE"}:
+    if routed.get("unknown_log"):
         log_unknown_safe(
             user_id=user_id,
             question=question,
-            route=source,
+            route=router_source,
             note=str(ai_status or "NO_SHEET_MATCH"),
-            ai_called=source in {"GEMINI_AI", "AI_FALLBACK", "AI_UNAVAILABLE"},
+            ai_called=ai_called,
             ai_status=ai_status,
         )
 
@@ -628,7 +609,7 @@ def build_answer(user_id, question, request_id=""):
         note=log_note,
         ai_status=ai_status,
         ai_model=ai_model,
-        ai_called=source in {"GEMINI_AI", "AI_FALLBACK", "AI_UNAVAILABLE"},
+        ai_called=ai_called,
     )
     console_log(
         "INFO",
