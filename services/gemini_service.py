@@ -274,6 +274,7 @@ def _fallback_reply(status="AI_FALLBACK"):
         "DISABLED",
         "OFFLINE",
         "QUOTA_EXCEEDED",
+        "DAILY_QUOTA_EXCEEDED",
         "TIMEOUT",
         "CONNECTION_ERROR",
         "SERVER_ERROR",
@@ -330,6 +331,13 @@ def _classify_error(error):
         return "CONFIG_ERROR"
 
     if (
+        "generaterequestsperdayperprojectpermodel" in text
+        or "requests per day" in text
+        or "per day per project per model" in text
+    ):
+        return "DAILY_QUOTA_EXCEEDED"
+
+    if (
         "quota" in text
         or "resource exhausted" in text
         or "resource_exhausted" in text
@@ -369,7 +377,7 @@ def _classify_error(error):
     return "API_ERROR"
 
 # Chức năng: Kiểm tra trạng thái lỗi có thuộc nhóm tạm thời không.
-# Vai trò: Chỉ cho phép retry timeout, kết nối, 429, lỗi máy chủ và phản hồi rỗng.
+# Vai trò: Không retry quota ngày; chỉ retry lỗi tạm thời có khả năng tự phục hồi.
 def _is_retryable_status(status):
     return status in {
         "TIMEOUT",
