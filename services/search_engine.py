@@ -1740,7 +1740,11 @@ def search_faq(user_text, limit=3):
                 related_id,
             )
 
-            if related_resolved and not related_matched:
+            if (
+                related_resolved
+                and not related_matched
+                and not strong_signal
+            ):
                 continue
 
             if related_matched:
